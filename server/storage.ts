@@ -9,6 +9,7 @@ import type {
   Trade,
   InsertTrade,
   Wallet,
+  AdminSettings,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -33,6 +34,9 @@ export interface IStorage {
 
   getWallet(): Promise<Wallet>;
   updateWallet(updates: Partial<Wallet>): Promise<Wallet>;
+
+  getAdminSettings(): Promise<AdminSettings>;
+  updateAdminSettings(updates: Partial<AdminSettings>): Promise<AdminSettings>;
 }
 
 export class MemStorage implements IStorage {
@@ -41,6 +45,7 @@ export class MemStorage implements IStorage {
   private bets: Map<string, Bet>;
   private trades: Map<string, Trade>;
   private wallet: Wallet;
+  private adminSettings: AdminSettings;
 
   constructor() {
     this.markets = new Map();
@@ -52,6 +57,12 @@ export class MemStorage implements IStorage {
       usdcBalance: 4240.50,
       wildBalance: 1250,
       totalValue: 5490.50,
+    };
+    this.adminSettings = {
+      demoMode: false,
+      mockDataEnabled: true,
+      activeTagIds: [],
+      lastUpdated: new Date().toISOString(),
     };
 
     this.seedData();
@@ -319,6 +330,19 @@ export class MemStorage implements IStorage {
   async updateWallet(updates: Partial<Wallet>): Promise<Wallet> {
     this.wallet = { ...this.wallet, ...updates };
     return this.wallet;
+  }
+
+  async getAdminSettings(): Promise<AdminSettings> {
+    return this.adminSettings;
+  }
+
+  async updateAdminSettings(updates: Partial<AdminSettings>): Promise<AdminSettings> {
+    this.adminSettings = {
+      ...this.adminSettings,
+      ...updates,
+      lastUpdated: new Date().toISOString(),
+    };
+    return this.adminSettings;
   }
 }
 

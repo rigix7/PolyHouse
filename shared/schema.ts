@@ -109,9 +109,19 @@ export type Wallet = z.infer<typeof walletSchema>;
 
 // ============ ADMIN SETTINGS ============
 
+export const polymarketTagSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  slug: z.string(),
+  enabled: z.boolean(),
+});
+
+export type PolymarketTag = z.infer<typeof polymarketTagSchema>;
+
 export const adminSettingsSchema = z.object({
   demoMode: z.boolean(),
   mockDataEnabled: z.boolean(),
+  activeTagIds: z.array(z.string()),
   lastUpdated: z.string(),
 });
 

@@ -246,5 +246,24 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/admin/settings", async (req, res) => {
+    try {
+      const settings = await storage.getAdminSettings();
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch admin settings" });
+    }
+  });
+
+  app.patch("/api/admin/settings", async (req, res) => {
+    try {
+      const updates = req.body;
+      const settings = await storage.updateAdminSettings(updates);
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update admin settings" });
+    }
+  });
+
   return httpServer;
 }

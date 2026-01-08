@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Header } from "@/components/terminal/Header";
 import { BottomNav, TabType } from "@/components/terminal/BottomNav";
@@ -9,17 +9,24 @@ import { ScoutView } from "@/components/views/ScoutView";
 import { TradeView } from "@/components/views/TradeView";
 import { DashboardView } from "@/components/views/DashboardView";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Market, Player, Trade, Bet, Wallet } from "@shared/schema";
+import { fetchGammaEvents, gammaEventToMarket } from "@/lib/polymarket";
+import type { Market, Player, Trade, Bet, Wallet, AdminSettings } from "@shared/schema";
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<TabType>("predict");
   const [isWalletOpen, setIsWalletOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
   const [selectedBet, setSelectedBet] = useState<{ marketId: string; outcomeId: string } | undefined>();
+  const [liveMarkets, setLiveMarkets] = useState<Market[]>([]);
+  const [liveMarketsLoading, setLiveMarketsLoading] = useState(false);
   const { showToast, ToastContainer } = useTerminalToast();
 
-  const { data: markets = [], isLoading: marketsLoading } = useQuery<Market[]>({
+  const { data: demoMarkets = [], isLoading: demoMarketsLoading } = useQuery<Market[]>({
     queryKey: ["/api/markets"],
+  });
+
+  const { data: adminSettings } = useQuery<AdminSettings>({
+    queryKey: ["/api/admin/settings"],
   });
 
   const { data: players = [], isLoading: playersLoading } = useQuery<Player[]>({
@@ -37,6 +44,48 @@ export default function HomePage() {
   const { data: wallet } = useQuery<Wallet>({
     queryKey: ["/api/wallet"],
   });
+
+  useEffect(() => {
+    const loadLiveMarkets = async () => {
+      const activeTagIds = adminSettings?.activeTagIds || [];
+      if (activeTagIds.length === 0) {
+        setLiveMarkets([]);
+        return;
+      }
+
+      setLiveMarketsLoading(true);
+      try {
+        const events = await fetchGammaEvents(activeTagIds);
+        const markets = events
+          .map(gammaEventToMarket)
+          .filter((m): m is Market & { polymarketId: string; conditionId: string } => m !== null)
+          .map(m => ({
+            id: m.id,
+            title: m.title,
+            description: m.description,
+            category: m.category as "sports" | "politics" | "crypto" | "entertainment",
+            sport: m.sport,
+            league: m.league,
+            startTime: m.startTime,
+            status: m.status as "open" | "closed" | "settled",
+            outcomes: m.outcomes,
+            volume: m.volume,
+            liquidity: m.liquidity,
+          }));
+        setLiveMarkets(markets);
+      } catch (error) {
+        console.error("Failed to load live markets:", error);
+      } finally {
+        setLiveMarketsLoading(false);
+      }
+    };
+
+    loadLiveMarkets();
+  }, [adminSettings?.activeTagIds]);
+
+  const hasLiveMarkets = (adminSettings?.activeTagIds?.length || 0) > 0;
+  const markets = hasLiveMarkets ? liveMarkets : demoMarkets;
+  const marketsLoading = hasLiveMarkets ? liveMarketsLoading : demoMarketsLoading;
 
   const placeBetMutation = useMutation({
     mutationFn: async (data: { marketId: string; outcomeId: string; amount: number; odds: number }) => {

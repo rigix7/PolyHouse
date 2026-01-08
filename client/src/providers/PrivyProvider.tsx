@@ -1,6 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { PrivyProvider as PrivyProviderBase, usePrivy, useWallets } from "@privy-io/react-auth";
-import { polygon } from "viem/chains";
+import { createContext, useContext, type ReactNode, lazy, Suspense } from "react";
 
 interface WalletContextType {
   eoaAddress: string | undefined;
@@ -11,7 +9,7 @@ interface WalletContextType {
   isLoading: boolean;
 }
 
-const WalletContext = createContext<WalletContextType>({
+export const WalletContext = createContext<WalletContextType>({
   eoaAddress: undefined,
   isReady: false,
   authenticated: false,
@@ -24,45 +22,18 @@ export function useWallet() {
   return useContext(WalletContext);
 }
 
-function WalletContextProvider({ children }: { children: ReactNode }) {
-  const { ready, authenticated, user, login, logout } = usePrivy();
-  const { wallets, ready: walletsReady } = useWallets();
-  const [isLoading, setIsLoading] = useState(true);
+const PrivyInnerProvider = lazy(() => import("./PrivyInnerProvider"));
 
-  const wallet = wallets.find(w => w.address === user?.wallet?.address);
-  const eoaAddress = authenticated && wallet ? wallet.address : undefined;
-
-  useEffect(() => {
-    if (ready && walletsReady) {
-      setIsLoading(false);
-    }
-  }, [ready, walletsReady]);
-
-  useEffect(() => {
-    async function ensurePolygonChain() {
-      if (!wallet || !walletsReady || !authenticated) return;
-
-      try {
-        const chainId = wallet.chainId;
-        if (chainId !== `eip155:${polygon.id}`) {
-          await wallet.switchChain(polygon.id);
-        }
-      } catch (err) {
-        console.error("Failed to switch chain:", err);
-      }
-    }
-    ensurePolygonChain();
-  }, [wallet, walletsReady, authenticated]);
-
+function LoadingFallback({ children }: { children: ReactNode }) {
   return (
     <WalletContext.Provider
       value={{
-        eoaAddress,
-        isReady: ready && walletsReady,
-        authenticated,
-        login,
-        logout,
-        isLoading,
+        eoaAddress: undefined,
+        isReady: false,
+        authenticated: false,
+        login: () => {},
+        logout: async () => {},
+        isLoading: true,
       }}
     >
       {children}
@@ -92,23 +63,10 @@ export function PrivyWalletProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <PrivyProviderBase
-      appId={privyAppId}
-      config={{
-        defaultChain: polygon,
-        supportedChains: [polygon],
-        appearance: {
-          theme: "dark",
-          accentColor: "#f43f5e",
-        },
-        embeddedWallets: {
-          ethereum: {
-            createOnLogin: "users-without-wallets",
-          },
-        },
-      }}
-    >
-      <WalletContextProvider>{children}</WalletContextProvider>
-    </PrivyProviderBase>
+    <Suspense fallback={<LoadingFallback>{children}</LoadingFallback>}>
+      <PrivyInnerProvider appId={privyAppId} WalletContext={WalletContext}>
+        {children}
+      </PrivyInnerProvider>
+    </Suspense>
   );
 }

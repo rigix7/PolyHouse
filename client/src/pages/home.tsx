@@ -11,7 +11,7 @@ import { DashboardView } from "@/components/views/DashboardView";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { fetchGammaEvents, gammaEventToMarket } from "@/lib/polymarket";
 import { getUSDCBalance } from "@/lib/polygon";
-import { useWallet } from "@/providers/PrivyWalletProvider";
+import { useWallet } from "@/providers/PrivyProvider";
 import type { Market, Player, Trade, Bet, Wallet, AdminSettings, WalletRecord } from "@shared/schema";
 
 export default function HomePage() {

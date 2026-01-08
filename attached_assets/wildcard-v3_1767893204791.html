@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Wildcard // Terminal V3.2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        zinc: { 950: '#050505', 900: '#121214', 850: '#1c1c1f', 800: '#27272a', 700: '#3f3f46' },
+                        wild: {
+                            brand: '#fb7185',   // Predict (Rose)
+                            scout: '#34d399',   // Scout (Emerald)
+                            trade: '#3b82f6',   // Trade (Blue)
+                            gold: '#fbbf24',    // Rank/Dashboard
+                        }
+                    },
+                    backgroundImage: {
+                        'hud-grid': 'linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)',
+                        'gradient-brand': 'linear-gradient(135deg, rgba(251, 113, 133, 0.2), rgba(0,0,0,0))',
+                    },
+                    animation: {
+                        'marquee': 'marquee 25s linear infinite',
+                        'slide-up': 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                        'fade-in': 'fadeIn 0.2s ease-out',
+                        'pulse-skeleton': 'pulseSkeleton 1.5s ease-in-out infinite',
+                    },
+                    keyframes: {
+                        marquee: { '0%': { transform: 'translateX(0%)' }, '100%': { transform: 'translateX(-100%)' } },
+                        slideUp: { '0%': { transform: 'translateY(100%)' }, '100%': { transform: 'translateY(0)' } },
+                        fadeIn: { '0%': { opacity: 0 }, '100%': { opacity: 1 } },
+                        pulseSkeleton: { '0%, 100%': { opacity: 0.4 }, '50%': { opacity: 0.8 } }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #050505; color: #fff; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        
+        /* View Management */
+        .view-section { display: none; height: 100%; flex-direction: column; }
+        .view-section.active { display: flex; animation: fadeIn 0.2s ease-out; }
+        
+        /* Sub-View Management */
+        .sub-view { display: none; }
+        .sub-view.active { display: block; animation: fadeIn 0.2s ease-out; }
+
+        /* Utilities */
+        .glass-panel { background: rgba(18, 18, 20, 0.8); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(39, 39, 42, 0.5); }
+        .skeleton { background: #1c1c1f; border-radius: 4px; animation: pulseSkeleton 1.5s infinite; }
+        
+        /* Demo Mode Badge */
+        .demo-badge { 
+            position: absolute; top: 10px; right: 10px; 
+            font-size: 8px; font-weight: 900; letter-spacing: 1px;
+            padding: 2px 6px; border-radius: 4px;
+            background: rgba(251, 191, 36, 0.1); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.3);
+            pointer-events: none; z-index: 50;
+        }
+
+        /* Toast Notification */
+        #toast {
+            visibility: hidden; min-width: 250px; background-color: #1c1c1f; color: #fff; text-align: center; border-radius: 8px; padding: 12px; position: fixed; z-index: 100; left: 50%; bottom: 80px; transform: translateX(-50%); font-size: 12px; border: 1px solid #3f3f46; box-shadow: 0 4px 15px rgba(0,0,0,0.5); opacity: 0; transition: opacity 0.3s;
+        }
+        #toast.show { visibility: visible; opacity: 1; }
+    </style>
+</head>
+<body class="min-h-screen bg-zinc-950 bg-hud-grid bg-[size:30px_30px] font-sans selection:bg-wild-brand selection:text-black text-sm overflow-hidden">
+
+    <div id="toast">Simulation Mode: Transaction Recorded</div>
+
+    <div class="relative z-10 h-screen flex flex-col max-w-[430px] mx-auto border-x border-zinc-800/50 bg-zinc-950/95 shadow-2xl">
+        
+        <header class="h-14 shrink-0 flex items-center justify-between px-4 glass-panel z-30">
+            <div class="flex items-center gap-2 text-wild-brand">
+                <i data-lucide="zap" class="w-5 h-5 fill-current"></i>
+                <span class="font-black italic tracking-tighter text-lg text-white">WILDCARD</span>
+            </div>
+            <button onclick="openDrawer('wallet')" class="group flex items-center gap-3 bg-zinc-900/50 hover:bg-zinc-800 border border-zinc-800 px-3 py-1.5 rounded-full transition-all">
+                 <div class="text-[10px] font-mono text-right leading-tight text-zinc-400 group-hover:text-white">
+                    <div id="header-balance-usdc">$4,240.50</div>
+                    <div id="header-balance-wild" class="text-wild-scout hidden">1,250 WILD</div>
+                 </div>
+                 <div class="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center">
+                    <i data-lucide="wallet" class="w-3 h-3 text-zinc-400 group-hover:text-white"></i>
+                 </div>
+            </button>
+        </header>
+
+        <div id="view-predict" class="view-section active">
+            <div class="shrink-0 bg-zinc-950 border-b border-zinc-800 p-2 z-20">
+                <div class="grid grid-cols-3 gap-1 bg-zinc-900 p-1 rounded-lg font-mono text-[10px] font-bold">
+                    <button onclick="setSubView('predict', 'matchday')" id="tab-predict-matchday" class="py-1.5 rounded bg-zinc-800 text-white shadow">MATCH DAY</button>
+                    <button onclick="setSubView('predict', 'futures')" id="tab-predict-futures" class="py-1.5 rounded text-zinc-500 hover:text-zinc-300">FUTURES</button>
+                    <button onclick="setSubView('predict', 'fantasy')" id="tab-predict-fantasy" class="py-1.5 rounded text-zinc-500 hover:text-zinc-300">FANTASY</button>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto hide-scrollbar p-3 space-y-4">
+                
+                <div id="content-predict-matchday" class="sub-view active space-y-3">
+                    
+                    <div id="predict-skeleton" class="space-y-3">
+                        <div class="bg-zinc-900 border border-zinc-800 p-3 h-48 relative overflow-hidden">
+                            <div class="flex justify-between mb-4">
+                                <div class="w-24 h-4 skeleton"></div>
+                                <div class="w-12 h-4 skeleton"></div>
+                            </div>
+                            <div class="w-48 h-6 skeleton mb-6"></div>
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="h-16 skeleton"></div>
+                                <div class="h-16 skeleton"></div>
+                                <div class="h-16 skeleton"></div>
+                            </div>
+                        </div>
+                        <div class="bg-zinc-900 border border-zinc-800 p-3 h-48 relative overflow-hidden opacity-50">
+                             <div class="w-full h-full skeleton"></div>
+                        </div>
+                    </div>
+
+                    </div>
+
+                <div id="content-predict-futures" class="sub-view space-y-3">
+                     <div class="h-full flex flex-col items-center justify-center min-h-[50vh] text-center opacity-60">
+                        <i data-lucide="lock" class="w-12 h-12 text-zinc-700 mb-4"></i>
+                        <h3 class="font-bold text-zinc-500">Season Futures</h3>
+                        <p class="text-xs text-zinc-600 mt-2">Loading Market Data...</p>
+                    </div>
+                </div>
+
+                <div id="content-predict-fantasy" class="sub-view h-full flex flex-col items-center justify-center min-h-[50vh] text-center">
+                    <i data-lucide="shield" class="w-12 h-12 text-zinc-700 mb-4"></i>
+                    <h3 class="font-bold text-zinc-500">Fantasy Squads</h3>
+                    <p class="text-xs text-zinc-600 mt-2">Coming Q3 2026</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-scout" class="view-section relative">
+            <div class="demo-badge">DEMO MODE</div>
+
+            <div class="shrink-0 bg-zinc-950 border-b border-zinc-800 p-3 flex justify-between items-center z-20">
+                <h2 class="text-xs font-bold text-zinc-400 tracking-wider">PLAYER LAUNCHPAD</h2>
+                <div class="flex gap-4 text-[10px] font-mono font-bold">
+                    <button onclick="setScoutMode('offering')" id="btn-scout-offering" class="text-wild-scout border-b-2 border-wild-scout pb-0.5 transition-colors">OFFERING</button>
+                    <button onclick="setScoutMode('available')" id="btn-scout-available" class="text-zinc-600 hover:text-white pb-0.5 transition-colors">AVAILABLE</button>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto hide-scrollbar p-3 space-y-4">
+                <div id="scout-offering" class="block space-y-4">
+                    <div class="bg-zinc-900 border border-zinc-800 relative group overflow-hidden">
+                        <div class="h-0.5 w-full bg-wild-scout absolute top-0 left-0"></div>
+                        <div class="p-4">
+                            <div class="flex justify-between items-start mb-4">
+                                <div class="flex items-center gap-3">
+                                     <div class="w-12 h-12 bg-zinc-800 rounded flex items-center justify-center font-bold text-sm text-zinc-500">BJ</div>
+                                     <div>
+                                         <h3 class="font-black text-white text-base">Bronny Jr.</h3>
+                                         <p class="text-[10px] font-mono text-zinc-500">$BRON • USC Trojans</p>
+                                     </div>
+                                </div>
+                                <div class="text-right font-mono">
+                                    <div class="text-wild-scout font-bold text-sm">82%</div>
+                                    <div class="text-[9px] text-zinc-500">Funded</div>
+                                </div>
+                            </div>
+                            <div class="mb-4">
+                                <div class="h-3 w-full bg-zinc-950 rounded-full overflow-hidden border border-zinc-800">
+                                    <div class="h-full w-[82%] bg-wild-scout relative shadow-[0_0_15px_rgba(52,211,153,0.6)]"></div>
+                                </div>
+                                <p class="text-[9px] text-zinc-500 mt-2 font-mono text-right">Target: 100k WILD</p>
+                            </div>
+                            <button onclick="showToast('Simulated: You funded 500 WILD')" class="w-full py-3 bg-wild-scout text-zinc-950 font-black text-xs hover:bg-emerald-400 transition-colors uppercase tracking-wide">
+                                Fund Curve (Mint)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="scout-available" class="hidden grid grid-cols-2 gap-3">
+                    <div class="bg-zinc-900 border border-zinc-800 p-3 hover:border-zinc-600 transition-colors">
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="w-8 h-8 bg-zinc-800 rounded-full text-[10px] flex items-center justify-center">KM</div>
+                            <span class="text-[9px] bg-zinc-950 text-wild-scout px-1.5 py-0.5 rounded border border-wild-scout/20">GEN 1</span>
+                        </div>
+                        <div class="font-bold text-white text-sm">Mbappé</div>
+                        <div class="text-[10px] text-zinc-500 font-mono mb-3">Real Madrid</div>
+                        <button onclick="showToast('Simulated: Minted for 1,500 WILD')" class="w-full py-1.5 bg-zinc-950 border border-zinc-700 text-[10px] font-bold text-white hover:bg-wild-scout hover:text-black hover:border-wild-scout transition-colors">
+                            1,500 WILD
+                        </button>
+                    </div>
+                     <div class="bg-zinc-900 border border-zinc-800 p-3 hover:border-zinc-600 transition-colors opacity-50">
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="w-8 h-8 bg-zinc-800 rounded-full text-[10px] flex items-center justify-center">EH</div>
+                            <span class="text-[9px] bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded border border-zinc-700">SOLD OUT</span>
+                        </div>
+                        <div class="font-bold text-zinc-500 text-sm">Haaland</div>
+                        <div class="text-[10px] text-zinc-600 font-mono mb-3">Man City</div>
+                        <button class="w-full py-1.5 bg-zinc-950 border border-zinc-800 text-[10px] font-bold text-zinc-600 cursor-not-allowed">
+                            UNAVAILABLE
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-trade" class="view-section relative">
+             <div class="demo-badge">DEMO MODE</div>
+             
+            <div class="shrink-0 bg-zinc-950 border-b border-zinc-800 p-3 flex justify-between items-center z-20">
+                <h2 class="text-xs font-bold text-zinc-400 tracking-wider">LIQUIDITY MARKETS</h2>
+                <div class="flex items-center gap-2 text-zinc-500">
+                    <i data-lucide="bar-chart-2" class="w-4 h-4"></i>
+                </div>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto hide-scrollbar p-3 space-y-2">
+                <div class="grid grid-cols-4 text-[10px] font-mono text-zinc-500 px-3 pb-1">
+                    <div class="col-span-2">PAIR</div>
+                    <div class="text-right">PRICE (WILD)</div>
+                    <div class="text-right">24H</div>
+                </div>
+                <div onclick="openDrawer('tradedetail', {ticker:'$SAKA', price:4.20})" class="bg-zinc-900 border border-zinc-800 p-3 rounded-sm flex items-center justify-between hover:border-wild-trade cursor-pointer transition-colors group">
+                     <div class="flex items-center gap-3">
+                         <div class="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-white group-hover:text-wild-trade transition-colors">S</div>
+                         <div>
+                             <div class="font-bold text-sm text-white">$SAKA</div>
+                             <div class="text-[9px] font-mono text-zinc-500">Arsenal Index</div>
+                         </div>
+                     </div>
+                     <div class="text-right">
+                         <div class="font-mono font-bold text-white">4.20 W</div>
+                         <div class="font-mono text-[9px] text-wild-scout">▲ 5.2%</div>
+                     </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-dashboard" class="view-section">
+            <div class="flex-1 overflow-y-auto hide-scrollbar pb-24">
+                
+                <div class="bg-zinc-900 border-b border-zinc-800 p-6 relative overflow-hidden">
+                    <div class="absolute inset-0 bg-gradient-brand opacity-10"></div>
+                    <div class="flex items-center gap-4 relative z-10">
+                        <div class="w-16 h-16 bg-zinc-800 rounded-full border-2 border-zinc-700 flex items-center justify-center">
+                            <i data-lucide="user" class="w-8 h-8 text-zinc-500"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-xl font-black text-white">Wild User</h2>
+                            <p class="text-xs font-mono text-zinc-500">0x9A2...B4c</p>
+                            <div class="flex gap-2 mt-2">
+                                <span class="text-[9px] bg-wild-gold text-black px-1.5 py-0.5 rounded font-bold">VIP TIER 1</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-4 grid grid-cols-2 gap-3">
+                    <button onclick="openDrawer('wallet')" class="bg-zinc-900 border border-zinc-800 p-3 rounded flex items-center justify-center gap-2 hover:bg-zinc-800 text-xs font-bold">
+                        <i data-lucide="wallet" class="w-4 h-4 text-wild-scout"></i> Assets
+                    </button>
+                    <button onclick="showToast('No history available yet')" class="bg-zinc-900 border border-zinc-800 p-3 rounded flex items-center justify-center gap-2 hover:bg-zinc-800 text-xs font-bold">
+                        <i data-lucide="history" class="w-4 h-4 text-zinc-400"></i> History
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <nav class="shrink-0 h-16 bg-zinc-950 border-t border-zinc-800 flex items-center justify-around z-40 relative">
+            <button onclick="setView('predict')" id="nav-predict" class="flex flex-col items-center gap-0.5 w-16 text-wild-brand">
+                <i data-lucide="crosshair" class="w-5 h-5"></i>
+                <span class="text-[9px] font-bold">PREDICT</span>
+            </button>
+            <button onclick="setView('scout')" id="nav-scout" class="flex flex-col items-center gap-0.5 w-16 text-zinc-500 hover:text-wild-scout">
+                <i data-lucide="radar" class="w-5 h-5"></i>
+                <span class="text-[9px] font-bold">SCOUT</span>
+            </button>
+            <button onclick="setView('trade')" id="nav-trade" class="flex flex-col items-center gap-0.5 w-16 text-zinc-500 hover:text-wild-trade">
+                <i data-lucide="arrow-left-right" class="w-5 h-5"></i>
+                <span class="text-[9px] font-bold">TRADE</span>
+            </button>
+            <button onclick="setView('dashboard')" id="nav-dashboard" class="flex flex-col items-center gap-0.5 w-16 text-zinc-500 hover:text-wild-gold">
+                <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+                <span class="text-[9px] font-bold">DASH</span>
+            </button>
+        </nav>
+
+        <div id="overlay-bg" onclick="closeAllDrawers()" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden opacity-0 transition-opacity duration-300"></div>
+
+        <div id="drawer-betslip" class="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-zinc-900 border-t border-zinc-700 rounded-t-2xl z-50 transform translate-y-full transition-transform duration-300 p-6">
+            <div class="w-12 h-1 bg-zinc-700 rounded-full mx-auto mb-6"></div>
+            <div class="flex justify-between items-start mb-6">
+                <div>
+                    <h3 class="font-bold text-white text-lg">Place Order</h3>
+                    <p class="text-xs text-zinc-400 font-mono mt-1" id="betslip-target">Target</p>
+                </div>
+                <div class="text-2xl font-mono font-black text-wild-brand" id="betslip-price">0¢</div>
+            </div>
+            <div class="bg-zinc-950 border border-zinc-800 p-3 rounded mb-4 flex items-center justify-between">
+                <label class="text-[10px] font-mono text-zinc-500">AMOUNT (USDC)</label>
+                <input type="number" value="100" class="bg-transparent text-right text-white font-mono font-bold w-24 outline-none">
+            </div>
+            <button onclick="showToast('Order Sent to Polymarket')" class="w-full py-4 bg-wild-brand text-black font-bold rounded hover:bg-rose-400">CONFIRM (POLYGON)</button>
+        </div>
+
+        <div id="drawer-wallet" class="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-zinc-900 border-t border-zinc-700 rounded-t-2xl z-50 transform translate-y-full transition-transform duration-300 p-6">
+             <div class="w-12 h-1 bg-zinc-700 rounded-full mx-auto mb-6"></div>
+             <h3 class="font-bold text-white text-lg mb-4 text-center">Multi-Chain Assets</h3>
+             <div class="space-y-3 mb-6">
+                 <div class="bg-zinc-950 border border-zinc-800 p-4 rounded flex justify-between items-center relative overflow-hidden">
+                     <div class="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+                     <span class="font-bold flex items-center gap-2 ml-2">USDC <span class="text-[9px] text-zinc-500 font-mono">POLYGON</span></span>
+                     <span class="font-mono">$4,240.50</span>
+                 </div>
+                 <div class="bg-zinc-950 border border-zinc-800 p-4 rounded flex justify-between items-center relative overflow-hidden">
+                     <div class="absolute left-0 top-0 bottom-0 w-1 bg-wild-scout"></div>
+                     <span class="font-bold flex items-center gap-2 ml-2 text-wild-scout">WILD <span class="text-[9px] text-zinc-500 font-mono">TAIKO</span></span>
+                     <span class="font-mono text-wild-scout">1,250.00</span>
+                 </div>
+             </div>
+             <button onclick="closeAllDrawers()" class="w-full py-3 bg-zinc-800 border border-zinc-700 rounded font-bold text-xs">CLOSE</button>
+        </div>
+
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        // --- NAVIGATION STATE ---
+        function setView(id) {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.getElementById(`view-${id}`).classList.add('active');
+            
+            const map = { predict: 'text-wild-brand', scout: 'text-wild-scout', trade: 'text-wild-trade', dashboard: 'text-wild-gold' };
+            ['predict','scout','trade','dashboard'].forEach(key => {
+                document.getElementById(`nav-${key}`).className = `flex flex-col items-center gap-0.5 w-16 text-zinc-500 hover:${map[key]}`;
+            });
+            document.getElementById(`nav-${id}`).className = `flex flex-col items-center gap-0.5 w-16 ${map[id]}`;
+
+            // Header Logic for Currencies
+            const usdc = document.getElementById('header-balance-usdc');
+            const wild = document.getElementById('header-balance-wild');
+            
+            if (id === 'scout' || id === 'trade') {
+                usdc.classList.add('hidden');
+                wild.classList.remove('hidden');
+            } else {
+                wild.classList.add('hidden');
+                usdc.classList.remove('hidden');
+            }
+        }
+
+        function setSubView(parent, id) {
+            document.getElementById(`view-${parent}`).querySelectorAll('.sub-view').forEach(el => el.classList.remove('active'));
+            document.getElementById(`content-${parent}-${id}`).classList.add('active');
+            
+            const btns = document.getElementById(`view-${parent}`).querySelectorAll('button[id^="tab-"]');
+            btns.forEach(b => b.className = "py-1.5 rounded text-zinc-500 hover:text-zinc-300");
+            document.getElementById(`tab-${parent}-${id}`).className = "py-1.5 rounded bg-zinc-800 text-white shadow";
+        }
+
+        function setScoutMode(mode) {
+            document.getElementById('scout-offering').className = mode === 'offering' ? 'block space-y-4' : 'hidden';
+            document.getElementById('scout-available').className = mode === 'available' ? 'grid grid-cols-2 gap-3' : 'hidden';
+            
+            document.getElementById('btn-scout-offering').className = mode === 'offering' ? 'text-wild-scout border-b-2 border-wild-scout pb-0.5' : 'text-zinc-600 hover:text-white pb-0.5';
+            document.getElementById('btn-scout-available').className = mode === 'available' ? 'text-wild-scout border-b-2 border-wild-scout pb-0.5' : 'text-zinc-600 hover:text-white pb-0.5';
+        }
+
+        // --- DRAWER LOGIC ---
+        function openDrawer(type, data) {
+            const bg = document.getElementById('overlay-bg');
+            const drawer = document.getElementById(`drawer-${type}`);
+            
+            if (type === 'betslip' && data) {
+                document.getElementById('betslip-target').innerText = data.name;
+                document.getElementById('betslip-price').innerText = data.price + '¢';
+            }
+
+            bg.classList.remove('hidden');
+            setTimeout(() => {
+                bg.classList.remove('opacity-0');
+                drawer.style.transform = 'translateY(0)';
+            }, 10);
+        }
+
+        function closeAllDrawers() {
+            const bg = document.getElementById('overlay-bg');
+            document.querySelectorAll('[id^="drawer-"]').forEach(d => {
+                d.style.transform = 'translateY(100%)';
+            });
+            bg.classList.add('opacity-0');
+            setTimeout(() => bg.classList.add('hidden'), 300);
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+    </script>
+</body>
+</html>

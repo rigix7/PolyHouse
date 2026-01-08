@@ -1,0 +1,55 @@
+I want to build the "Wildcard" Sports Prediction Terminal.
+
+**CORE STACK:**
+- **Framework:** Next.js 14 (App Router)
+- **Styling:** Tailwind CSS (Zinc-950 Dark Theme)
+- **Auth:** Privy (@privy-io/react-auth) - Use `useWallets` hook.
+- **Betting Engine:** `@polymarket/builder-relayer-client` (CRITICAL: This enables Gasless Betting).
+- **Security:** `@polymarket/builder-signing-sdk` (For backend header signing).
+- **Blockchain:** `viem` (for Balances) & `ethers@5.7.2` (Required Adapter).
+
+### 1. THE ARCHITECTURE (Builder Pattern)
+We are using the **Builder Relayer** to pay gas for our users.
+- **Frontend:** Uses `RelayClient` to submit orders.
+- **Backend:** A secure Next.js API Route (`/api/polymarket/sign`) that holds my Builder Keys.
+- **Dashboard:** Fetches real USDC balances from Polygon.
+
+### 2. CRITICAL INTEGRATION INSTRUCTIONS (Read Carefully)
+
+**A. The Secure Signing Server (Backend)**
+Create a file `app/api/polymarket/sign/route.ts`:
+- **Function:** This route acts as a security proxy.
+- **Logic:**
+  1. Receive `method`, `path`, and `body` from the client.
+  2. Use `buildHmacSignature` (from builder-signing-sdk) with my `POLY_BUILDER_SECRET` (stored in process.env).
+  3. Return the signed headers (`POLY_BUILDER_SIGNATURE`, `POLY_BUILDER_API_KEY`, etc.) to the client.
+
+**B. The Auth Adapter (Privy -> Ethers)**
+Polymarket's SDK only accepts an `ethers` signer, but Privy provides a `viem` wallet.
+- Create `lib/ethers-adapter.ts`.
+- Implement a class `PrivyEthersSigner` that wraps the Privy wallet and implements `_signTypedData` (EIP-712).
+- *Reference:* This is required to make the `RelayClient` accept the Privy wallet.
+
+**C. The Relay Client (Frontend)**
+Create `lib/polymarket.ts`:
+- Initialize `RelayClient`.
+- **Config:** Set `builderApiEndpoint` to `"/api/polymarket/sign"`.
+- **Usage:** When a user bets, call `client.createOrder()`. The SDK will automatically call our API route to sign the headers.
+
+**D. Data Fetching**
+- **Events:** `GET https://gamma-api.polymarket.com/events?active=true&closed=false`.
+- **Balance:** Use `viem` `createPublicClient` on Polygon (Chain 137) to read USDC (`0x2791Bca...`).
+
+### 3. THE UI BLUEPRINT ("HFS-HUD")
+- **Theme:** Zinc-950 Dark Mode with Neon Accents.
+- **Navigation:** Fixed Bottom Tabs [ PREDICT | SCOUT | TRADE | DASH ].
+- **Header:** Wallet Chip -> routes to `/dashboard` (No modal).
+- **Scout/Trade:** Use Mock Data for now (managed via `/admin`).
+
+**EXECUTION ORDER:**
+1. Setup Next.js + Privy + API Route.
+2. Build the **Admin CMS** (`/admin`) for demo data.
+3. Build the **Predict Tab** (Gasless Relay).
+4. Build the **Dashboard** (Real Balances).
+
+Initialize the project.

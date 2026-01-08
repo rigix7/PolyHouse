@@ -1,43 +1,151 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+
+declare global {
+  interface Window {
+    ethereum?: {
+      isMetaMask?: boolean;
+      request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+      on: (event: string, handler: (...args: unknown[]) => void) => void;
+      removeListener: (event: string, handler: (...args: unknown[]) => void) => void;
+    };
+  }
+}
 
 interface WalletState {
   isConnected: boolean;
   address: string;
-  login: () => void;
+  login: () => Promise<void>;
   logout: () => Promise<void>;
   isLoading: boolean;
-  isPrivyConfigured: boolean;
+  hasInjectedProvider: boolean;
+  signTypedData: (domain: object, types: object, value: object) => Promise<string | null>;
 }
-
-// Demo wallet - simple implementation without Privy hooks
-// Privy hooks require being inside PrivyProvider and conditionally calling hooks breaks React rules
-// For now, we use demo mode. When Privy is configured, it will work via the PrivyProvider in App.tsx
 
 export function useWallet(): WalletState {
   const [isConnected, setIsConnected] = useState(false);
   const [address, setAddress] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   
-  const privyConfigured = !!import.meta.env.VITE_PRIVY_APP_ID;
-  
-  const login = useCallback(() => {
-    // Generate demo address for now
-    // When Privy modal integration is added, this will trigger Privy login
-    const newAddress = "0xDemo" + Math.random().toString(36).substring(2, 10);
-    setAddress(newAddress);
-    setIsConnected(true);
-  }, []);
+  const hasInjectedProvider = typeof window !== "undefined" && !!window.ethereum;
+
+  // Check for existing connection on mount
+  useEffect(() => {
+    if (!hasInjectedProvider) return;
+    
+    const checkConnection = async () => {
+      try {
+        const accounts = await window.ethereum!.request({ 
+          method: "eth_accounts" 
+        }) as string[];
+        if (accounts.length > 0) {
+          setAddress(accounts[0]);
+          setIsConnected(true);
+        }
+      } catch {
+        // Silently fail - user hasn't connected yet
+      }
+    };
+    
+    checkConnection();
+    
+    // Listen for account changes
+    const handleAccountsChanged = (accounts: unknown) => {
+      const accts = accounts as string[];
+      if (accts.length === 0) {
+        setAddress("");
+        setIsConnected(false);
+      } else {
+        setAddress(accts[0]);
+        setIsConnected(true);
+      }
+    };
+    
+    window.ethereum!.on("accountsChanged", handleAccountsChanged);
+    
+    return () => {
+      window.ethereum?.removeListener("accountsChanged", handleAccountsChanged);
+    };
+  }, [hasInjectedProvider]);
+
+  const login = useCallback(async () => {
+    if (!hasInjectedProvider) {
+      // Demo mode fallback
+      const demoAddress = "0x" + Array.from({length: 40}, () => 
+        Math.floor(Math.random() * 16).toString(16)
+      ).join("");
+      setAddress(demoAddress);
+      setIsConnected(true);
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      const accounts = await window.ethereum!.request({ 
+        method: "eth_requestAccounts" 
+      }) as string[];
+      
+      if (accounts.length > 0) {
+        setAddress(accounts[0]);
+        setIsConnected(true);
+      }
+    } catch (err) {
+      console.error("Failed to connect wallet:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [hasInjectedProvider]);
   
   const logout = useCallback(async () => {
     setAddress("");
     setIsConnected(false);
   }, []);
   
+  const signTypedData = useCallback(async (
+    domain: object, 
+    types: object, 
+    value: object
+  ): Promise<string | null> => {
+    if (!hasInjectedProvider || !address) {
+      console.error("No wallet connected for signing");
+      return null;
+    }
+    
+    try {
+      // EIP-712 typed data signing
+      const typedData = {
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          ...types,
+        },
+        primaryType: Object.keys(types)[0],
+        domain,
+        message: value,
+      };
+      
+      const signature = await window.ethereum!.request({
+        method: "eth_signTypedData_v4",
+        params: [address, JSON.stringify(typedData)],
+      }) as string;
+      
+      return signature;
+    } catch (err) {
+      console.error("Failed to sign typed data:", err);
+      return null;
+    }
+  }, [hasInjectedProvider, address]);
+  
   return {
     isConnected,
     address,
     login,
     logout,
-    isLoading: false,
-    isPrivyConfigured: privyConfigured,
+    isLoading,
+    hasInjectedProvider,
+    signTypedData,
   };
 }

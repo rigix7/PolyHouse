@@ -1,0 +1,48 @@
+I have a Next.js app with the UI already built. Now I need you to implement the REAL LOGIC for the "Predict" and "Dashboard" tabs.
+
+**THE GOAL:**
+1. **Predict Tab:** Fetch real live events from Polymarket (via Gamma API) and allow gasless betting (via Builder Relayer).
+2. **Dashboard:** Display the user's REAL USDC balance on Polygon and transaction history.
+3. **Admin Panel:** Allow me to select which sports/leagues appear on the Predict tab.
+
+**CORE STACK TO INSTALL:**
+`npm install @privy-io/react-auth viem ethers@5.7.2 @polymarket/clob-client @polymarket/builder-relayer-client @polymarket/builder-signing-sdk`
+
+---
+
+### 1. THE ADMIN PANEL (CMS Logic)
+**File:** `app/admin/page.tsx`
+**Goal:** Curate the "Predict" feed.
+- **Fetch:** `GET https://gamma-api.polymarket.com/tags` (or `/sports` if available) to list categories like "NBA", "EPL", "Politics".
+- **UI:** A list of checkboxes.
+- **Action:** When I check "NBA" (Tag ID: 123), save this ID to a database or LocalStorage array called `active_tag_ids`.
+
+### 2. THE PREDICT ENGINE (Gamma API + Builder Relayer)
+**File:** `lib/polymarket.ts`
+- **Fetching Events:**
+  - Create a function `getEvents(tagIds: string[])`.
+  - Loop through the `tagIds` and call: `GET https://gamma-api.polymarket.com/events?tag_id={ID}&active=true&closed=false&limit=10`.
+  - **Filter:** Only return events where `markets[0].outcomePrices` exists (liquidity check).
+
+- **The "Gasless" Betting (Builder Relayer):**
+  - **Backend:** Create `app/api/polymarket/sign/route.ts`. Use `@polymarket/builder-signing-sdk` to sign headers using `process.env.POLY_BUILDER_SECRET`.
+  - **Frontend:** Initialize `RelayClient` pointing to this API route.
+  - **Adapter:** Create a `PrivyEthersAdapter` to convert the Privy `useWallets` hook into an `ethers.Signer` (required by Polymarket SDK).
+
+### 3. THE DASHBOARD (Real Assets)
+**File:** `app/dashboard/page.tsx`
+- **USDC Balance (Real):**
+  - Do NOT use Privy's default balance (it only shows MATIC).
+  - Use `viem`. Create a `createPublicClient` for Polygon (Chain 137).
+  - Call `readContract` on USDC: `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174`.
+  - Display this as "Buying Power".
+- **WILD Balance (Simulated):**
+  - For now, fetch this from a mock API or LocalStorage.
+
+---
+
+**CRITICAL INSTRUCTION FOR AI:**
+- Do not modify the existing UI layout (HTML/Tailwind classes). Only inject the data and logic hooks.
+- Handle the `viem` vs `ethers` conflict carefully (Polymarket needs Ethers v5).
+
+Start by installing the dependencies and setting up the Admin Panel logic.

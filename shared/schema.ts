@@ -107,6 +107,17 @@ export const walletSchema = z.object({
 
 export type Wallet = z.infer<typeof walletSchema>;
 
+// Per-wallet record to track WILD points earned from betting
+export const walletRecordSchema = z.object({
+  address: z.string(),
+  wildPoints: z.number(), // 1 WILD per $1 bet
+  totalBetAmount: z.number(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type WalletRecord = z.infer<typeof walletRecordSchema>;
+
 // ============ ADMIN SETTINGS ============
 
 export const polymarketTagSchema = z.object({

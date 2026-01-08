@@ -230,6 +230,20 @@ export async function registerRoutes(
     }
   });
 
+  // Get wallet record (WILD points) by address
+  app.get("/api/wallet/:address", async (req, res) => {
+    try {
+      const { address } = req.params;
+      if (!address) {
+        return res.status(400).json({ error: "Address required" });
+      }
+      const record = await storage.getOrCreateWalletRecord(address);
+      res.json(record);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch wallet record" });
+    }
+  });
+
   app.post("/api/polymarket/sign", async (req, res) => {
     try {
       const { method, path, body } = req.body;

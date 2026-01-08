@@ -1,20 +1,58 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Plus, Trash2, RefreshCw, Check } from "lucide-react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { ArrowLeft, Plus, Trash2, RefreshCw, Check, X } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { fetchGammaTags, type GammaTag } from "@/lib/polymarket";
 import type { Market, Player, InsertMarket, InsertPlayer, AdminSettings } from "@shared/schema";
+
+const playerFormSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  symbol: z.string().min(1, "Symbol is required").max(6, "Max 6 characters"),
+  team: z.string().min(1, "Team is required"),
+  sport: z.string().min(1, "Sport is required"),
+  fundingTarget: z.number().min(1000, "Minimum 1,000"),
+  fundingCurrent: z.number().min(0),
+  status: z.enum(["offering", "available", "closed"]),
+});
+
+type PlayerFormData = z.infer<typeof playerFormSchema>;
 
 export default function AdminPage() {
   const { toast } = useToast();
   const [activeSection, setActiveSection] = useState<"polymarket" | "markets" | "players">("polymarket");
   const [gammaTags, setGammaTags] = useState<GammaTag[]>([]);
   const [loadingTags, setLoadingTags] = useState(false);
+  const [showPlayerForm, setShowPlayerForm] = useState(false);
+
+  const playerForm = useForm<PlayerFormData>({
+    resolver: zodResolver(playerFormSchema),
+    defaultValues: {
+      name: "",
+      symbol: "",
+      team: "",
+      sport: "Basketball",
+      fundingTarget: 100000,
+      fundingCurrent: 0,
+      status: "offering",
+    },
+  });
 
   const { data: markets = [], isLoading: marketsLoading } = useQuery<Market[]>({
     queryKey: ["/api/markets"],
@@ -91,6 +129,8 @@ export default function AdminPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/players"] });
       toast({ title: "Player created successfully" });
+      setShowPlayerForm(false);
+      playerForm.reset();
     },
   });
 
@@ -124,29 +164,33 @@ export default function AdminPage() {
     createMarketMutation.mutate(sampleMarket);
   };
 
-  const handleCreateSamplePlayer = () => {
-    const names = ["Bronny Jr.", "Victor Wembanyama", "Caitlin Clark", "Paolo Banchero"];
-    const teams = ["USC Trojans", "San Antonio Spurs", "Iowa Hawkeyes", "Orlando Magic"];
-    const idx = Math.floor(Math.random() * names.length);
-    
-    const samplePlayer: InsertPlayer = {
-      name: names[idx],
-      symbol: names[idx].split(" ")[0].toUpperCase().slice(0, 4),
-      team: teams[idx],
-      sport: "Basketball",
-      avatarInitials: names[idx].split(" ").map(n => n[0]).join(""),
-      fundingTarget: 100000,
-      fundingCurrent: Math.floor(Math.random() * 80000) + 10000,
-      fundingPercentage: Math.floor(Math.random() * 80) + 10,
+  const onSubmitPlayer = (data: PlayerFormData) => {
+    const fundingPercentage = Math.round((data.fundingCurrent / data.fundingTarget) * 100);
+    const avatarInitials = data.name
+      .split(" ")
+      .map(n => n[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+
+    const newPlayer: InsertPlayer = {
+      name: data.name,
+      symbol: data.symbol.toUpperCase(),
+      team: data.team,
+      sport: data.sport,
+      avatarInitials,
+      fundingTarget: data.fundingTarget,
+      fundingCurrent: data.fundingCurrent,
+      fundingPercentage,
       generation: 1,
-      status: Math.random() > 0.5 ? "offering" : "available",
-      stats: {
+      status: data.status,
+      stats: data.status === "available" ? {
         holders: Math.floor(Math.random() * 500) + 50,
-        marketCap: Math.floor(Math.random() * 100000) + 10000,
-        change24h: (Math.random() - 0.5) * 20,
-      },
+        marketCap: data.fundingTarget,
+        change24h: 0,
+      } : undefined,
     };
-    createPlayerMutation.mutate(samplePlayer);
+    createPlayerMutation.mutate(newPlayer);
   };
 
   return (
@@ -324,20 +368,147 @@ export default function AdminPage() {
             <div className="flex justify-between items-center gap-2 flex-wrap">
               <h2 className="text-lg font-bold">Demo Players</h2>
               <Button
-                onClick={handleCreateSamplePlayer}
-                disabled={createPlayerMutation.isPending}
-                data-testid="button-create-player"
+                onClick={() => setShowPlayerForm(!showPlayerForm)}
+                data-testid="button-toggle-player-form"
               >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Sample Player
+                {showPlayerForm ? (
+                  <>
+                    <X className="w-4 h-4 mr-2" />
+                    Cancel
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Player
+                  </>
+                )}
               </Button>
             </div>
+
+            {showPlayerForm && (
+              <Card className="p-4 space-y-4">
+                <h3 className="font-bold text-zinc-300">Create New Player</h3>
+                <form onSubmit={playerForm.handleSubmit(onSubmitPlayer)} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="name">Player Name</Label>
+                      <Input
+                        id="name"
+                        placeholder="e.g. LeBron James"
+                        {...playerForm.register("name")}
+                        data-testid="input-player-name"
+                      />
+                      {playerForm.formState.errors.name && (
+                        <p className="text-xs text-red-500">{playerForm.formState.errors.name.message}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="symbol">Symbol (Token)</Label>
+                      <Input
+                        id="symbol"
+                        placeholder="e.g. LBJ"
+                        maxLength={6}
+                        {...playerForm.register("symbol")}
+                        data-testid="input-player-symbol"
+                      />
+                      {playerForm.formState.errors.symbol && (
+                        <p className="text-xs text-red-500">{playerForm.formState.errors.symbol.message}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="team">Team</Label>
+                      <Input
+                        id="team"
+                        placeholder="e.g. Los Angeles Lakers"
+                        {...playerForm.register("team")}
+                        data-testid="input-player-team"
+                      />
+                      {playerForm.formState.errors.team && (
+                        <p className="text-xs text-red-500">{playerForm.formState.errors.team.message}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="sport">Sport</Label>
+                      <Select
+                        value={playerForm.watch("sport")}
+                        onValueChange={(value) => playerForm.setValue("sport", value)}
+                      >
+                        <SelectTrigger data-testid="select-player-sport">
+                          <SelectValue placeholder="Select sport" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Basketball">Basketball</SelectItem>
+                          <SelectItem value="Football">Football</SelectItem>
+                          <SelectItem value="Soccer">Soccer</SelectItem>
+                          <SelectItem value="Baseball">Baseball</SelectItem>
+                          <SelectItem value="Hockey">Hockey</SelectItem>
+                          <SelectItem value="Tennis">Tennis</SelectItem>
+                          <SelectItem value="Golf">Golf</SelectItem>
+                          <SelectItem value="MMA">MMA</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="fundingTarget">Funding Target ($)</Label>
+                      <Input
+                        id="fundingTarget"
+                        type="number"
+                        {...playerForm.register("fundingTarget", { valueAsNumber: true })}
+                        data-testid="input-funding-target"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="fundingCurrent">Current Funding ($)</Label>
+                      <Input
+                        id="fundingCurrent"
+                        type="number"
+                        {...playerForm.register("fundingCurrent", { valueAsNumber: true })}
+                        data-testid="input-funding-current"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="status">Status</Label>
+                      <Select
+                        value={playerForm.watch("status")}
+                        onValueChange={(value: "offering" | "available" | "closed") => 
+                          playerForm.setValue("status", value)
+                        }
+                      >
+                        <SelectTrigger data-testid="select-player-status">
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="offering">Offering (Funding)</SelectItem>
+                          <SelectItem value="available">Available (Trading)</SelectItem>
+                          <SelectItem value="closed">Closed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={createPlayerMutation.isPending}
+                    className="w-full"
+                    data-testid="button-submit-player"
+                  >
+                    {createPlayerMutation.isPending ? "Creating..." : "Create Player"}
+                  </Button>
+                </form>
+              </Card>
+            )}
 
             {playersLoading ? (
               <div className="text-zinc-500">Loading...</div>
             ) : players.length === 0 ? (
               <Card className="p-8 text-center text-zinc-500">
-                No players yet. Click "Add Sample Player" to create one.
+                No players yet. Click "Add Player" to create one.
               </Card>
             ) : (
               <div className="space-y-2">
@@ -350,7 +521,10 @@ export default function AdminPage() {
                     <div className="min-w-0 flex-1">
                       <div className="font-bold truncate">{player.name}</div>
                       <div className="text-sm text-zinc-500">
-                        ${player.symbol} | {player.team} | {player.status}
+                        ${player.symbol} | {player.team} | {player.sport} | {player.status}
+                      </div>
+                      <div className="text-xs text-zinc-600">
+                        Funding: ${player.fundingCurrent.toLocaleString()} / ${player.fundingTarget.toLocaleString()} ({player.fundingPercentage}%)
                       </div>
                     </div>
                     <Button

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Header } from "@/components/terminal/Header";
 import { BottomNav, TabType } from "@/components/terminal/BottomNav";
@@ -10,15 +10,69 @@ import { TradeView } from "@/components/views/TradeView";
 import { DashboardView } from "@/components/views/DashboardView";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { fetchGammaEvents, gammaEventToMarket } from "@/lib/polymarket";
-import type { Market, Player, Trade, Bet, Wallet, AdminSettings } from "@shared/schema";
+import { getUSDCBalance } from "@/lib/polygon";
+import type { Market, Player, Trade, Bet, Wallet, AdminSettings, WalletRecord } from "@shared/schema";
 
-export default function HomePage() {
+// Check if Privy is available
+const hasPrivyAppId = !!import.meta.env.VITE_PRIVY_APP_ID;
+
+// Wrapper component that uses Privy hooks
+function HomeWithPrivy() {
+  // These imports are safe because we only render this component when Privy is available
+  const { usePrivy, useWallets } = require("@privy-io/react-auth");
+  const { authenticated, login, logout } = usePrivy();
+  const { wallets } = useWallets();
+  const walletAddress = wallets?.[0]?.address || "";
+
+  return (
+    <HomeContent
+      authenticated={authenticated}
+      walletAddress={walletAddress}
+      onLogin={login}
+      onLogout={logout}
+    />
+  );
+}
+
+// Fallback component without Privy
+function HomeWithoutPrivy() {
+  const [fakeAuth, setFakeAuth] = useState(false);
+  const [fakeAddress, setFakeAddress] = useState("");
+
+  const handleLogin = () => {
+    setFakeAuth(true);
+    setFakeAddress("0x0000000000000000000000000000000000000000");
+  };
+
+  const handleLogout = () => {
+    setFakeAuth(false);
+    setFakeAddress("");
+  };
+
+  return (
+    <HomeContent
+      authenticated={fakeAuth}
+      walletAddress={fakeAddress}
+      onLogin={handleLogin}
+      onLogout={handleLogout}
+    />
+  );
+}
+
+interface HomeContentProps {
+  authenticated: boolean;
+  walletAddress: string;
+  onLogin: () => void;
+  onLogout: () => void;
+}
+
+function HomeContent({ authenticated, walletAddress, onLogin, onLogout }: HomeContentProps) {
   const [activeTab, setActiveTab] = useState<TabType>("predict");
   const [isWalletOpen, setIsWalletOpen] = useState(false);
-  const [isConnected, setIsConnected] = useState(true);
   const [selectedBet, setSelectedBet] = useState<{ marketId: string; outcomeId: string } | undefined>();
   const [liveMarkets, setLiveMarkets] = useState<Market[]>([]);
   const [liveMarketsLoading, setLiveMarketsLoading] = useState(false);
+  const [usdcBalance, setUsdcBalance] = useState(0);
   const { showToast, ToastContainer } = useTerminalToast();
 
   const { data: demoMarkets = [], isLoading: demoMarketsLoading } = useQuery<Market[]>({
@@ -27,6 +81,11 @@ export default function HomePage() {
 
   const { data: adminSettings } = useQuery<AdminSettings>({
     queryKey: ["/api/admin/settings"],
+  });
+
+  const { data: walletRecord } = useQuery<WalletRecord>({
+    queryKey: ["/api/wallet", walletAddress],
+    enabled: !!walletAddress,
   });
 
   const { data: players = [], isLoading: playersLoading } = useQuery<Player[]>({
@@ -41,9 +100,18 @@ export default function HomePage() {
     queryKey: ["/api/bets"],
   });
 
-  const { data: wallet } = useQuery<Wallet>({
-    queryKey: ["/api/wallet"],
-  });
+  // Fetch real USDC balance when wallet is connected
+  useEffect(() => {
+    const fetchBalance = async () => {
+      if (walletAddress && walletAddress !== "0x0000000000000000000000000000000000000000") {
+        const balance = await getUSDCBalance(walletAddress);
+        setUsdcBalance(balance);
+      } else {
+        setUsdcBalance(0);
+      }
+    };
+    fetchBalance();
+  }, [walletAddress]);
 
   useEffect(() => {
     const loadLiveMarkets = async () => {
@@ -87,14 +155,26 @@ export default function HomePage() {
   const markets = hasLiveMarkets ? liveMarkets : demoMarkets;
   const marketsLoading = hasLiveMarkets ? liveMarketsLoading : demoMarketsLoading;
 
+  // Build wallet object from real data
+  const wildBalance = walletRecord?.wildPoints || 0;
+  const wallet: Wallet = useMemo(() => ({
+    address: walletAddress || "",
+    usdcBalance: usdcBalance,
+    wildBalance: wildBalance,
+    totalValue: usdcBalance + wildBalance,
+  }), [walletAddress, usdcBalance, wildBalance]);
+
   const placeBetMutation = useMutation({
     mutationFn: async (data: { marketId: string; outcomeId: string; amount: number; odds: number }) => {
-      return apiRequest("POST", "/api/bets", data);
+      return apiRequest("POST", "/api/bets", {
+        ...data,
+        walletAddress: walletAddress,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bets"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/wallet"] });
-      showToast("Bet placed successfully!", "success");
+      queryClient.invalidateQueries({ queryKey: ["/api/wallet", walletAddress] });
+      showToast("Bet placed successfully! +1 WILD per $1", "success");
       setSelectedBet(undefined);
     },
     onError: () => {
@@ -108,7 +188,6 @@ export default function HomePage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/players"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/wallet"] });
       showToast("Funded 500 WILD successfully!", "success");
     },
     onError: () => {
@@ -122,7 +201,6 @@ export default function HomePage() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/trades"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/wallet"] });
       showToast(`${variables.type === "buy" ? "Bought" : "Sold"} successfully!`, "success");
     },
     onError: () => {
@@ -131,6 +209,12 @@ export default function HomePage() {
   });
 
   const handlePlaceBet = (marketId: string, outcomeId: string, odds: number) => {
+    if (!authenticated) {
+      showToast("Connect wallet to place bets", "info");
+      setIsWalletOpen(true);
+      return;
+    }
+
     if (selectedBet?.marketId === marketId && selectedBet?.outcomeId === outcomeId) {
       placeBetMutation.mutate({ marketId, outcomeId, amount: 10, odds });
     } else {
@@ -148,13 +232,12 @@ export default function HomePage() {
   };
 
   const handleConnect = () => {
-    setIsConnected(true);
+    onLogin();
     setIsWalletOpen(false);
-    showToast("Wallet connected!", "success");
   };
 
   const handleDisconnect = () => {
-    setIsConnected(false);
+    onLogout();
     setIsWalletOpen(false);
     showToast("Wallet disconnected", "info");
   };
@@ -163,9 +246,10 @@ export default function HomePage() {
     <div className="min-h-screen bg-zinc-950 bg-hud-grid bg-[size:30px_30px] font-sans selection:bg-wild-brand selection:text-black text-sm overflow-hidden">
       <div className="relative z-10 h-screen flex flex-col max-w-[430px] mx-auto border-x border-zinc-800/50 bg-zinc-950/95 shadow-2xl">
         <Header
-          usdcBalance={wallet?.usdcBalance || 4240.50}
-          wildBalance={wallet?.wildBalance || 1250}
+          usdcBalance={wallet.usdcBalance}
+          wildBalance={wallet.wildBalance}
           onWalletClick={() => setIsWalletOpen(true)}
+          isConnected={authenticated}
         />
 
         <main className="flex-1 overflow-hidden">
@@ -194,7 +278,7 @@ export default function HomePage() {
           )}
           {activeTab === "dash" && (
             <DashboardView
-              wallet={wallet || null}
+              wallet={authenticated ? wallet : null}
               bets={bets}
               trades={trades}
               isLoading={betsLoading || tradesLoading}
@@ -208,8 +292,8 @@ export default function HomePage() {
       <WalletDrawer
         isOpen={isWalletOpen}
         onClose={() => setIsWalletOpen(false)}
-        wallet={wallet || null}
-        isConnected={isConnected}
+        wallet={authenticated ? wallet : null}
+        isConnected={authenticated}
         onConnect={handleConnect}
         onDisconnect={handleDisconnect}
       />
@@ -217,4 +301,11 @@ export default function HomePage() {
       <ToastContainer />
     </div>
   );
+}
+
+export default function HomePage() {
+  if (hasPrivyAppId) {
+    return <HomeWithPrivy />;
+  }
+  return <HomeWithoutPrivy />;
 }

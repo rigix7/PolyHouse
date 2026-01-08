@@ -10,6 +10,7 @@ import type {
   InsertTrade,
   Wallet,
   AdminSettings,
+  WalletRecord,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -35,6 +36,10 @@ export interface IStorage {
   getWallet(): Promise<Wallet>;
   updateWallet(updates: Partial<Wallet>): Promise<Wallet>;
 
+  getWalletRecord(address: string): Promise<WalletRecord | undefined>;
+  getOrCreateWalletRecord(address: string): Promise<WalletRecord>;
+  addWildPoints(address: string, amount: number): Promise<WalletRecord>;
+
   getAdminSettings(): Promise<AdminSettings>;
   updateAdminSettings(updates: Partial<AdminSettings>): Promise<AdminSettings>;
 }
@@ -45,6 +50,7 @@ export class MemStorage implements IStorage {
   private bets: Map<string, Bet>;
   private trades: Map<string, Trade>;
   private wallet: Wallet;
+  private walletRecords: Map<string, WalletRecord>;
   private adminSettings: AdminSettings;
 
   constructor() {
@@ -52,11 +58,12 @@ export class MemStorage implements IStorage {
     this.players = new Map();
     this.bets = new Map();
     this.trades = new Map();
+    this.walletRecords = new Map();
     this.wallet = {
-      address: "0x1234...5678",
-      usdcBalance: 4240.50,
-      wildBalance: 1250,
-      totalValue: 5490.50,
+      address: "",
+      usdcBalance: 0,
+      wildBalance: 0,
+      totalValue: 0,
     };
     this.adminSettings = {
       demoMode: false,
@@ -290,8 +297,10 @@ export class MemStorage implements IStorage {
     };
     this.bets.set(id, newBet);
 
-    this.wallet.usdcBalance -= bet.amount;
-    this.wallet.totalValue = this.wallet.usdcBalance + this.wallet.wildBalance;
+    // Award WILD points: 1 WILD per $1 bet
+    if (bet.walletAddress) {
+      await this.addWildPoints(bet.walletAddress, bet.amount);
+    }
 
     return newBet;
   }
@@ -330,6 +339,35 @@ export class MemStorage implements IStorage {
   async updateWallet(updates: Partial<Wallet>): Promise<Wallet> {
     this.wallet = { ...this.wallet, ...updates };
     return this.wallet;
+  }
+
+  async getWalletRecord(address: string): Promise<WalletRecord | undefined> {
+    return this.walletRecords.get(address.toLowerCase());
+  }
+
+  async getOrCreateWalletRecord(address: string): Promise<WalletRecord> {
+    const normalizedAddress = address.toLowerCase();
+    let record = this.walletRecords.get(normalizedAddress);
+    if (!record) {
+      record = {
+        address: normalizedAddress,
+        wildPoints: 0,
+        totalBetAmount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      this.walletRecords.set(normalizedAddress, record);
+    }
+    return record;
+  }
+
+  async addWildPoints(address: string, amount: number): Promise<WalletRecord> {
+    const record = await this.getOrCreateWalletRecord(address);
+    record.wildPoints += amount;
+    record.totalBetAmount += amount;
+    record.updatedAt = new Date().toISOString();
+    this.walletRecords.set(address.toLowerCase(), record);
+    return record;
   }
 
   async getAdminSettings(): Promise<AdminSettings> {

@@ -40,4 +40,7 @@ export default defineConfig({
       deny: ["**/.*"],
     },
   },
+  optimizeDeps: {
+    include: ["@privy-io/react-auth"],
+  },
 });

@@ -1,16 +1,24 @@
 import { randomUUID } from "crypto";
-import type {
-  Market,
-  InsertMarket,
-  Player,
-  InsertPlayer,
-  Bet,
-  InsertBet,
-  Trade,
-  InsertTrade,
-  Wallet,
-  AdminSettings,
-  WalletRecord,
+import { eq } from "drizzle-orm";
+import { db } from "./db";
+import {
+  markets,
+  players,
+  bets,
+  trades,
+  walletRecords,
+  adminSettings,
+  type Market,
+  type InsertMarket,
+  type Player,
+  type InsertPlayer,
+  type Bet,
+  type InsertBet,
+  type Trade,
+  type InsertTrade,
+  type Wallet,
+  type AdminSettings,
+  type WalletRecord,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -42,40 +50,223 @@ export interface IStorage {
 
   getAdminSettings(): Promise<AdminSettings>;
   updateAdminSettings(updates: Partial<AdminSettings>): Promise<AdminSettings>;
+
+  seedInitialData(): Promise<void>;
 }
 
-export class MemStorage implements IStorage {
-  private markets: Map<string, Market>;
-  private players: Map<string, Player>;
-  private bets: Map<string, Bet>;
-  private trades: Map<string, Trade>;
-  private wallet: Wallet;
-  private walletRecords: Map<string, WalletRecord>;
-  private adminSettings: AdminSettings;
+export class DatabaseStorage implements IStorage {
+  private wallet: Wallet = {
+    address: "",
+    usdcBalance: 0,
+    wildBalance: 0,
+    totalValue: 0,
+  };
 
-  constructor() {
-    this.markets = new Map();
-    this.players = new Map();
-    this.bets = new Map();
-    this.trades = new Map();
-    this.walletRecords = new Map();
-    this.wallet = {
-      address: "",
-      usdcBalance: 0,
-      wildBalance: 0,
-      totalValue: 0,
-    };
-    this.adminSettings = {
-      demoMode: false,
-      mockDataEnabled: true,
-      activeTagIds: [],
-      lastUpdated: new Date().toISOString(),
-    };
-
-    this.seedData();
+  async getMarkets(): Promise<Market[]> {
+    return await db.select().from(markets);
   }
 
-  private seedData() {
+  async getMarket(id: string): Promise<Market | undefined> {
+    const [market] = await db.select().from(markets).where(eq(markets.id, id));
+    return market || undefined;
+  }
+
+  async createMarket(market: InsertMarket): Promise<Market> {
+    const id = randomUUID();
+    const [newMarket] = await db.insert(markets).values({ 
+      id,
+      title: market.title,
+      description: market.description,
+      category: market.category,
+      sport: market.sport,
+      league: market.league,
+      startTime: market.startTime,
+      endTime: market.endTime,
+      status: market.status || "open",
+      outcomes: market.outcomes as Array<{ id: string; label: string; odds: number; probability: number }>,
+      volume: market.volume || 0,
+      liquidity: market.liquidity || 0,
+      imageUrl: market.imageUrl,
+    }).returning();
+    return newMarket;
+  }
+
+  async deleteMarket(id: string): Promise<boolean> {
+    const result = await db.delete(markets).where(eq(markets.id, id));
+    return true;
+  }
+
+  async getPlayers(): Promise<Player[]> {
+    return await db.select().from(players);
+  }
+
+  async getPlayer(id: string): Promise<Player | undefined> {
+    const [player] = await db.select().from(players).where(eq(players.id, id));
+    return player || undefined;
+  }
+
+  async createPlayer(player: InsertPlayer): Promise<Player> {
+    const id = randomUUID();
+    const [newPlayer] = await db.insert(players).values({ 
+      id,
+      name: player.name,
+      symbol: player.symbol,
+      team: player.team,
+      sport: player.sport,
+      avatarInitials: player.avatarInitials,
+      avatarUrl: player.avatarUrl,
+      fundingTarget: player.fundingTarget,
+      fundingCurrent: player.fundingCurrent || 0,
+      fundingPercentage: player.fundingPercentage || 0,
+      generation: player.generation || 1,
+      status: player.status || "offering",
+      priceHistory: player.priceHistory as Array<{ timestamp: string; price: number }> | undefined,
+      stats: player.stats as { holders: number; marketCap: number; change24h: number } | undefined,
+    }).returning();
+    return newPlayer;
+  }
+
+  async updatePlayer(id: string, updates: Partial<Player>): Promise<Player | undefined> {
+    const [updated] = await db.update(players).set(updates).where(eq(players.id, id)).returning();
+    return updated || undefined;
+  }
+
+  async deletePlayer(id: string): Promise<boolean> {
+    await db.delete(players).where(eq(players.id, id));
+    return true;
+  }
+
+  async getBets(): Promise<Bet[]> {
+    return await db.select().from(bets);
+  }
+
+  async getBet(id: string): Promise<Bet | undefined> {
+    const [bet] = await db.select().from(bets).where(eq(bets.id, id));
+    return bet || undefined;
+  }
+
+  async createBet(bet: InsertBet): Promise<Bet> {
+    const id = randomUUID();
+    const placedAt = new Date().toISOString();
+    const [newBet] = await db.insert(bets).values({
+      ...bet,
+      id,
+      placedAt,
+      status: "pending",
+    }).returning();
+
+    if (bet.walletAddress) {
+      await this.addWildPoints(bet.walletAddress, bet.amount);
+    }
+
+    return newBet;
+  }
+
+  async getTrades(): Promise<Trade[]> {
+    return await db.select().from(trades);
+  }
+
+  async getTrade(id: string): Promise<Trade | undefined> {
+    const [trade] = await db.select().from(trades).where(eq(trades.id, id));
+    return trade || undefined;
+  }
+
+  async createTrade(trade: InsertTrade): Promise<Trade> {
+    const id = randomUUID();
+    const timestamp = new Date().toISOString();
+    const [newTrade] = await db.insert(trades).values({
+      ...trade,
+      id,
+      timestamp,
+    }).returning();
+
+    if (trade.type === "buy") {
+      this.wallet.usdcBalance -= trade.total;
+    } else {
+      this.wallet.usdcBalance += trade.total;
+    }
+    this.wallet.totalValue = this.wallet.usdcBalance + this.wallet.wildBalance;
+
+    return newTrade;
+  }
+
+  async getWallet(): Promise<Wallet> {
+    return this.wallet;
+  }
+
+  async updateWallet(updates: Partial<Wallet>): Promise<Wallet> {
+    this.wallet = { ...this.wallet, ...updates };
+    return this.wallet;
+  }
+
+  async getWalletRecord(address: string): Promise<WalletRecord | undefined> {
+    const normalizedAddress = address.toLowerCase();
+    const [record] = await db.select().from(walletRecords).where(eq(walletRecords.address, normalizedAddress));
+    return record || undefined;
+  }
+
+  async getOrCreateWalletRecord(address: string): Promise<WalletRecord> {
+    const normalizedAddress = address.toLowerCase();
+    let record = await this.getWalletRecord(normalizedAddress);
+    if (!record) {
+      const now = new Date().toISOString();
+      const [newRecord] = await db.insert(walletRecords).values({
+        address: normalizedAddress,
+        wildPoints: 0,
+        totalBetAmount: 0,
+        createdAt: now,
+        updatedAt: now,
+      }).returning();
+      record = newRecord;
+    }
+    return record;
+  }
+
+  async addWildPoints(address: string, amount: number): Promise<WalletRecord> {
+    const record = await this.getOrCreateWalletRecord(address);
+    const updatedAt = new Date().toISOString();
+    const [updated] = await db.update(walletRecords)
+      .set({
+        wildPoints: record.wildPoints + amount,
+        totalBetAmount: record.totalBetAmount + amount,
+        updatedAt,
+      })
+      .where(eq(walletRecords.address, record.address))
+      .returning();
+    return updated;
+  }
+
+  async getAdminSettings(): Promise<AdminSettings> {
+    const [settings] = await db.select().from(adminSettings).limit(1);
+    if (!settings) {
+      const now = new Date().toISOString();
+      const [newSettings] = await db.insert(adminSettings).values({
+        demoMode: false,
+        mockDataEnabled: true,
+        activeTagIds: [],
+        lastUpdated: now,
+      }).returning();
+      return newSettings;
+    }
+    return settings;
+  }
+
+  async updateAdminSettings(updates: Partial<AdminSettings>): Promise<AdminSettings> {
+    const current = await this.getAdminSettings();
+    const [updated] = await db.update(adminSettings)
+      .set({
+        ...updates,
+        lastUpdated: new Date().toISOString(),
+      })
+      .where(eq(adminSettings.id, current.id))
+      .returning();
+    return updated;
+  }
+
+  async seedInitialData(): Promise<void> {
+    const existingMarkets = await this.getMarkets();
+    if (existingMarkets.length > 0) return;
+
     const sampleMarkets: InsertMarket[] = [
       {
         title: "Lakers vs Celtics",
@@ -222,166 +413,16 @@ export class MemStorage implements IStorage {
       },
     ];
 
-    sampleMarkets.forEach((m) => {
-      const id = randomUUID();
-      this.markets.set(id, { ...m, id });
-    });
-
-    samplePlayers.forEach((p) => {
-      const id = randomUUID();
-      this.players.set(id, { ...p, id });
-    });
-  }
-
-  async getMarkets(): Promise<Market[]> {
-    return Array.from(this.markets.values());
-  }
-
-  async getMarket(id: string): Promise<Market | undefined> {
-    return this.markets.get(id);
-  }
-
-  async createMarket(market: InsertMarket): Promise<Market> {
-    const id = randomUUID();
-    const newMarket: Market = { ...market, id };
-    this.markets.set(id, newMarket);
-    return newMarket;
-  }
-
-  async deleteMarket(id: string): Promise<boolean> {
-    return this.markets.delete(id);
-  }
-
-  async getPlayers(): Promise<Player[]> {
-    return Array.from(this.players.values());
-  }
-
-  async getPlayer(id: string): Promise<Player | undefined> {
-    return this.players.get(id);
-  }
-
-  async createPlayer(player: InsertPlayer): Promise<Player> {
-    const id = randomUUID();
-    const newPlayer: Player = { ...player, id };
-    this.players.set(id, newPlayer);
-    return newPlayer;
-  }
-
-  async updatePlayer(id: string, updates: Partial<Player>): Promise<Player | undefined> {
-    const player = this.players.get(id);
-    if (!player) return undefined;
-    const updated = { ...player, ...updates };
-    this.players.set(id, updated);
-    return updated;
-  }
-
-  async deletePlayer(id: string): Promise<boolean> {
-    return this.players.delete(id);
-  }
-
-  async getBets(): Promise<Bet[]> {
-    return Array.from(this.bets.values());
-  }
-
-  async getBet(id: string): Promise<Bet | undefined> {
-    return this.bets.get(id);
-  }
-
-  async createBet(bet: InsertBet): Promise<Bet> {
-    const id = randomUUID();
-    const newBet: Bet = {
-      ...bet,
-      id,
-      status: "pending",
-      placedAt: new Date().toISOString(),
-    };
-    this.bets.set(id, newBet);
-
-    // Award WILD points: 1 WILD per $1 bet
-    if (bet.walletAddress) {
-      await this.addWildPoints(bet.walletAddress, bet.amount);
+    for (const market of sampleMarkets) {
+      await this.createMarket(market);
     }
 
-    return newBet;
-  }
-
-  async getTrades(): Promise<Trade[]> {
-    return Array.from(this.trades.values());
-  }
-
-  async getTrade(id: string): Promise<Trade | undefined> {
-    return this.trades.get(id);
-  }
-
-  async createTrade(trade: InsertTrade): Promise<Trade> {
-    const id = randomUUID();
-    const newTrade: Trade = {
-      ...trade,
-      id,
-      timestamp: new Date().toISOString(),
-    };
-    this.trades.set(id, newTrade);
-
-    if (trade.type === "buy") {
-      this.wallet.usdcBalance -= trade.total;
-    } else {
-      this.wallet.usdcBalance += trade.total;
+    for (const player of samplePlayers) {
+      await this.createPlayer(player);
     }
-    this.wallet.totalValue = this.wallet.usdcBalance + this.wallet.wildBalance;
 
-    return newTrade;
-  }
-
-  async getWallet(): Promise<Wallet> {
-    return this.wallet;
-  }
-
-  async updateWallet(updates: Partial<Wallet>): Promise<Wallet> {
-    this.wallet = { ...this.wallet, ...updates };
-    return this.wallet;
-  }
-
-  async getWalletRecord(address: string): Promise<WalletRecord | undefined> {
-    return this.walletRecords.get(address.toLowerCase());
-  }
-
-  async getOrCreateWalletRecord(address: string): Promise<WalletRecord> {
-    const normalizedAddress = address.toLowerCase();
-    let record = this.walletRecords.get(normalizedAddress);
-    if (!record) {
-      record = {
-        address: normalizedAddress,
-        wildPoints: 0,
-        totalBetAmount: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      this.walletRecords.set(normalizedAddress, record);
-    }
-    return record;
-  }
-
-  async addWildPoints(address: string, amount: number): Promise<WalletRecord> {
-    const record = await this.getOrCreateWalletRecord(address);
-    record.wildPoints += amount;
-    record.totalBetAmount += amount;
-    record.updatedAt = new Date().toISOString();
-    this.walletRecords.set(address.toLowerCase(), record);
-    return record;
-  }
-
-  async getAdminSettings(): Promise<AdminSettings> {
-    return this.adminSettings;
-  }
-
-  async updateAdminSettings(updates: Partial<AdminSettings>): Promise<AdminSettings> {
-    this.adminSettings = {
-      ...this.adminSettings,
-      ...updates,
-      lastUpdated: new Date().toISOString(),
-    };
-    return this.adminSettings;
+    console.log("Database seeded with initial data");
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();

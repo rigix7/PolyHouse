@@ -19,6 +19,9 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  // Seed initial data on startup
+  await storage.seedInitialData();
+
   app.get("/api/markets", async (req, res) => {
     try {
       const markets = await storage.getMarkets();

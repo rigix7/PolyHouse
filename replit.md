@@ -5,7 +5,7 @@ Wildcard is a sports prediction terminal application featuring a HUD-style dark 
 
 ## Current State
 - **MVP Complete**: All core tabs (Predict, Scout, Trade, Dashboard) functional
-- **Demo Mode**: Uses in-memory storage with seeded sample data
+- **Database**: PostgreSQL with Drizzle ORM for persistent storage
 - **Theme**: Zinc-950 dark mode with neon accents
 
 ## Project Architecture
@@ -18,7 +18,7 @@ Wildcard is a sports prediction terminal application featuring a HUD-style dark 
 
 ### Backend (server/)
 - **Framework**: Express.js
-- **Storage**: In-memory (MemStorage class)
+- **Storage**: PostgreSQL with Drizzle ORM (DatabaseStorage class)
 - **API**: RESTful endpoints at /api/*
 
 ### Shared (shared/)
@@ -49,5 +49,6 @@ Wildcard is a sports prediction terminal application featuring a HUD-style dark 
 ## Recent Changes
 - Initial MVP implementation (January 2026)
 - Created terminal-style UI components
-- Implemented in-memory storage with sample data
 - Built Admin CMS for data management
+- Migrated to PostgreSQL database with Drizzle ORM (January 10, 2026)
+- Auto-seeds 3 markets and 6 players on startup if database is empty

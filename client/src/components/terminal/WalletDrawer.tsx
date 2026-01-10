@@ -3,6 +3,51 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import type { Wallet as WalletType } from "@shared/schema";
 
+function SafeAddressDisplay({ address }: { address: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const truncateAddress = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+
+  const copyAddress = async () => {
+    await navigator.clipboard.writeText(address);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="flex items-center justify-between bg-zinc-900 rounded p-2 mt-2">
+      <div className="flex flex-col">
+        <span className="text-[10px] text-zinc-500 mb-0.5">Deposit Address</span>
+        <span className="text-[11px] font-mono text-zinc-300">{truncateAddress(address)}</span>
+      </div>
+      <div className="flex items-center gap-1">
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={copyAddress}
+          className="w-7 h-7"
+          data-testid="button-copy-safe-address"
+        >
+          {copied ? (
+            <Check className="w-3 h-3 text-wild-scout" />
+          ) : (
+            <Copy className="w-3 h-3 text-zinc-400" />
+          )}
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={() => window.open(`https://polygonscan.com/address/${address}`, "_blank")}
+          className="w-7 h-7"
+          data-testid="button-view-safe-explorer"
+        >
+          <ExternalLink className="w-3 h-3 text-zinc-400" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 interface WalletDrawerProps {
   isOpen: boolean;
   onClose: () => void;
@@ -153,22 +198,20 @@ export function WalletDrawer({
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <Shield className="w-4 h-4 text-wild-trade" />
-                        <span className="text-sm font-medium text-white">Safe Wallet</span>
+                        <span className="text-sm font-medium text-white">Trading Wallet</span>
                       </div>
                       {isSafeDeployed ? (
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-wild-scout/20 text-wild-scout font-medium">
                           Active
                         </span>
                       ) : (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500 font-medium">
-                          Not Deployed
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-medium">
+                          Activation Required
                         </span>
                       )}
                     </div>
                     {isSafeDeployed && safeAddress ? (
-                      <div className="text-[11px] font-mono text-zinc-500">
-                        {truncateAddress(safeAddress)}
-                      </div>
+                      <SafeAddressDisplay address={safeAddress} />
                     ) : (
                       <Button
                         size="sm"
@@ -176,22 +219,22 @@ export function WalletDrawer({
                         className="w-full mt-2 text-xs border-wild-trade/30 text-wild-trade"
                         onClick={onDeploySafe}
                         disabled={isSafeDeploying}
-                        data-testid="button-deploy-safe"
+                        data-testid="button-activate-wallet"
                       >
                         {isSafeDeploying ? (
                           <>
                             <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                            Deploying...
+                            Activating...
                           </>
                         ) : (
-                          "Deploy Safe for Gasless Trading"
+                          "Activate Wallet"
                         )}
                       </Button>
                     )}
                     <p className="text-[10px] text-zinc-600 mt-2">
                       {isSafeDeployed 
-                        ? "Gasless trading enabled via Polymarket Builder"
-                        : "Deploy a Safe wallet for gasless Polymarket trades"}
+                        ? "Gasless trading enabled. Deposit USDC to start betting."
+                        : "One-time activation for gasless trading on Polymarket"}
                     </p>
                   </div>
                 </div>

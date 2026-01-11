@@ -23,7 +23,7 @@ interface PredictViewProps {
   futures: Futures[];
   isLoading: boolean;
   futuresLoading: boolean;
-  onPlaceBet: (marketId: string, outcomeId: string, odds: number) => void;
+  onPlaceBet: (marketId: string, outcomeId: string, odds: number, marketTitle?: string, outcomeLabel?: string, marketType?: string, yesTokenId?: string, noTokenId?: string) => void;
   selectedBet?: { marketId: string; outcomeId: string };
   adminSettings?: AdminSettings;
 }
@@ -388,8 +388,21 @@ export function PredictView({
     const price = market.bestAsk || market.outcomes[0]?.price || 0.5;
     const odds = price > 0 ? 1 / price : 2;
     
-    // Pass to parent with market info
-    onPlaceBet(market.id, market.conditionId, odds);
+    // Extract CLOB token IDs (index 0 = YES, index 1 = NO)
+    const yesTokenId = market.clobTokenIds?.[0] || market.outcomes[0]?.tokenId;
+    const noTokenId = market.clobTokenIds?.[1] || market.outcomes[1]?.tokenId;
+    
+    // Pass to parent with all info for bet slip
+    onPlaceBet(
+      market.id, 
+      market.conditionId, 
+      odds,
+      eventTitle,
+      market.groupItemTitle,
+      marketType,
+      yesTokenId,
+      noTokenId
+    );
   };
 
   return (

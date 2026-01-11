@@ -22,7 +22,16 @@ export default function HomePage() {
   const walletLoading = !isReady;
   const [activeTab, setActiveTab] = useState<TabType>("predict");
   const [isWalletOpen, setIsWalletOpen] = useState(false);
-  const [selectedBet, setSelectedBet] = useState<{ marketId: string; outcomeId: string; odds: number; marketTitle: string; outcomeLabel: string } | undefined>();
+  const [selectedBet, setSelectedBet] = useState<{ 
+    marketId: string; 
+    outcomeId: string; 
+    odds: number; 
+    marketTitle: string; 
+    outcomeLabel: string; 
+    marketType?: string;
+    yesTokenId?: string;
+    noTokenId?: string;
+  } | undefined>();
   const [showBetSlip, setShowBetSlip] = useState(false);
   const [liveMarkets, setLiveMarkets] = useState<Market[]>([]);
   const [liveMarketsLoading, setLiveMarketsLoading] = useState(false);
@@ -183,13 +192,39 @@ export default function HomePage() {
     },
   });
 
-  const handlePlaceBet = (marketId: string, outcomeId: string, odds: number) => {
+  const handlePlaceBet = (
+    marketId: string, 
+    outcomeId: string, 
+    odds: number, 
+    marketTitle?: string, 
+    outcomeLabel?: string, 
+    marketType?: string,
+    yesTokenId?: string,
+    noTokenId?: string
+  ) => {
     if (!isConnected) {
       showToast("Connect wallet to place bets", "info");
       setIsWalletOpen(true);
       return;
     }
 
+    // If title/label provided (from new event-based UI), use them directly
+    if (marketTitle && outcomeLabel) {
+      setSelectedBet({
+        marketId,
+        outcomeId,
+        odds,
+        marketTitle,
+        outcomeLabel,
+        marketType,
+        yesTokenId,
+        noTokenId,
+      });
+      setShowBetSlip(true);
+      return;
+    }
+
+    // Fallback for legacy futures or demo data
     const allMarkets = [...markets, ...futures.map(f => ({
       id: f.id,
       title: f.title,
@@ -206,17 +241,25 @@ export default function HomePage() {
       odds,
       marketTitle: market?.title || "Unknown Market",
       outcomeLabel: outcome?.label || "Unknown",
+      marketType,
+      yesTokenId,
+      noTokenId,
     });
     setShowBetSlip(true);
   };
 
-  const handleConfirmBet = (stake: number) => {
+  const handleConfirmBet = (stake: number, direction: "yes" | "no", effectiveOdds: number) => {
     if (selectedBet) {
+      // Use CLOB token IDs if available, otherwise fall back to outcomeId
+      const betOutcomeId = direction === "yes" 
+        ? (selectedBet.yesTokenId || selectedBet.outcomeId)
+        : (selectedBet.noTokenId || `${selectedBet.outcomeId}_NO`);
+      
       placeBetMutation.mutate({
         marketId: selectedBet.marketId,
-        outcomeId: selectedBet.outcomeId,
+        outcomeId: betOutcomeId,
         amount: stake,
-        odds: selectedBet.odds,
+        odds: effectiveOdds,
       });
     }
   };
@@ -318,6 +361,7 @@ export default function HomePage() {
           onConfirm={handleConfirmBet}
           onCancel={handleCancelBet}
           isPending={placeBetMutation.isPending}
+          marketType={selectedBet.marketType}
         />
       )}
 

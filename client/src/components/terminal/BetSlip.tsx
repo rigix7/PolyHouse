@@ -8,9 +8,10 @@ interface BetSlipProps {
   outcomeLabel: string;
   odds: number;
   maxBalance: number;
-  onConfirm: (stake: number) => void;
+  onConfirm: (stake: number, direction: "yes" | "no", effectiveOdds: number) => void;
   onCancel: () => void;
   isPending: boolean;
+  marketType?: string;
 }
 
 export function BetSlip({
@@ -21,16 +22,37 @@ export function BetSlip({
   onConfirm,
   onCancel,
   isPending,
+  marketType,
 }: BetSlipProps) {
   const [stake, setStake] = useState<string>("10");
+  const [betDirection, setBetDirection] = useState<"yes" | "no">("yes");
   const stakeNum = parseFloat(stake) || 0;
-  const potentialWin = stakeNum * odds;
+  
+  // Calculate odds based on direction
+  // For "yes" bets, use the provided odds
+  // For "no" bets, use the inverse (1 / (1 - 1/odds))
+  const effectiveOdds = betDirection === "yes" 
+    ? odds 
+    : odds > 1 ? odds / (odds - 1) : 2;
+    
+  const potentialWin = stakeNum * effectiveOdds;
   const wildPoints = Math.floor(stakeNum);
   const insufficientBalance = stakeNum > maxBalance;
   
+  // Determine button labels based on market type
+  const getDirectionLabels = () => {
+    if (marketType === "totals") {
+      return { yes: "OVER", no: "UNDER" };
+    }
+    // Default for moneyline, spreads, and other types
+    return { yes: "YES", no: "NO" };
+  };
+  
+  const labels = getDirectionLabels();
+  
   const handleConfirm = () => {
     if (stakeNum > 0 && !insufficientBalance) {
-      onConfirm(stakeNum);
+      onConfirm(stakeNum, betDirection, effectiveOdds);
     }
   };
 
@@ -40,7 +62,9 @@ export function BetSlip({
         <div className="flex justify-between items-start mb-4">
           <div>
             <p className="text-xs text-zinc-500 uppercase tracking-wider">Bet Slip</p>
-            <h3 className="font-bold text-white text-lg">{outcomeLabel}</h3>
+            <h3 className="font-bold text-white text-lg">
+              {outcomeLabel} <span className={betDirection === "yes" ? "text-wild-scout" : "text-wild-brand"}>({labels[betDirection]})</span>
+            </h3>
             <p className="text-xs text-zinc-400 mt-0.5">{marketTitle}</p>
           </div>
           <button
@@ -54,6 +78,34 @@ export function BetSlip({
         </div>
 
         <div className="space-y-4">
+          {/* Direction Selection - Yes/No or Over/Under */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setBetDirection("yes")}
+              className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${
+                betDirection === "yes"
+                  ? "bg-wild-scout text-white border-2 border-wild-scout"
+                  : "bg-zinc-800 text-zinc-400 border-2 border-zinc-700 hover:border-zinc-600"
+              }`}
+              disabled={isPending}
+              data-testid="button-direction-yes"
+            >
+              {labels.yes}
+            </button>
+            <button
+              onClick={() => setBetDirection("no")}
+              className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${
+                betDirection === "no"
+                  ? "bg-wild-brand text-white border-2 border-wild-brand"
+                  : "bg-zinc-800 text-zinc-400 border-2 border-zinc-700 hover:border-zinc-600"
+              }`}
+              disabled={isPending}
+              data-testid="button-direction-no"
+            >
+              {labels.no}
+            </button>
+          </div>
+
           <div className="flex items-center gap-3">
             <div className="flex-1">
               <label className="text-xs text-zinc-500 mb-1 block">Stake (USDC)</label>
@@ -71,7 +123,7 @@ export function BetSlip({
             </div>
             <div className="text-right">
               <p className="text-xs text-zinc-500">Odds</p>
-              <p className="text-2xl font-black font-mono text-wild-gold">{odds.toFixed(2)}</p>
+              <p className="text-2xl font-black font-mono text-wild-gold">{effectiveOdds.toFixed(2)}</p>
             </div>
           </div>
 

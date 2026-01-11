@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { fetchPolymarketSports, type PolymarketSport, type GammaTag } from "@/lib/polymarket";
+import { fetchCategorizedTags, type CategorizedTag } from "@/lib/polymarket";
 import type { Market, Player, InsertMarket, InsertPlayer, AdminSettings, Futures } from "@shared/schema";
 
 const playerFormSchema = z.object({
@@ -50,7 +50,7 @@ function extractSlugFromInput(input: string): string {
 export default function AdminPage() {
   const { toast } = useToast();
   const [activeSection, setActiveSection] = useState<"matchday" | "futures" | "players">("matchday");
-  const [sportsLeagues, setSportsLeagues] = useState<PolymarketSport[]>([]);
+  const [categorizedTags, setCategorizedTags] = useState<CategorizedTag[]>([]);
   const [loadingLeagues, setLoadingLeagues] = useState(false);
   const [showPlayerForm, setShowPlayerForm] = useState(false);
   const [futuresSlug, setFuturesSlug] = useState("");
@@ -98,33 +98,57 @@ export default function AdminPage() {
   const loadSportsLeagues = async () => {
     setLoadingLeagues(true);
     try {
-      const sports = await fetchPolymarketSports();
-      setSportsLeagues(sports);
+      const tags = await fetchCategorizedTags();
+      setCategorizedTags(tags);
     } catch (error) {
-      toast({ title: "Failed to load sports leagues", variant: "destructive" });
+      toast({ title: "Failed to load sports tags", variant: "destructive" });
     } finally {
       setLoadingLeagues(false);
     }
   };
 
   useEffect(() => {
-    if (activeSection === "matchday" && sportsLeagues.length === 0) {
+    if (activeSection === "matchday" && categorizedTags.length === 0) {
       loadSportsLeagues();
     }
   }, [activeSection]);
 
-  const handleLeagueToggle = (sportTags: string, checked: boolean) => {
+  const handleTagToggle = (tagId: string, checked: boolean) => {
     const currentTags = adminSettings?.activeTagIds || [];
-    const tagIds = sportTags.split(",").map(t => t.trim()).filter(Boolean);
     
     if (checked) {
-      const combined = [...currentTags, ...tagIds];
-      const newTags = Array.from(new Set(combined));
+      // Deduplicate to prevent duplicate entries
+      const newTags = Array.from(new Set([...currentTags, tagId]));
       updateSettingsMutation.mutate({ activeTagIds: newTags });
     } else {
-      const newTags = currentTags.filter(id => !tagIds.includes(id));
+      const newTags = currentTags.filter(id => id !== tagId);
       updateSettingsMutation.mutate({ activeTagIds: newTags });
     }
+  };
+
+  // Group tags by sport for display
+  const tagsBySport = categorizedTags.reduce((acc, tag) => {
+    const sport = tag.sport || "OTHER";
+    if (!acc[sport]) acc[sport] = [];
+    acc[sport].push(tag);
+    return acc;
+  }, {} as Record<string, CategorizedTag[]>);
+
+  // Sport labels for display
+  const sportLabels: Record<string, string> = {
+    NBA: "NBA Basketball",
+    NFL: "NFL Football",
+    MLB: "MLB Baseball",
+    NHL: "NHL Hockey",
+    MLS: "MLS Soccer",
+    EPL: "Premier League",
+    UCL: "Champions League",
+    WNBA: "WNBA",
+    CBB: "College Basketball",
+    CFB: "College Football",
+    MMA: "UFC/MMA",
+    ATP: "ATP Tennis",
+    WTA: "WTA Tennis",
   };
 
   const createFuturesMutation = useMutation({
@@ -387,61 +411,69 @@ export default function AdminPage() {
             </div>
 
             {loadingLeagues ? (
-              <div className="text-zinc-500">Loading sports leagues from Polymarket...</div>
-            ) : sportsLeagues.length === 0 ? (
+              <div className="text-zinc-500">Loading sports tags from Polymarket...</div>
+            ) : Object.keys(tagsBySport).length === 0 ? (
               <Card className="p-8 text-center text-zinc-500">
-                No sports leagues found. Click "Refresh" to load from Polymarket.
+                No sports tags found. Click "Refresh" to load from Polymarket.
               </Card>
             ) : (
-              <div className="grid gap-2">
-                {sportsLeagues.map((sport) => {
-                  const sportTagIds = (sport.tags || "").split(",").map(t => t.trim()).filter(Boolean);
-                  const isActive = sportTagIds.some(id => adminSettings?.activeTagIds?.includes(id));
-                  return (
-                    <Card
-                      key={sport.id}
-                      className={`p-4 flex justify-between items-center cursor-pointer transition-colors ${
-                        isActive ? "border-wild-brand/50 bg-wild-brand/5" : ""
-                      }`}
-                      onClick={() => handleLeagueToggle(sport.tags || "", !isActive)}
-                      data-testid={`sport-${sport.slug}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Checkbox
-                          checked={isActive}
-                          onCheckedChange={(checked) => handleLeagueToggle(sport.tags || "", checked as boolean)}
-                          data-testid={`checkbox-sport-${sport.slug}`}
-                        />
-                        <div>
-                          <div className="font-bold text-white">{sport.label}</div>
-                          <div className="text-sm text-zinc-400">
-                            {sport.slug}
+              <div className="space-y-4">
+                {Object.entries(tagsBySport).map(([sport, tags]) => (
+                  <Card key={sport} className="p-4">
+                    <div className="font-bold text-white mb-3">
+                      {sportLabels[sport] || sport}
+                    </div>
+                    <div className="grid gap-2">
+                      {tags.map((tag) => {
+                        const isActive = adminSettings?.activeTagIds?.includes(tag.id);
+                        return (
+                          <div
+                            key={tag.id}
+                            className={`p-3 rounded-md flex justify-between items-center cursor-pointer transition-colors border ${
+                              isActive ? "border-wild-brand/50 bg-wild-brand/10" : "border-zinc-800 hover:border-zinc-700"
+                            }`}
+                            onClick={() => handleTagToggle(tag.id, !isActive)}
+                            data-testid={`tag-${tag.slug}`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <Checkbox
+                                checked={isActive}
+                                onClick={(e) => e.stopPropagation()}
+                                onCheckedChange={(checked) => handleTagToggle(tag.id, checked as boolean)}
+                                data-testid={`checkbox-tag-${tag.slug}`}
+                              />
+                              <div>
+                                <div className="text-white">{tag.label}</div>
+                                <div className="text-xs text-zinc-500">{tag.slug}</div>
+                              </div>
+                            </div>
+                            {isActive && (
+                              <Check className="w-4 h-4 text-wild-brand" />
+                            )}
                           </div>
-                        </div>
-                      </div>
-                      {isActive && (
-                        <Check className="w-5 h-5 text-wild-brand" />
-                      )}
-                    </Card>
-                  );
-                })}
+                        );
+                      })}
+                    </div>
+                  </Card>
+                ))}
               </div>
             )}
 
             {(adminSettings?.activeTagIds?.length || 0) > 0 && (
               <div className="mt-4 p-4 bg-zinc-900 rounded-md">
                 <div className="text-sm text-zinc-400 mb-2">
-                  Active Leagues - Games will auto-populate:
+                  Active Tags - Games will auto-populate:
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {sportsLeagues
-                    .filter(sport => {
-                      const tagIds = (sport.tags || "").split(",").map(t => t.trim());
-                      return tagIds.some(id => adminSettings?.activeTagIds?.includes(id));
-                    })
-                    .map(sport => (
-                      <span key={sport.id} className="px-2 py-1 bg-wild-brand/20 text-wild-brand rounded text-sm">
-                        {sport.label}
+                  {categorizedTags
+                    .filter(tag => adminSettings?.activeTagIds?.includes(tag.id))
+                    .map(tag => (
+                      <span 
+                        key={tag.id} 
+                        className="px-2 py-1 bg-wild-brand/20 text-wild-brand rounded text-sm cursor-pointer hover:bg-wild-brand/30"
+                        onClick={() => handleTagToggle(tag.id, false)}
+                      >
+                        {tag.label} <X className="w-3 h-3 inline ml-1" />
                       </span>
                     ))
                   }

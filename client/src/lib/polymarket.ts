@@ -7,6 +7,16 @@ export interface GammaTag {
   sportId?: string;
 }
 
+export interface CategorizedTag {
+  id: string;
+  slug: string;
+  label: string;
+  sport: string;
+  marketType: string;
+  seriesId?: string;
+  tagIds?: string;
+}
+
 export interface PolymarketSport {
   id: string;
   slug: string;
@@ -116,8 +126,9 @@ export async function fetchPolymarketSports(): Promise<PolymarketSport[]> {
   }
 }
 
-// Fetch sports tags via server proxy (backwards compatibility)
-export async function fetchGammaTags(): Promise<GammaTag[]> {
+// Fetch categorized sports tags with granular control
+// Returns sports grouped with unique series_id identifiers for precise selection
+export async function fetchCategorizedTags(): Promise<CategorizedTag[]> {
   try {
     const response = await fetch("/api/polymarket/tags");
     if (!response.ok) {
@@ -125,12 +136,16 @@ export async function fetchGammaTags(): Promise<GammaTag[]> {
     }
     return response.json();
   } catch (error) {
-    console.error("Error fetching Gamma tags:", error);
+    console.error("Error fetching categorized tags:", error);
     return [];
   }
 }
 
+// Legacy alias for backwards compatibility
+export const fetchGammaTags = fetchCategorizedTags;
+
 // Fetch events via server proxy (bypasses CORS)
+// Supports both tag_id and series_id (tag IDs starting with "series_" use series_id)
 export async function fetchGammaEvents(tagIds: string[]): Promise<GammaEvent[]> {
   if (!tagIds.length) return [];
   
@@ -138,7 +153,16 @@ export async function fetchGammaEvents(tagIds: string[]): Promise<GammaEvent[]> 
     const allEvents: GammaEvent[] = [];
     
     for (const tagId of tagIds) {
-      const response = await fetch(`/api/polymarket/events?tag_id=${tagId}`);
+      // Check if this is a series_id (format: "series_XXXXX")
+      let url: string;
+      if (tagId.startsWith("series_")) {
+        const seriesId = tagId.replace("series_", "");
+        url = `/api/polymarket/events?series_id=${seriesId}`;
+      } else {
+        url = `/api/polymarket/events?tag_id=${tagId}`;
+      }
+      
+      const response = await fetch(url);
       
       if (response.ok) {
         const events: GammaEvent[] = await response.json();

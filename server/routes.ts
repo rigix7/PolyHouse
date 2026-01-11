@@ -390,7 +390,8 @@ export async function registerRoutes(
     }
   });
 
-  // Legacy tags endpoint - now fetches from /sports for better filtering
+  // Fetch sports with series_id for granular league selection
+  // Each sport has a unique series_id that can be used to fetch only that sport's events
   app.get("/api/polymarket/tags", async (req, res) => {
     try {
       const response = await fetch(`${GAMMA_API_BASE}/sports`);
@@ -399,17 +400,62 @@ export async function registerRoutes(
       }
       const sports = await response.json();
       
-      // Transform sports into tag-like format for backwards compatibility
-      const sportsTags = sports.map((sport: { id?: string; slug?: string; label?: string; tags?: string }) => ({
-        id: sport.tags || sport.id || sport.slug,
-        label: sport.label || sport.slug || "Unknown",
-        slug: sport.slug || "",
-        sportId: sport.id,
+      // Sport labels for display
+      const sportLabels: Record<string, string> = {
+        nba: "NBA Basketball",
+        nfl: "NFL Football",
+        mlb: "MLB Baseball",
+        nhl: "NHL Hockey",
+        mls: "MLS Soccer",
+        epl: "Premier League",
+        lal: "La Liga",
+        bun: "Bundesliga",
+        sea: "Serie A",
+        fl1: "Ligue 1",
+        ucl: "Champions League",
+        uel: "Europa League",
+        wnba: "WNBA",
+        ncaab: "NCAA Basketball",
+        ncaaf: "NCAA Football",
+        cbb: "College Basketball",
+        cfb: "College Football",
+        mma: "UFC/MMA",
+        atp: "ATP Tennis",
+        wta: "WTA Tennis",
+        ipl: "IPL Cricket",
+        acn: "Africa Cup of Nations",
+        f1: "Formula 1",
+        nascar: "NASCAR",
+        golf: "Golf",
+        boxing: "Boxing",
+        "cs2": "Counter-Strike 2",
+        lol: "League of Legends",
+        dota2: "Dota 2",
+        val: "Valorant",
+      };
+      
+      interface RawSport {
+        id: number;
+        sport: string;
+        tags?: string;
+        series?: string;
+        image?: string;
+      }
+      
+      // Transform sports into categorized tags format using series_id as unique identifier
+      const categorizedSports = sports.map((sport: RawSport) => ({
+        id: `series_${sport.series || sport.id}`, // Use series_id as unique identifier
+        slug: sport.sport,
+        label: sportLabels[sport.sport] || sport.sport.toUpperCase(),
+        sport: sport.sport.toUpperCase(),
+        marketType: "all",
+        seriesId: sport.series || String(sport.id),
+        tagIds: sport.tags || "",
       }));
       
-      res.json(sportsTags);
+      res.json(categorizedSports);
     } catch (error) {
-      console.error("Error fetching Gamma tags:", error);
+      console.error("Error fetching sports tags:", error);
       res.status(500).json({ error: "Failed to fetch tags" });
     }
   });
@@ -417,13 +463,21 @@ export async function registerRoutes(
   app.get("/api/polymarket/events", async (req, res) => {
     try {
       const tagId = req.query.tag_id as string;
-      if (!tagId) {
-        return res.status(400).json({ error: "tag_id required" });
+      const seriesId = req.query.series_id as string;
+      
+      if (!tagId && !seriesId) {
+        return res.status(400).json({ error: "tag_id or series_id required" });
       }
       
-      const response = await fetch(
-        `${GAMMA_API_BASE}/events?tag_id=${tagId}&active=true&closed=false&limit=10`
-      );
+      // Prefer series_id for more specific results (actual game matches)
+      let url = `${GAMMA_API_BASE}/events?active=true&closed=false&limit=15`;
+      if (seriesId) {
+        url += `&series_id=${seriesId}`;
+      } else if (tagId) {
+        url += `&tag_id=${tagId}`;
+      }
+      
+      const response = await fetch(url);
       
       if (!response.ok) {
         throw new Error(`Gamma API error: ${response.status}`);

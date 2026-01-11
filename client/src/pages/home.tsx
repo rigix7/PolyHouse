@@ -10,7 +10,7 @@ import { ScoutView } from "@/components/views/ScoutView";
 import { TradeView } from "@/components/views/TradeView";
 import { DashboardView } from "@/components/views/DashboardView";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { fetchGammaEvents, gammaEventToMarket } from "@/lib/polymarket";
+import { fetchGammaEvents, gammaEventToMarket, gammaEventToDisplayEvent, type DisplayEvent } from "@/lib/polymarket";
 import { getUSDCBalance } from "@/lib/polygon";
 import { useWallet } from "@/providers/PrivyProvider";
 import { useSafeWallet } from "@/hooks/useSafeWallet";
@@ -26,6 +26,7 @@ export default function HomePage() {
   const [showBetSlip, setShowBetSlip] = useState(false);
   const [liveMarkets, setLiveMarkets] = useState<Market[]>([]);
   const [liveMarketsLoading, setLiveMarketsLoading] = useState(false);
+  const [displayEvents, setDisplayEvents] = useState<DisplayEvent[]>([]);
   const [usdcBalance, setUsdcBalance] = useState(0);
   const { showToast, ToastContainer } = useTerminalToast();
 
@@ -76,12 +77,21 @@ export default function HomePage() {
       const activeTagIds = adminSettings?.activeTagIds || [];
       if (activeTagIds.length === 0) {
         setLiveMarkets([]);
+        setDisplayEvents([]);
         return;
       }
 
       setLiveMarketsLoading(true);
       try {
         const events = await fetchGammaEvents(activeTagIds);
+        
+        // Convert to DisplayEvents for new event-based UI
+        const displayEvts = events
+          .map(gammaEventToDisplayEvent)
+          .filter((e): e is DisplayEvent => e !== null);
+        setDisplayEvents(displayEvts);
+        
+        // Keep legacy Market[] for backward compatibility
         const markets: Market[] = events
           .map(gammaEventToMarket)
           .filter((m) => m !== null)
@@ -249,6 +259,7 @@ export default function HomePage() {
           {activeTab === "predict" && (
             <PredictView
               markets={markets}
+              displayEvents={displayEvents}
               futures={futures}
               isLoading={marketsLoading}
               futuresLoading={futuresLoading}

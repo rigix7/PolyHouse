@@ -60,6 +60,15 @@ export interface GammaMarket {
   liquidity: string;
   active: boolean;
   closed: boolean;
+  // New fields for improved display
+  groupItemTitle?: string;
+  bestAsk?: number;
+  bestBid?: number;
+  lastTradePrice?: number;
+  gameStartTime?: string;
+  oneWeekPriceChange?: number;
+  sportsMarketType?: string;
+  clobTokenIds?: string;
 }
 
 export interface GammaEvent {
@@ -75,6 +84,10 @@ export interface GammaEvent {
   closed: boolean;
   markets: GammaMarket[];
   tags: GammaTag[];
+  // Event-level aggregates
+  volume?: number;
+  volume24hr?: number;
+  liquidity?: number;
 }
 
 // Helper to convert sport slug to human-readable label
@@ -268,6 +281,184 @@ export function parseMarketOutcomes(market: GammaMarket): { id: string; label: s
   }
 }
 
+// Parsed market with structured outcome data
+export interface ParsedMarket {
+  id: string;
+  conditionId: string;
+  groupItemTitle: string;
+  sportsMarketType: string;
+  bestAsk: number;
+  bestBid: number;
+  volume: number;
+  liquidity: number;
+  outcomes: Array<{
+    label: string;
+    price: number;
+    tokenId?: string;
+  }>;
+  clobTokenIds?: string[];
+}
+
+// Grouped markets by type within an event
+export interface MarketGroup {
+  type: string;
+  label: string;
+  volume: number;
+  markets: ParsedMarket[];
+}
+
+// Display-ready event with all market data
+export interface DisplayEvent {
+  id: string;
+  title: string;
+  description: string;
+  sport: string;
+  league: string;
+  image: string;
+  gameStartTime: string;
+  status: "live" | "upcoming" | "ended";
+  volume: number;
+  liquidity: number;
+  marketGroups: MarketGroup[];
+}
+
+function getMarketTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    moneyline: "Moneyline",
+    totals: "Totals",
+    spreads: "Spreads",
+    props: "Player Props",
+  };
+  return labels[type] || type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+export function gammaEventToDisplayEvent(event: GammaEvent): DisplayEvent | null {
+  if (!event.markets?.length) return null;
+  
+  // Parse all markets and group by sportsMarketType
+  const marketsByType = new Map<string, ParsedMarket[]>();
+  let totalVolume = 0;
+  let totalLiquidity = 0;
+  let gameStartTime = event.endDate || event.startDate;
+  
+  for (const market of event.markets) {
+    const marketType = market.sportsMarketType || "moneyline";
+    const volume = parseFloat(market.volume || "0");
+    const liquidity = parseFloat(market.liquidity || "0");
+    totalVolume += volume;
+    totalLiquidity += liquidity;
+    
+    // Use gameStartTime from market if available
+    if (market.gameStartTime) {
+      gameStartTime = market.gameStartTime;
+    }
+    
+    // Parse outcomes and prices
+    let outcomes: ParsedMarket["outcomes"] = [];
+    let clobTokenIds: string[] = [];
+    try {
+      const prices = JSON.parse(market.outcomePrices || "[]");
+      const outcomeLabels = JSON.parse(market.outcomes || "[]");
+      if (market.clobTokenIds) {
+        clobTokenIds = JSON.parse(market.clobTokenIds);
+      }
+      outcomes = outcomeLabels.map((label: string, i: number) => ({
+        label,
+        price: parseFloat(prices[i] || "0"),
+        tokenId: clobTokenIds[i],
+      }));
+    } catch {
+      continue;
+    }
+    
+    if (outcomes.length === 0) continue;
+    
+    const parsedMarket: ParsedMarket = {
+      id: market.id,
+      conditionId: market.conditionId,
+      groupItemTitle: market.groupItemTitle || market.question,
+      sportsMarketType: marketType,
+      bestAsk: market.bestAsk || outcomes[0]?.price || 0,
+      bestBid: market.bestBid || 0,
+      volume,
+      liquidity,
+      outcomes,
+      clobTokenIds: clobTokenIds.length > 0 ? clobTokenIds : undefined,
+    };
+    
+    if (!marketsByType.has(marketType)) {
+      marketsByType.set(marketType, []);
+    }
+    marketsByType.get(marketType)!.push(parsedMarket);
+  }
+  
+  if (marketsByType.size === 0) return null;
+  
+  // Convert map to sorted array of MarketGroups
+  const typeOrder = ["moneyline", "totals", "spreads", "props"];
+  const marketGroups: MarketGroup[] = [];
+  
+  for (const type of typeOrder) {
+    const markets = marketsByType.get(type);
+    if (markets) {
+      const groupVolume = markets.reduce((sum, m) => sum + m.volume, 0);
+      marketGroups.push({
+        type,
+        label: getMarketTypeLabel(type),
+        volume: groupVolume,
+        markets,
+      });
+      marketsByType.delete(type);
+    }
+  }
+  
+  // Add remaining types not in typeOrder
+  Array.from(marketsByType.entries()).forEach(([type, markets]) => {
+    const groupVolume = markets.reduce((sum: number, m: ParsedMarket) => sum + m.volume, 0);
+    marketGroups.push({
+      type,
+      label: getMarketTypeLabel(type),
+      volume: groupVolume,
+      markets,
+    });
+  });
+  
+  // Determine event status
+  const now = new Date();
+  const startTime = new Date(gameStartTime);
+  const sixHoursMs = 6 * 60 * 60 * 1000;
+  const diff = startTime.getTime() - now.getTime();
+  
+  let status: "live" | "upcoming" | "ended" = "upcoming";
+  if (diff <= 0 && diff > -sixHoursMs) {
+    status = "live";
+  } else if (diff <= -sixHoursMs) {
+    status = "ended";
+  }
+  
+  // Extract sport/league from tags
+  const sportTag = event.tags?.find(tag => 
+    ["nba", "nfl", "mlb", "nhl", "soccer", "football", "basketball", "tennis", "mma", "boxing", "golf", "esports", "epl", "ucl", "lal"].some(
+      sport => tag.slug?.toLowerCase().includes(sport) || tag.label?.toLowerCase().includes(sport)
+    )
+  );
+  
+  return {
+    id: event.id,
+    title: event.title,
+    description: event.description,
+    sport: sportTag?.label || "Sports",
+    league: sportTag?.slug?.toUpperCase() || "LIVE",
+    image: event.image || event.icon,
+    gameStartTime,
+    status,
+    volume: event.volume || totalVolume,
+    liquidity: event.liquidity || totalLiquidity,
+    marketGroups,
+  };
+}
+
+// Legacy function for backward compatibility
 export function gammaEventToMarket(event: GammaEvent): {
   id: string;
   title: string;

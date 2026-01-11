@@ -69,6 +69,7 @@ export interface GammaMarket {
   oneWeekPriceChange?: number;
   sportsMarketType?: string;
   clobTokenIds?: string;
+  line?: number;
 }
 
 export interface GammaEvent {
@@ -118,6 +119,96 @@ function humanizeSportSlug(slug: string): string {
     val: "Valorant",
   };
   return labels[slug.toLowerCase()] || slug.toUpperCase();
+}
+
+// NFL team name to abbreviation mapping
+export const NFL_TEAM_ABBREVIATIONS: Record<string, string> = {
+  "49ers": "SF",
+  "Bears": "CHI",
+  "Bengals": "CIN",
+  "Bills": "BUF",
+  "Broncos": "DEN",
+  "Browns": "CLE",
+  "Buccaneers": "TB",
+  "Cardinals": "ARI",
+  "Chargers": "LAC",
+  "Chiefs": "KC",
+  "Colts": "IND",
+  "Commanders": "WAS",
+  "Cowboys": "DAL",
+  "Dolphins": "MIA",
+  "Eagles": "PHI",
+  "Falcons": "ATL",
+  "Giants": "NYG",
+  "Jaguars": "JAX",
+  "Jets": "NYJ",
+  "Lions": "DET",
+  "Packers": "GB",
+  "Panthers": "CAR",
+  "Patriots": "NE",
+  "Raiders": "LV",
+  "Rams": "LAR",
+  "Ravens": "BAL",
+  "Saints": "NO",
+  "Seahawks": "SEA",
+  "Steelers": "PIT",
+  "Texans": "HOU",
+  "Titans": "TEN",
+  "Vikings": "MIN",
+};
+
+// NBA team name to abbreviation mapping
+export const NBA_TEAM_ABBREVIATIONS: Record<string, string> = {
+  "76ers": "PHI",
+  "Bucks": "MIL",
+  "Bulls": "CHI",
+  "Cavaliers": "CLE",
+  "Celtics": "BOS",
+  "Clippers": "LAC",
+  "Grizzlies": "MEM",
+  "Hawks": "ATL",
+  "Heat": "MIA",
+  "Hornets": "CHA",
+  "Jazz": "UTA",
+  "Kings": "SAC",
+  "Knicks": "NYK",
+  "Lakers": "LAL",
+  "Magic": "ORL",
+  "Mavericks": "DAL",
+  "Nets": "BKN",
+  "Nuggets": "DEN",
+  "Pacers": "IND",
+  "Pelicans": "NOP",
+  "Pistons": "DET",
+  "Raptors": "TOR",
+  "Rockets": "HOU",
+  "Spurs": "SAS",
+  "Suns": "PHX",
+  "Thunder": "OKC",
+  "Timberwolves": "MIN",
+  "Trail Blazers": "POR",
+  "Warriors": "GSW",
+  "Wizards": "WAS",
+};
+
+// Get team abbreviation from team name
+export function getTeamAbbreviation(teamName: string): string {
+  // Check NFL teams
+  if (NFL_TEAM_ABBREVIATIONS[teamName]) {
+    return NFL_TEAM_ABBREVIATIONS[teamName];
+  }
+  // Check NBA teams
+  if (NBA_TEAM_ABBREVIATIONS[teamName]) {
+    return NBA_TEAM_ABBREVIATIONS[teamName];
+  }
+  // Fallback: try partial match or first 3 chars
+  for (const [name, abbr] of Object.entries({ ...NFL_TEAM_ABBREVIATIONS, ...NBA_TEAM_ABBREVIATIONS })) {
+    if (teamName.toLowerCase().includes(name.toLowerCase())) {
+      return abbr;
+    }
+  }
+  // Last resort: first 3 characters uppercase
+  return teamName.slice(0, 3).toUpperCase();
 }
 
 // Raw Polymarket sports API response type
@@ -285,8 +376,10 @@ export function parseMarketOutcomes(market: GammaMarket): { id: string; label: s
 export interface ParsedMarket {
   id: string;
   conditionId: string;
+  question: string;
   groupItemTitle: string;
   sportsMarketType: string;
+  line?: number;
   bestAsk: number;
   bestBid: number;
   volume: number;
@@ -376,8 +469,10 @@ export function gammaEventToDisplayEvent(event: GammaEvent): DisplayEvent | null
     const parsedMarket: ParsedMarket = {
       id: market.id,
       conditionId: market.conditionId,
+      question: market.question,
       groupItemTitle: market.groupItemTitle || market.question,
       sportsMarketType: marketType,
+      line: market.line,
       bestAsk: market.bestAsk || outcomes[0]?.price || 0,
       bestBid: market.bestBid || 0,
       volume,

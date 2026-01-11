@@ -29,6 +29,7 @@ export default function HomePage() {
     marketTitle: string; 
     outcomeLabel: string; 
     marketType?: string;
+    direction?: string;
     yesTokenId?: string;
     noTokenId?: string;
   } | undefined>();
@@ -199,6 +200,7 @@ export default function HomePage() {
     marketTitle?: string, 
     outcomeLabel?: string, 
     marketType?: string,
+    direction?: string,
     yesTokenId?: string,
     noTokenId?: string
   ) => {
@@ -217,6 +219,7 @@ export default function HomePage() {
         marketTitle,
         outcomeLabel,
         marketType,
+        direction,
         yesTokenId,
         noTokenId,
       });
@@ -242,6 +245,7 @@ export default function HomePage() {
       marketTitle: market?.title || "Unknown Market",
       outcomeLabel: outcome?.label || "Unknown",
       marketType,
+      direction,
       yesTokenId,
       noTokenId,
     });

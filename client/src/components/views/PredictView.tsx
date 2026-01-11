@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Shield, Lock, Loader2, TrendingUp, Calendar, Radio, Clock } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Shield, Lock, Loader2, TrendingUp, Calendar, Radio, Clock, ChevronLeft, ChevronRight } from "lucide-react";
 import { SubTabs } from "@/components/terminal/SubTabs";
 import { MarketCardSkeleton } from "@/components/terminal/MarketCard";
 import { EmptyState } from "@/components/terminal/EmptyState";
@@ -7,7 +7,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Market, Futures, AdminSettings } from "@shared/schema";
-import type { DisplayEvent, ParsedMarket } from "@/lib/polymarket";
+import type { DisplayEvent, ParsedMarket, MarketGroup } from "@/lib/polymarket";
+import { getTeamAbbreviation } from "@/lib/polymarket";
 
 type PredictSubTab = "matchday" | "futures" | "fantasy";
 
@@ -23,8 +24,8 @@ interface PredictViewProps {
   futures: Futures[];
   isLoading: boolean;
   futuresLoading: boolean;
-  onPlaceBet: (marketId: string, outcomeId: string, odds: number, marketTitle?: string, outcomeLabel?: string, marketType?: string, yesTokenId?: string, noTokenId?: string) => void;
-  selectedBet?: { marketId: string; outcomeId: string };
+  onPlaceBet: (marketId: string, outcomeId: string, odds: number, marketTitle?: string, outcomeLabel?: string, marketType?: string, direction?: string, yesTokenId?: string, noTokenId?: string) => void;
+  selectedBet?: { marketId: string; outcomeId: string; direction?: string };
   adminSettings?: AdminSettings;
 }
 
@@ -160,15 +161,340 @@ function LeagueFilters({
   );
 }
 
+// Line selector pills for spreads/totals
+function LineSelector({ 
+  lines, 
+  selectedLine, 
+  onSelect 
+}: { 
+  lines: number[];
+  selectedLine: number;
+  onSelect: (line: number) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  
+  const scroll = (direction: "left" | "right") => {
+    if (scrollRef.current) {
+      const scrollAmount = 80;
+      scrollRef.current.scrollBy({ 
+        left: direction === "left" ? -scrollAmount : scrollAmount, 
+        behavior: "smooth" 
+      });
+    }
+  };
+  
+  if (lines.length <= 1) return null;
+  
+  return (
+    <div className="flex items-center gap-1 mt-2">
+      <button 
+        onClick={() => scroll("left")}
+        className="p-1 text-zinc-500 hover:text-zinc-300 shrink-0"
+        data-testid="line-scroll-left"
+      >
+        <ChevronLeft className="w-3 h-3" />
+      </button>
+      <div 
+        ref={scrollRef}
+        className="flex gap-1.5 overflow-x-auto scrollbar-hide"
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+      >
+        {lines.map((line) => (
+          <button
+            key={line}
+            onClick={() => onSelect(line)}
+            className={`px-2.5 py-1 rounded text-xs font-mono shrink-0 transition-colors ${
+              selectedLine === line
+                ? "bg-zinc-600 text-white font-bold"
+                : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+            }`}
+            data-testid={`line-${line}`}
+          >
+            {Math.abs(line)}
+          </button>
+        ))}
+      </div>
+      <button 
+        onClick={() => scroll("right")}
+        className="p-1 text-zinc-500 hover:text-zinc-300 shrink-0"
+        data-testid="line-scroll-right"
+      >
+        <ChevronRight className="w-3 h-3" />
+      </button>
+    </div>
+  );
+}
+
+// Spread market display component - shows two buttons like [SF +4.5 48¢] [PHI -4.5 53¢]
+function SpreadMarketDisplay({
+  market,
+  eventTitle,
+  onSelect,
+  selectedDirection
+}: {
+  market: ParsedMarket;
+  eventTitle: string;
+  onSelect: (market: ParsedMarket, direction: "home" | "away") => void;
+  selectedDirection?: "home" | "away" | null;
+}) {
+  // Parse the question to extract home team: "Spread: Eagles (-4.5)" -> Eagles is home with -4.5
+  // The outcomes array: [homeTeam, awayTeam] - index 0 is home (gets the negative line)
+  const outcomes = market.outcomes;
+  if (outcomes.length < 2) return null;
+  
+  const line = market.line || 0;
+  const homeTeam = outcomes[0].label;
+  const awayTeam = outcomes[1].label;
+  const homeAbbr = getTeamAbbreviation(homeTeam);
+  const awayAbbr = getTeamAbbreviation(awayTeam);
+  
+  // Home team gets negative line (e.g., -4.5), away team gets positive (+4.5)
+  const homeLine = line; // Already negative from API
+  const awayLine = -line; // Flip sign for away team
+  
+  // Prices: use bestAsk for the market (primary price), and outcome.price as fallback
+  const homePrice = Math.round((outcomes[0].price || market.bestAsk) * 100);
+  const awayPrice = Math.round((outcomes[1].price || (1 - market.bestAsk)) * 100);
+  
+  const isHomeSelected = selectedDirection === "home";
+  const isAwaySelected = selectedDirection === "away";
+  
+  return (
+    <div className="flex gap-2">
+      <button
+        onClick={() => onSelect(market, "away")}
+        className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-all ${
+          isAwaySelected 
+            ? "bg-red-600 border border-red-500 text-white" 
+            : "bg-red-900/40 border border-red-800/50 hover:bg-red-800/50 text-zinc-100"
+        }`}
+        data-testid={`spread-away-${market.id}`}
+      >
+        <span className="font-bold">
+          {awayAbbr} {awayLine > 0 ? "+" : ""}{awayLine}
+        </span>
+        <span className="font-mono font-bold text-white">{awayPrice}¢</span>
+      </button>
+      <button
+        onClick={() => onSelect(market, "home")}
+        className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-all ${
+          isHomeSelected 
+            ? "bg-teal-600 border border-teal-500 text-white" 
+            : "bg-teal-900/40 border border-teal-800/50 hover:bg-teal-800/50 text-zinc-100"
+        }`}
+        data-testid={`spread-home-${market.id}`}
+      >
+        <span className="font-bold">
+          {homeAbbr} {homeLine > 0 ? "+" : ""}{homeLine}
+        </span>
+        <span className="font-mono font-bold text-white">{homePrice}¢</span>
+      </button>
+    </div>
+  );
+}
+
+// Totals market display component - shows Over/Under buttons
+function TotalsMarketDisplay({
+  market,
+  onSelect,
+  selectedDirection
+}: {
+  market: ParsedMarket;
+  onSelect: (market: ParsedMarket, direction: "over" | "under") => void;
+  selectedDirection?: "over" | "under" | null;
+}) {
+  const outcomes = market.outcomes;
+  if (outcomes.length < 2) return null;
+  
+  const line = market.line || 0;
+  
+  // Outcomes: ["Over", "Under"] with their prices (use bestAsk with fallback to outcome.price)
+  const overPrice = Math.round((outcomes[0].price || market.bestAsk) * 100);
+  const underPrice = Math.round((outcomes[1].price || (1 - market.bestAsk)) * 100);
+  
+  const isOverSelected = selectedDirection === "over";
+  const isUnderSelected = selectedDirection === "under";
+  
+  return (
+    <div className="flex gap-2">
+      <button
+        onClick={() => onSelect(market, "over")}
+        className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-all ${
+          isOverSelected 
+            ? "bg-blue-600 border border-blue-500 text-white" 
+            : "bg-blue-900/40 border border-blue-800/50 hover:bg-blue-800/50 text-zinc-100"
+        }`}
+        data-testid={`total-over-${market.id}`}
+      >
+        <span className="font-bold">O {line}</span>
+        <span className="font-mono font-bold text-white">{overPrice}¢</span>
+      </button>
+      <button
+        onClick={() => onSelect(market, "under")}
+        className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-all ${
+          isUnderSelected 
+            ? "bg-blue-600 border border-blue-500 text-white" 
+            : "bg-blue-900/40 border border-blue-800/50 hover:bg-blue-800/50 text-zinc-100"
+        }`}
+        data-testid={`total-under-${market.id}`}
+      >
+        <span className="font-bold">U {line}</span>
+        <span className="font-mono font-bold text-white">{underPrice}¢</span>
+      </button>
+    </div>
+  );
+}
+
+// Moneyline market display - shows team buttons with prices
+function MoneylineMarketDisplay({
+  market,
+  eventTitle,
+  onSelect,
+  selectedOutcomeIndex
+}: {
+  market: ParsedMarket;
+  eventTitle: string;
+  onSelect: (market: ParsedMarket, outcomeIndex: number) => void;
+  selectedOutcomeIndex?: number | null;
+}) {
+  const outcomes = market.outcomes;
+  
+  return (
+    <div className="flex flex-wrap gap-2">
+      {outcomes.map((outcome, idx) => {
+        // Use outcome.price with bestAsk fallback
+        const priceInCents = Math.round((outcome.price || market.bestAsk) * 100);
+        const abbr = getTeamAbbreviation(outcome.label);
+        const isSelected = selectedOutcomeIndex === idx;
+        
+        return (
+          <button
+            key={idx}
+            onClick={() => onSelect(market, idx)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md border text-sm transition-all ${
+              isSelected 
+                ? "border-wild-brand bg-wild-brand/20 text-white" 
+                : "border-zinc-700 bg-zinc-800/50 hover:border-zinc-600 hover:bg-zinc-800 text-zinc-200"
+            }`}
+            data-testid={`moneyline-${market.id}-${idx}`}
+          >
+            <span className="font-medium">{abbr}</span>
+            <span className={`font-mono font-bold ${isSelected ? "text-wild-brand" : "text-wild-gold"}`}>
+              {priceInCents}¢
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Market group display with line selector for spreads/totals
+function MarketGroupDisplay({
+  group,
+  eventTitle,
+  onSelectMarket,
+  selectedMarketId,
+  selectedDirection
+}: {
+  group: MarketGroup;
+  eventTitle: string;
+  onSelectMarket: (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string) => void;
+  selectedMarketId?: string;
+  selectedDirection?: string;
+}) {
+  // Extract unique lines from markets and sort them
+  const lines = Array.from(new Set(group.markets.map(m => Math.abs(m.line || 0)))).sort((a, b) => a - b);
+  const [selectedLine, setSelectedLine] = useState(lines.length > 0 ? lines[0] : 0);
+  
+  // Find market matching selected line (or first market if no lines)
+  const activeMarket = group.markets.find(m => Math.abs(m.line || 0) === selectedLine) || group.markets[0];
+  
+  if (!activeMarket) return null;
+  
+  // Determine if this market is selected and what direction
+  const isThisMarketSelected = selectedMarketId === activeMarket.id;
+  
+  // Handle selection for spreads (home/away direction)
+  const handleSpreadSelect = (market: ParsedMarket, direction: "home" | "away") => {
+    onSelectMarket(market, eventTitle, group.type, direction);
+  };
+  
+  // Handle selection for totals (over/under direction)  
+  const handleTotalsSelect = (market: ParsedMarket, direction: "over" | "under") => {
+    onSelectMarket(market, eventTitle, group.type, direction);
+  };
+  
+  // Handle selection for moneyline
+  const handleMoneylineSelect = (market: ParsedMarket, outcomeIndex: number) => {
+    const direction = outcomeIndex === 0 ? "yes" : "no";
+    onSelectMarket(market, eventTitle, group.type, direction);
+  };
+  
+  // Compute selected direction only if this market is selected
+  const spreadDirection = isThisMarketSelected ? (selectedDirection as "home" | "away" | null) : null;
+  const totalsDirection = isThisMarketSelected ? (selectedDirection as "over" | "under" | null) : null;
+  const moneylineOutcomeIndex = isThisMarketSelected && selectedDirection 
+    ? (selectedDirection === "yes" ? 0 : selectedDirection === "no" ? 1 : null) 
+    : null;
+  
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+          {group.label}
+        </span>
+        <span className="text-xs text-zinc-600">
+          {formatVolume(group.volume)} Vol.
+        </span>
+      </div>
+      
+      {group.type === "spreads" && (
+        <>
+          <SpreadMarketDisplay
+            market={activeMarket}
+            eventTitle={eventTitle}
+            onSelect={handleSpreadSelect}
+            selectedDirection={spreadDirection}
+          />
+          <LineSelector lines={lines} selectedLine={selectedLine} onSelect={setSelectedLine} />
+        </>
+      )}
+      
+      {group.type === "totals" && (
+        <>
+          <TotalsMarketDisplay
+            market={activeMarket}
+            onSelect={handleTotalsSelect}
+            selectedDirection={totalsDirection}
+          />
+          <LineSelector lines={lines} selectedLine={selectedLine} onSelect={setSelectedLine} />
+        </>
+      )}
+      
+      {group.type !== "spreads" && group.type !== "totals" && (
+        <MoneylineMarketDisplay
+          market={activeMarket}
+          eventTitle={eventTitle}
+          onSelect={handleMoneylineSelect}
+          selectedOutcomeIndex={moneylineOutcomeIndex}
+        />
+      )}
+    </div>
+  );
+}
+
 // New EventCard component using DisplayEvent
 function EventCard({ 
   event, 
   onSelectMarket,
-  selectedMarketId 
+  selectedMarketId,
+  selectedDirection
 }: { 
   event: DisplayEvent;
-  onSelectMarket: (market: ParsedMarket, eventTitle: string, marketType: string) => void;
+  onSelectMarket: (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string) => void;
   selectedMarketId?: string;
+  selectedDirection?: string;
 }) {
   const countdown = getCountdown(event.gameStartTime);
   
@@ -199,54 +525,14 @@ function EventCard({
       
       {/* Market Groups */}
       {event.marketGroups.map((group) => (
-        <div key={group.type} className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-              {group.label}
-            </span>
-            <span className="text-xs text-zinc-600">
-              {formatVolume(group.volume)}
-            </span>
-          </div>
-          
-          <div className="flex flex-wrap gap-2">
-            {group.markets.map((market) => {
-              const isSelected = selectedMarketId === market.id;
-              const priceInCents = Math.round(market.bestAsk * 100);
-              
-              // For display, use a shortened version of groupItemTitle
-              let displayLabel = market.groupItemTitle;
-              // Remove "FC", "vs.", dates, and long team names
-              displayLabel = displayLabel
-                .replace(/\s+FC$/i, "")
-                .replace(/\s+\(.*?\)$/i, "")
-                .replace(/Draw \(.*?\)/i, "Draw");
-              
-              // Truncate if still too long
-              if (displayLabel.length > 20) {
-                displayLabel = displayLabel.slice(0, 18) + "...";
-              }
-              
-              return (
-                <button
-                  key={market.id}
-                  onClick={() => onSelectMarket(market, event.title, group.type)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md border text-sm transition-all ${
-                    isSelected 
-                      ? "border-wild-brand bg-wild-brand/20 text-white" 
-                      : "border-zinc-700 bg-zinc-800/50 hover:border-zinc-600 hover:bg-zinc-800 text-zinc-200"
-                  }`}
-                  data-testid={`market-${market.id}`}
-                >
-                  <span className="font-medium">{displayLabel}</span>
-                  <span className={`font-mono font-bold ${isSelected ? "text-wild-brand" : "text-wild-gold"}`}>
-                    {priceInCents}¢
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <MarketGroupDisplay
+          key={group.type}
+          group={group}
+          eventTitle={event.title}
+          onSelectMarket={onSelectMarket}
+          selectedMarketId={selectedMarketId}
+          selectedDirection={selectedDirection}
+        />
       ))}
     </Card>
   );
@@ -383,14 +669,38 @@ export function PredictView({
     });
   };
 
-  const handleSelectMarket = (market: ParsedMarket, eventTitle: string, marketType: string) => {
-    // Calculate odds from bestAsk price
-    const price = market.bestAsk || market.outcomes[0]?.price || 0.5;
+  const handleSelectMarket = (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string) => {
+    // Determine which outcome based on direction
+    // For spreads: "home" = index 0, "away" = index 1
+    // For totals: "over" = index 0, "under" = index 1
+    // For moneyline: "yes" = index 0, "no" = index 1
+    let outcomeIndex = 0;
+    if (direction === "away" || direction === "under" || direction === "no") {
+      outcomeIndex = 1;
+    }
+    
+    const outcome = market.outcomes[outcomeIndex];
+    const price = outcome?.price || market.bestAsk || 0.5;
     const odds = price > 0 ? 1 / price : 2;
     
-    // Extract CLOB token IDs (index 0 = YES, index 1 = NO)
+    // Extract CLOB token IDs based on direction
     const yesTokenId = market.clobTokenIds?.[0] || market.outcomes[0]?.tokenId;
     const noTokenId = market.clobTokenIds?.[1] || market.outcomes[1]?.tokenId;
+    
+    // Create a descriptive outcome label
+    let outcomeLabel = market.groupItemTitle;
+    if (marketType === "spreads" && market.line !== undefined) {
+      const line = market.line;
+      if (direction === "home") {
+        outcomeLabel = `${getTeamAbbreviation(market.outcomes[0].label)} ${line > 0 ? "+" : ""}${line}`;
+      } else {
+        outcomeLabel = `${getTeamAbbreviation(market.outcomes[1].label)} ${-line > 0 ? "+" : ""}${-line}`;
+      }
+    } else if (marketType === "totals" && market.line !== undefined) {
+      outcomeLabel = direction === "over" ? `O ${market.line}` : `U ${market.line}`;
+    } else if (outcome) {
+      outcomeLabel = getTeamAbbreviation(outcome.label);
+    }
     
     // Pass to parent with all info for bet slip
     onPlaceBet(
@@ -398,8 +708,9 @@ export function PredictView({
       market.conditionId, 
       odds,
       eventTitle,
-      market.groupItemTitle,
+      outcomeLabel,
       marketType,
+      direction,
       yesTokenId,
       noTokenId
     );
@@ -441,6 +752,7 @@ export function PredictView({
                         event={event}
                         onSelectMarket={handleSelectMarket}
                         selectedMarketId={selectedBet?.marketId}
+                        selectedDirection={selectedBet?.direction}
                       />
                     ))}
                   </div>
@@ -458,6 +770,7 @@ export function PredictView({
                         event={event}
                         onSelectMarket={handleSelectMarket}
                         selectedMarketId={selectedBet?.marketId}
+                        selectedDirection={selectedBet?.direction}
                       />
                     ))}
                   </div>

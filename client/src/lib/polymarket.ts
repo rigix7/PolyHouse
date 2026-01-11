@@ -4,6 +4,17 @@ export interface GammaTag {
   id: string;
   label: string;
   slug: string;
+  sportId?: string;
+}
+
+export interface PolymarketSport {
+  id: string;
+  slug: string;
+  label: string;
+  tags?: string;
+  series?: string;
+  image?: string;
+  resolutionSource?: string;
 }
 
 export interface GammaOutcome {
@@ -39,7 +50,21 @@ export interface GammaEvent {
   tags: GammaTag[];
 }
 
-// Fetch sports tags via server proxy (bypasses CORS)
+// Fetch sports directly from Polymarket /sports endpoint
+export async function fetchPolymarketSports(): Promise<PolymarketSport[]> {
+  try {
+    const response = await fetch("/api/polymarket/sports");
+    if (!response.ok) {
+      throw new Error(`Failed to fetch sports: ${response.status}`);
+    }
+    return response.json();
+  } catch (error) {
+    console.error("Error fetching Polymarket sports:", error);
+    return [];
+  }
+}
+
+// Fetch sports tags via server proxy (backwards compatibility)
 export async function fetchGammaTags(): Promise<GammaTag[]> {
   try {
     const response = await fetch("/api/polymarket/tags");

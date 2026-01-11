@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { fetchGammaTags, type GammaTag } from "@/lib/polymarket";
+import { fetchPolymarketSports, type PolymarketSport, type GammaTag } from "@/lib/polymarket";
 import type { Market, Player, InsertMarket, InsertPlayer, AdminSettings, Futures } from "@shared/schema";
 
 const playerFormSchema = z.object({
@@ -50,8 +50,8 @@ function extractSlugFromInput(input: string): string {
 export default function AdminPage() {
   const { toast } = useToast();
   const [activeSection, setActiveSection] = useState<"matchday" | "futures" | "players">("matchday");
-  const [gammaTags, setGammaTags] = useState<GammaTag[]>([]);
-  const [loadingTags, setLoadingTags] = useState(false);
+  const [sportsLeagues, setSportsLeagues] = useState<PolymarketSport[]>([]);
+  const [loadingLeagues, setLoadingLeagues] = useState(false);
   const [showPlayerForm, setShowPlayerForm] = useState(false);
   const [futuresSlug, setFuturesSlug] = useState("");
   const [fetchingEvent, setFetchingEvent] = useState(false);
@@ -95,30 +95,36 @@ export default function AdminPage() {
     },
   });
 
-  const loadGammaTags = async () => {
-    setLoadingTags(true);
+  const loadSportsLeagues = async () => {
+    setLoadingLeagues(true);
     try {
-      const tags = await fetchGammaTags();
-      setGammaTags(tags);
+      const sports = await fetchPolymarketSports();
+      setSportsLeagues(sports);
     } catch (error) {
-      toast({ title: "Failed to load tags", variant: "destructive" });
+      toast({ title: "Failed to load sports leagues", variant: "destructive" });
     } finally {
-      setLoadingTags(false);
+      setLoadingLeagues(false);
     }
   };
 
   useEffect(() => {
-    if (activeSection === "matchday" && gammaTags.length === 0) {
-      loadGammaTags();
+    if (activeSection === "matchday" && sportsLeagues.length === 0) {
+      loadSportsLeagues();
     }
   }, [activeSection]);
 
-  const handleTagToggle = (tagId: string, checked: boolean) => {
+  const handleLeagueToggle = (sportTags: string, checked: boolean) => {
     const currentTags = adminSettings?.activeTagIds || [];
-    const newTags = checked
-      ? [...currentTags, tagId]
-      : currentTags.filter(id => id !== tagId);
-    updateSettingsMutation.mutate({ activeTagIds: newTags });
+    const tagIds = sportTags.split(",").map(t => t.trim()).filter(Boolean);
+    
+    if (checked) {
+      const combined = [...currentTags, ...tagIds];
+      const newTags = Array.from(new Set(combined));
+      updateSettingsMutation.mutate({ activeTagIds: newTags });
+    } else {
+      const newTags = currentTags.filter(id => !tagIds.includes(id));
+      updateSettingsMutation.mutate({ activeTagIds: newTags });
+    }
   };
 
   const createFuturesMutation = useMutation({
@@ -132,7 +138,7 @@ export default function AdminPage() {
       endDate?: string;
       marketData?: {
         question: string;
-        outcomes: Array<{ label: string; probability: number; odds: number }>;
+        outcomes: Array<{ label: string; probability: number; odds: number; marketId?: string; conditionId?: string }>;
         volume: number;
         liquidity: number;
         conditionId: string;
@@ -180,26 +186,44 @@ export default function AdminPage() {
       const eventData = result.data;
 
       if (result.type === "event") {
-        const market = eventData.markets?.[0];
+        const markets = eventData.markets || [];
         let marketData = undefined;
         
-        if (market) {
+        if (markets.length > 0) {
           try {
-            const prices = JSON.parse(market.outcomePrices || "[]");
-            const outcomes = JSON.parse(market.outcomes || "[]");
-            marketData = {
-              question: market.question || eventData.title,
-              outcomes: outcomes.map((label: string, i: number) => {
+            const allOutcomes: Array<{ label: string; probability: number; odds: number; marketId?: string; conditionId?: string }> = [];
+            let totalVolume = 0;
+            let totalLiquidity = 0;
+            
+            for (const market of markets) {
+              const prices = JSON.parse(market.outcomePrices || "[]");
+              const outcomes = JSON.parse(market.outcomes || "[]");
+              totalVolume += parseFloat(market.volume || "0");
+              totalLiquidity += parseFloat(market.liquidity || "0");
+              
+              outcomes.forEach((label: string, i: number) => {
                 const prob = parseFloat(prices[i] || "0");
-                return {
-                  label,
-                  probability: prob,
-                  odds: prob > 0 ? Math.round((1 / prob) * 100) / 100 : 99,
-                };
-              }),
-              volume: parseFloat(market.volume || "0"),
-              liquidity: parseFloat(market.liquidity || "0"),
-              conditionId: market.conditionId || "",
+                if (label.toLowerCase() === "yes" || markets.length === 1) {
+                  const displayLabel = markets.length > 1 ? market.question?.replace(/^Will /i, "").replace(/\?$/, "") || label : label;
+                  allOutcomes.push({
+                    label: displayLabel,
+                    probability: prob,
+                    odds: prob > 0 ? Math.round((1 / prob) * 100) / 100 : 99,
+                    marketId: market.id,
+                    conditionId: market.conditionId,
+                  });
+                }
+              });
+            }
+            
+            allOutcomes.sort((a, b) => b.probability - a.probability);
+            
+            marketData = {
+              question: eventData.title,
+              outcomes: allOutcomes,
+              volume: totalVolume,
+              liquidity: totalLiquidity,
+              conditionId: markets[0]?.conditionId || "",
             };
           } catch (e) {
             console.error("Failed to parse market data:", e);
@@ -346,51 +370,52 @@ export default function AdminPage() {
           <div className="space-y-4">
             <div className="flex justify-between items-center gap-2 flex-wrap">
               <div>
-                <h2 className="text-lg font-bold">Match Day - Leagues</h2>
+                <h2 className="text-lg font-bold">Match Day - Sports Leagues</h2>
                 <p className="text-sm text-zinc-500">
-                  Select leagues to auto-populate upcoming games in the Predict tab
+                  Select sports leagues to auto-populate upcoming games in the Predict tab
                 </p>
               </div>
               <Button
                 variant="outline"
-                onClick={loadGammaTags}
-                disabled={loadingTags}
-                data-testid="button-refresh-tags"
+                onClick={loadSportsLeagues}
+                disabled={loadingLeagues}
+                data-testid="button-refresh-leagues"
               >
-                <RefreshCw className={`w-4 h-4 mr-2 ${loadingTags ? "animate-spin" : ""}`} />
+                <RefreshCw className={`w-4 h-4 mr-2 ${loadingLeagues ? "animate-spin" : ""}`} />
                 Refresh
               </Button>
             </div>
 
-            {loadingTags ? (
-              <div className="text-zinc-500">Loading leagues from Polymarket...</div>
-            ) : gammaTags.length === 0 ? (
+            {loadingLeagues ? (
+              <div className="text-zinc-500">Loading sports leagues from Polymarket...</div>
+            ) : sportsLeagues.length === 0 ? (
               <Card className="p-8 text-center text-zinc-500">
-                No leagues found. Click "Refresh" to load from Polymarket.
+                No sports leagues found. Click "Refresh" to load from Polymarket.
               </Card>
             ) : (
               <div className="grid gap-2">
-                {gammaTags.map((tag) => {
-                  const isActive = adminSettings?.activeTagIds?.includes(tag.id) || false;
+                {sportsLeagues.map((sport) => {
+                  const sportTagIds = (sport.tags || "").split(",").map(t => t.trim()).filter(Boolean);
+                  const isActive = sportTagIds.some(id => adminSettings?.activeTagIds?.includes(id));
                   return (
                     <Card
-                      key={tag.id}
+                      key={sport.id}
                       className={`p-4 flex justify-between items-center cursor-pointer transition-colors ${
                         isActive ? "border-wild-brand/50 bg-wild-brand/5" : ""
                       }`}
-                      onClick={() => handleTagToggle(tag.id, !isActive)}
-                      data-testid={`tag-${tag.id}`}
+                      onClick={() => handleLeagueToggle(sport.tags || "", !isActive)}
+                      data-testid={`sport-${sport.slug}`}
                     >
                       <div className="flex items-center gap-3">
                         <Checkbox
                           checked={isActive}
-                          onCheckedChange={(checked) => handleTagToggle(tag.id, checked as boolean)}
-                          data-testid={`checkbox-tag-${tag.id}`}
+                          onCheckedChange={(checked) => handleLeagueToggle(sport.tags || "", checked as boolean)}
+                          data-testid={`checkbox-sport-${sport.slug}`}
                         />
                         <div>
-                          <div className="font-bold">{tag.label}</div>
+                          <div className="font-bold">{sport.label}</div>
                           <div className="text-sm text-zinc-500">
-                            Slug: {tag.slug}
+                            {sport.slug}
                           </div>
                         </div>
                       </div>
@@ -406,17 +431,20 @@ export default function AdminPage() {
             {(adminSettings?.activeTagIds?.length || 0) > 0 && (
               <div className="mt-4 p-4 bg-zinc-900 rounded-md">
                 <div className="text-sm text-zinc-400 mb-2">
-                  Active Leagues ({adminSettings?.activeTagIds?.length}) - Games will auto-populate:
+                  Active Leagues - Games will auto-populate:
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {adminSettings?.activeTagIds?.map(id => {
-                    const tag = gammaTags.find(t => t.id === id);
-                    return (
-                      <span key={id} className="px-2 py-1 bg-wild-brand/20 text-wild-brand rounded text-sm">
-                        {tag?.label || id}
+                  {sportsLeagues
+                    .filter(sport => {
+                      const tagIds = (sport.tags || "").split(",").map(t => t.trim());
+                      return tagIds.some(id => adminSettings?.activeTagIds?.includes(id));
+                    })
+                    .map(sport => (
+                      <span key={sport.id} className="px-2 py-1 bg-wild-brand/20 text-wild-brand rounded text-sm">
+                        {sport.label}
                       </span>
-                    );
-                  })}
+                    ))
+                  }
                 </div>
               </div>
             )}

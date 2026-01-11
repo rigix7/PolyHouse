@@ -90,7 +90,7 @@ export const futures = pgTable("futures", {
   status: text("status").notNull().default("active"),
   marketData: jsonb("market_data").$type<{
     question: string;
-    outcomes: Array<{ label: string; probability: number; odds: number }>;
+    outcomes: Array<{ label: string; probability: number; odds: number; marketId?: string; conditionId?: string }>;
     volume: number;
     liquidity: number;
     conditionId: string;

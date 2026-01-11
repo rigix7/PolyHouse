@@ -374,20 +374,38 @@ export async function registerRoutes(
     });
   });
 
-  // Gamma API proxy - bypasses CORS for fetching Polymarket markets
-  app.get("/api/polymarket/tags", async (req, res) => {
+  // Fetch sports leagues from Polymarket /sports endpoint
+  app.get("/api/polymarket/sports", async (req, res) => {
     try {
-      const response = await fetch(`${GAMMA_API_BASE}/tags`);
+      const response = await fetch(`${GAMMA_API_BASE}/sports`);
       if (!response.ok) {
         throw new Error(`Gamma API error: ${response.status}`);
       }
-      const tags = await response.json();
-      // Filter to sports-related tags
-      const sportsTags = tags.filter((tag: { label?: string; slug?: string }) => 
-        ["sports", "nba", "nfl", "mlb", "nhl", "soccer", "football", "basketball", "tennis", "mma", "boxing", "golf", "esports"].some(
-          keyword => tag.label?.toLowerCase().includes(keyword) || tag.slug?.toLowerCase().includes(keyword)
-        )
-      );
+      const sports = await response.json();
+      res.json(sports);
+    } catch (error) {
+      console.error("Error fetching Polymarket sports:", error);
+      res.status(500).json({ error: "Failed to fetch sports" });
+    }
+  });
+
+  // Legacy tags endpoint - now fetches from /sports for better filtering
+  app.get("/api/polymarket/tags", async (req, res) => {
+    try {
+      const response = await fetch(`${GAMMA_API_BASE}/sports`);
+      if (!response.ok) {
+        throw new Error(`Gamma API error: ${response.status}`);
+      }
+      const sports = await response.json();
+      
+      // Transform sports into tag-like format for backwards compatibility
+      const sportsTags = sports.map((sport: { id?: string; slug?: string; label?: string; tags?: string }) => ({
+        id: sport.tags || sport.id || sport.slug,
+        label: sport.label || sport.slug || "Unknown",
+        slug: sport.slug || "",
+        sportId: sport.id,
+      }));
+      
       res.json(sportsTags);
     } catch (error) {
       console.error("Error fetching Gamma tags:", error);

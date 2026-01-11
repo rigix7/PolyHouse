@@ -29,57 +29,66 @@ function FuturesCard({ future, onPlaceBet, selectedOutcome }: {
   onPlaceBet: (marketId: string, outcomeId: string, odds: number) => void;
   selectedOutcome?: string;
 }) {
+  const [showAll, setShowAll] = useState(false);
   const outcomes = future.marketData?.outcomes || [];
+  const displayedOutcomes = showAll ? outcomes : outcomes.slice(0, 6);
+  const hasMore = outcomes.length > 6;
   
   return (
     <Card className="p-4 space-y-3" data-testid={`futures-card-${future.id}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <h3 className="font-bold text-sm truncate">{future.title}</h3>
+          <h3 className="font-bold text-sm">{future.title}</h3>
           {future.description && (
-            <p className="text-xs text-zinc-500 truncate mt-0.5">{future.description}</p>
+            <p className="text-xs text-zinc-500 line-clamp-2 mt-0.5">{future.description}</p>
           )}
         </div>
         <Badge variant="secondary" className="text-xs shrink-0">
           <Calendar className="w-3 h-3 mr-1" />
-          Long-term
+          {outcomes.length} teams
         </Badge>
       </div>
       
       {outcomes.length > 0 && (
-        <div className="grid gap-2">
-          {outcomes.slice(0, 4).map((outcome, index) => {
-            const outcomeId = `${future.id}-${index}`;
-            const isSelected = selectedOutcome === outcomeId;
-            const probability = outcome.probability * 100;
-            
-            return (
-              <button
-                key={index}
-                onClick={() => onPlaceBet(future.id, outcomeId, outcome.odds)}
-                className={`flex items-center justify-between p-2 rounded-md border transition-colors ${
-                  isSelected 
-                    ? "border-wild-brand bg-wild-brand/10" 
-                    : "border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900/50"
-                }`}
-                data-testid={`futures-outcome-${future.id}-${index}`}
-              >
-                <span className="text-sm truncate flex-1 text-left">{outcome.label}</span>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-xs text-zinc-500">{probability.toFixed(0)}%</span>
-                  <span className={`font-mono text-sm font-bold ${
-                    isSelected ? "text-wild-brand" : "text-wild-gold"
-                  }`}>
-                    {outcome.odds.toFixed(2)}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
-          {outcomes.length > 4 && (
-            <p className="text-xs text-zinc-600 text-center">
-              +{outcomes.length - 4} more options
-            </p>
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2 max-h-[400px] overflow-y-auto">
+            {displayedOutcomes.map((outcome, index) => {
+              const outcomeId = outcome.marketId || outcome.conditionId || `${future.id}-${index}`;
+              const isSelected = selectedOutcome === outcomeId;
+              const probability = outcome.probability * 100;
+              
+              return (
+                <button
+                  key={index}
+                  onClick={() => onPlaceBet(future.id, outcomeId, outcome.odds)}
+                  className={`flex flex-col p-2 rounded-md border transition-colors text-left ${
+                    isSelected 
+                      ? "border-wild-brand bg-wild-brand/10" 
+                      : "border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900/50"
+                  }`}
+                  data-testid={`futures-outcome-${future.id}-${index}`}
+                >
+                  <span className="text-xs truncate w-full font-medium">{outcome.label}</span>
+                  <div className="flex items-center justify-between w-full mt-1">
+                    <span className="text-xs text-zinc-500">{probability.toFixed(0)}%</span>
+                    <span className={`font-mono text-sm font-bold ${
+                      isSelected ? "text-wild-brand" : "text-wild-gold"
+                    }`}>
+                      {outcome.odds.toFixed(2)}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {hasMore && (
+            <button
+              onClick={() => setShowAll(!showAll)}
+              className="w-full text-xs text-wild-brand hover:text-wild-brand/80 py-1"
+              data-testid={`futures-toggle-${future.id}`}
+            >
+              {showAll ? "Show less" : `Show all ${outcomes.length} teams`}
+            </button>
           )}
         </div>
       )}

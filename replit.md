@@ -46,6 +46,20 @@ Wildcard is a sports prediction terminal application featuring a HUD-style dark 
 - GET /api/wallet
 - POST /api/polymarket/sign (stub)
 
+## Sport Config Editor
+The Admin panel includes a comprehensive Sport + Market Type Configuration system:
+- **Dynamic Market Type Discovery**: Scans up to 50 events per sport to find ALL available market types (moneyline, spreads, totals, player props, etc.)
+- **Sample API Data**: Fetches real sample market data for the selected sport+marketType combination
+- **Field Mapping**: Configure which API fields map to title, button labels, bet slip
+- **Line Display**: Configure how spread/total lines are displayed
+- **Outcome Strategy**: Configure how outcome labels are formatted
+- **Composite Unique Key**: Uses (sportSlug, marketType) composite key to prevent duplicate configs
+
+Key API Endpoints:
+- GET /api/admin/sport-market-types/:seriesId - Discovers all market types for a sport
+- GET /api/admin/sport-sample-v2/:seriesId/:marketType - Gets sample market data
+- GET/POST/DELETE /api/admin/sport-market-configs - CRUD for configurations
+
 ## Recent Changes
 - Initial MVP implementation (January 2026)
 - Created terminal-style UI components
@@ -56,3 +70,7 @@ Wildcard is a sports prediction terminal application featuring a HUD-style dark 
 - Fixed Price Ticker sync with Match Day view using 5-day filter
 - Added getShortOutcomeLabel() helper for concise futures outcome display
 - Enlarged EventCard with more padding and description display
+- Enhanced Sport Config Editor with comprehensive market type discovery (January 12, 2026)
+  - Scans 50 events per sport instead of 20 for better market type coverage
+  - Added v2 sample endpoint with 30-event search and full raw market data
+  - UI shows market type count, labels, and configured status

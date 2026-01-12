@@ -269,15 +269,23 @@ export const fetchGammaTags = fetchSportsWithMarketTypes;
 // Parse tag ID to extract series and market type
 // Format: "seriesId_marketType" (e.g., "10345_moneyline") or legacy "series_seriesId"
 export function parseTagId(tagId: string): { seriesId: string; marketType: string | null } {
-  // New format: seriesId_marketType
-  const parts = tagId.split("_");
-  if (parts.length === 2 && !tagId.startsWith("series_")) {
-    return { seriesId: parts[0], marketType: parts[1] };
-  }
   // Legacy format: series_seriesId
   if (tagId.startsWith("series_")) {
     return { seriesId: tagId.replace("series_", ""), marketType: null };
   }
+  
+  // New format: seriesId_marketType (where marketType can contain underscores)
+  // The seriesId is always numeric, so we can extract it from the beginning
+  const underscoreIndex = tagId.indexOf("_");
+  if (underscoreIndex > 0) {
+    const potentialSeriesId = tagId.substring(0, underscoreIndex);
+    // Check if it's a numeric series ID
+    if (/^\d+$/.test(potentialSeriesId)) {
+      const marketType = tagId.substring(underscoreIndex + 1);
+      return { seriesId: potentialSeriesId, marketType: marketType || null };
+    }
+  }
+  
   return { seriesId: tagId, marketType: null };
 }
 

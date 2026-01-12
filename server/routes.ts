@@ -551,6 +551,7 @@ export async function registerRoutes(
         url += `&tag_id=${tagId}`;
       }
       
+      console.log(`[Gamma API] Fetching events: ${url}`);
       const response = await fetch(url);
       
       if (!response.ok) {
@@ -558,6 +559,16 @@ export async function registerRoutes(
       }
       
       const events = await response.json();
+      
+      // Debug logging for NBA events (series_id 10345)
+      if (seriesId === "10345") {
+        console.log(`[NBA Debug] Received ${events.length} events from Gamma API`);
+        events.slice(0, 3).forEach((event: any, idx: number) => {
+          const market = event.markets?.[0];
+          console.log(`[NBA Debug] Event ${idx}: "${event.title?.substring(0, 50)}..." startDate=${event.startDate} gameStartTime=${market?.gameStartTime || 'N/A'}`);
+        });
+      }
+      
       res.json(events);
     } catch (error) {
       console.error("Error fetching Gamma events:", error);

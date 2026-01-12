@@ -80,17 +80,8 @@ function isWithin5Days(dateString: string): boolean {
   return diff >= sixHoursAgoMs && diff <= fiveDaysMs;
 }
 
-// Price ticker using DisplayEvents
+// Price ticker using DisplayEvents with CSS infinite marquee animation
 function PriceTicker({ events }: { events: DisplayEvent[] }) {
-  const [offset, setOffset] = useState(0);
-  
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setOffset((prev) => (prev + 1) % 100);
-    }, 50);
-    return () => clearInterval(interval);
-  }, []);
-  
   if (events.length === 0) return null;
   
   // Filter to only events within 5 days (same as Match Day view)
@@ -106,7 +97,6 @@ function PriceTicker({ events }: { events: DisplayEvent[] }) {
     if (!moneylineGroup) continue;
     
     for (const market of moneylineGroup.markets.slice(0, 3)) {
-      // Use groupItemTitle and bestAsk
       const yesPrice = market.bestAsk || market.outcomes[0]?.price || 0;
       tickerItems.push({
         title: `${event.league}: ${market.groupItemTitle}`,
@@ -117,14 +107,28 @@ function PriceTicker({ events }: { events: DisplayEvent[] }) {
   
   if (tickerItems.length === 0) return null;
   
+  // Calculate animation duration based on number of items (longer for more items)
+  const animationDuration = Math.max(20, tickerItems.length * 4);
+  
   return (
     <div className="bg-zinc-900/80 border-b border-zinc-800 overflow-hidden">
-      <div 
-        className="flex whitespace-nowrap py-2 px-3 gap-8"
-        style={{ transform: `translateX(-${offset}%)`, transition: 'transform 0.05s linear' }}
-      >
+      <style>
+        {`
+          @keyframes marquee {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+          }
+          .ticker-content {
+            animation: marquee ${animationDuration}s linear infinite;
+          }
+          .ticker-content:hover {
+            animation-play-state: paused;
+          }
+        `}
+      </style>
+      <div className="ticker-content flex whitespace-nowrap py-2 px-3 gap-8">
         {[...tickerItems, ...tickerItems].map((item, idx) => (
-          <div key={idx} className="flex items-center gap-2 text-xs">
+          <div key={idx} className="flex items-center gap-2 text-xs shrink-0">
             <span className="text-zinc-400">{item.title}</span>
             <span className="text-wild-gold font-mono font-bold">{item.price}¢</span>
           </div>
@@ -356,6 +360,82 @@ function TotalsMarketDisplay({
   );
 }
 
+// Soccer 3-way moneyline display - shows Home/Draw/Away with prices
+// Clicking any option opens betslip with Yes/No choice for that specific market
+function SoccerMoneylineDisplay({
+  markets,
+  eventTitle,
+  onSelect,
+  selectedMarketId,
+  selectedDirection
+}: {
+  markets: ParsedMarket[];
+  eventTitle: string;
+  onSelect: (market: ParsedMarket, direction: "yes" | "no") => void;
+  selectedMarketId?: string;
+  selectedDirection?: string | null;
+}) {
+  // Soccer markets come as separate markets for Home Win, Draw, Away Win
+  // Each market has outcomes ["Yes", "No"] with prices
+  
+  // Try to identify Home/Draw/Away from groupItemTitle or question
+  const getMarketType = (market: ParsedMarket): "home" | "draw" | "away" | null => {
+    const title = (market.groupItemTitle || market.question || "").toLowerCase();
+    if (title.includes("draw") || title.includes("tie")) return "draw";
+    // Check if it's the first team (home) or second team (away)
+    // Usually home team appears first in event title
+    return null;
+  };
+  
+  // Sort markets: try to order as Home, Draw, Away
+  const sortedMarkets = [...markets].slice(0, 3);
+  
+  return (
+    <div className="flex gap-2">
+      {sortedMarkets.map((market, idx) => {
+        // Get Yes price (outcome[0] is typically "Yes")
+        const yesPrice = market.outcomes[0]?.price || market.bestAsk || 0;
+        const priceInCents = Math.round(yesPrice * 100);
+        
+        // Determine label: use groupItemTitle or extract from question
+        let label = market.groupItemTitle || market.question || `Option ${idx + 1}`;
+        // If label is too long, try to extract team name or shorten
+        if (label.length > 15) {
+          // Try to extract key part (team name or Draw)
+          if (label.toLowerCase().includes("draw")) {
+            label = "Draw";
+          } else {
+            // Take first word or abbreviation
+            label = getTeamAbbreviation(label.split(" ")[0]);
+          }
+        }
+        
+        const isSelected = selectedMarketId === market.id;
+        const isYesSelected = isSelected && selectedDirection === "yes";
+        
+        // Color based on position: Home (teal), Draw (zinc), Away (red)
+        const colorClass = idx === 0 
+          ? (isYesSelected ? "bg-teal-600 border-teal-500" : "bg-teal-900/40 border-teal-800/50 hover:bg-teal-800/50")
+          : idx === 1
+          ? (isYesSelected ? "bg-zinc-600 border-zinc-500" : "bg-zinc-800/60 border-zinc-700/50 hover:bg-zinc-700/50")
+          : (isYesSelected ? "bg-red-600 border-red-500" : "bg-red-900/40 border-red-800/50 hover:bg-red-800/50");
+        
+        return (
+          <button
+            key={market.id}
+            onClick={() => onSelect(market, "yes")}
+            className={`flex-1 flex flex-col items-center gap-1 px-3 py-2 rounded-md border text-sm transition-all ${colorClass} text-zinc-100`}
+            data-testid={`soccer-moneyline-${market.id}`}
+          >
+            <span className="font-medium text-xs truncate max-w-full">{label}</span>
+            <span className="font-mono font-bold text-white">{priceInCents}¢</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // Moneyline market display - shows team buttons with prices
 function MoneylineMarketDisplay({
   market,
@@ -400,20 +480,32 @@ function MoneylineMarketDisplay({
   );
 }
 
+// Check if league is a soccer league
+const SOCCER_LEAGUES = ["Premier League", "La Liga", "Bundesliga", "Serie A", "Ligue 1", "Champions League", "Europa League", "MLS"];
+
+function isSoccerLeague(league: string): boolean {
+  return SOCCER_LEAGUES.some(sl => league.toLowerCase().includes(sl.toLowerCase()));
+}
+
 // Market group display with line selector for spreads/totals
 function MarketGroupDisplay({
   group,
   eventTitle,
+  league,
   onSelectMarket,
   selectedMarketId,
   selectedDirection
 }: {
   group: MarketGroup;
   eventTitle: string;
+  league?: string;
   onSelectMarket: (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string) => void;
   selectedMarketId?: string;
   selectedDirection?: string;
 }) {
+  // Check if this is a soccer moneyline (3-way: Home/Draw/Away)
+  const isSoccerMoneyline = league && isSoccerLeague(league) && group.type === "moneyline" && group.markets.length >= 3;
+  
   // Extract unique lines from markets and sort them
   const lines = Array.from(new Set(group.markets.map(m => Math.abs(m.line || 0)))).sort((a, b) => a - b);
   const [selectedLine, setSelectedLine] = useState(lines.length > 0 ? lines[0] : 0);
@@ -439,6 +531,11 @@ function MarketGroupDisplay({
   // Handle selection for moneyline
   const handleMoneylineSelect = (market: ParsedMarket, outcomeIndex: number) => {
     const direction = outcomeIndex === 0 ? "yes" : "no";
+    onSelectMarket(market, eventTitle, group.type, direction);
+  };
+  
+  // Handle selection for soccer 3-way moneyline
+  const handleSoccerMoneylineSelect = (market: ParsedMarket, direction: "yes" | "no") => {
     onSelectMarket(market, eventTitle, group.type, direction);
   };
   
@@ -483,7 +580,26 @@ function MarketGroupDisplay({
         </>
       )}
       
-      {group.type !== "spreads" && group.type !== "totals" && (
+      {group.type === "moneyline" && isSoccerMoneyline && (
+        <SoccerMoneylineDisplay
+          markets={group.markets}
+          eventTitle={eventTitle}
+          onSelect={handleSoccerMoneylineSelect}
+          selectedMarketId={selectedMarketId}
+          selectedDirection={selectedDirection}
+        />
+      )}
+      
+      {group.type === "moneyline" && !isSoccerMoneyline && (
+        <MoneylineMarketDisplay
+          market={activeMarket}
+          eventTitle={eventTitle}
+          onSelect={handleMoneylineSelect}
+          selectedOutcomeIndex={moneylineOutcomeIndex}
+        />
+      )}
+      
+      {group.type !== "spreads" && group.type !== "totals" && group.type !== "moneyline" && (
         <MoneylineMarketDisplay
           market={activeMarket}
           eventTitle={eventTitle}
@@ -543,6 +659,7 @@ function EventCard({
           key={group.type}
           group={group}
           eventTitle={event.title}
+          league={event.league}
           onSelectMarket={onSelectMarket}
           selectedMarketId={selectedMarketId}
           selectedDirection={selectedDirection}

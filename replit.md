@@ -74,3 +74,8 @@ Key API Endpoints:
   - Scans 50 events per sport instead of 20 for better market type coverage
   - Added v2 sample endpoint with 30-event search and full raw market data
   - UI shows market type count, labels, and configured status
+- Added UI Comparison page at /compare route (January 12, 2026)
+  - A/B testing between current UI and simplified Polymarket-style approach
+  - Simplified view uses question text directly (no field mapping needed)
+  - Groups all markets by event (moneyline, spread, total together)
+  - Side-by-side and tabs view modes for easy comparison

@@ -258,10 +258,24 @@ export default function AdminPage() {
               totalVolume += parseFloat(market.volume || "0");
               totalLiquidity += parseFloat(market.liquidity || "0");
               
-              outcomes.forEach((label: string, i: number) => {
+              outcomes.forEach((outcomeName: string, i: number) => {
                 const prob = parseFloat(prices[i] || "0");
-                if (label.toLowerCase() === "yes" || markets.length === 1) {
-                  const displayLabel = markets.length > 1 ? market.question?.replace(/^Will /i, "").replace(/\?$/, "") || label : label;
+                if (outcomeName.toLowerCase() === "yes" || markets.length === 1) {
+                  // For multi-market events, use groupItemTitle or extract team name from question
+                  // For single markets, use the outcome name directly
+                  let displayLabel = outcomeName;
+                  if (markets.length > 1) {
+                    // Prefer groupItemTitle if available (contains short name like "Arsenal")
+                    if (market.groupItemTitle) {
+                      displayLabel = market.groupItemTitle;
+                    } else {
+                      // Extract team/entity name from question by removing common phrases
+                      displayLabel = market.question
+                        ?.replace(/^Will /i, "")
+                        .replace(/ (finish|win|be|make|qualify|reach|place|get|score|have|become).*$/i, "")
+                        ?.trim() || outcomeName;
+                    }
+                  }
                   allOutcomes.push({
                     label: displayLabel,
                     probability: prob,

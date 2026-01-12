@@ -432,7 +432,8 @@ export function gammaEventToDisplayEvent(event: GammaEvent): DisplayEvent | null
   const marketsByType = new Map<string, ParsedMarket[]>();
   let totalVolume = 0;
   let totalLiquidity = 0;
-  let gameStartTime = event.endDate || event.startDate;
+  // Use fallback chain for game start time: prefer startDate, then endDate
+  let gameStartTime = event.startDate || event.endDate || "";
   
   for (const market of event.markets) {
     const marketType = market.sportsMarketType || "moneyline";
@@ -441,9 +442,12 @@ export function gammaEventToDisplayEvent(event: GammaEvent): DisplayEvent | null
     totalVolume += volume;
     totalLiquidity += liquidity;
     
-    // Use gameStartTime from market if available
-    if (market.gameStartTime) {
-      gameStartTime = market.gameStartTime;
+    // Use gameStartTime from market if available and valid
+    if (market.gameStartTime && market.gameStartTime.length > 0) {
+      const marketTime = new Date(market.gameStartTime);
+      if (!isNaN(marketTime.getTime())) {
+        gameStartTime = market.gameStartTime;
+      }
     }
     
     // Parse outcomes and prices

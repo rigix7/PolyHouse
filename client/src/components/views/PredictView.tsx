@@ -64,8 +64,14 @@ function getCountdown(dateString: string): { text: string; isLive: boolean } {
 }
 
 function isWithin5Days(dateString: string): boolean {
+  if (!dateString) return false;
+  
   const now = new Date();
   const eventTime = new Date(dateString);
+  
+  // Guard against invalid dates
+  if (isNaN(eventTime.getTime())) return false;
+  
   const diff = eventTime.getTime() - now.getTime();
   
   const fiveDaysMs = 5 * 24 * 60 * 60 * 1000;
@@ -87,10 +93,15 @@ function PriceTicker({ events }: { events: DisplayEvent[] }) {
   
   if (events.length === 0) return null;
   
+  // Filter to only events within 5 days (same as Match Day view)
+  const filteredEvents = events.filter(e => isWithin5Days(e.gameStartTime) && e.status !== "ended");
+  
+  if (filteredEvents.length === 0) return null;
+  
   // Extract ticker items from all events' moneyline markets
   const tickerItems: { title: string; price: number }[] = [];
   
-  for (const event of events.slice(0, 8)) {
+  for (const event of filteredEvents.slice(0, 8)) {
     const moneylineGroup = event.marketGroups.find(g => g.type === "moneyline");
     if (!moneylineGroup) continue;
     
@@ -499,20 +510,23 @@ function EventCard({
   const countdown = getCountdown(event.gameStartTime);
   
   return (
-    <Card className="p-3 space-y-3" data-testid={`event-card-${event.id}`}>
+    <Card className="p-4 space-y-4" data-testid={`event-card-${event.id}`}>
       {/* Event Header */}
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <h3 className="font-bold text-sm truncate">{event.title}</h3>
-          <div className="flex items-center gap-2 text-xs text-zinc-500 mt-0.5">
-            <span>{event.league}</span>
+          <h3 className="font-bold text-base leading-tight">{event.title}</h3>
+          {event.description && (
+            <p className="text-sm text-zinc-400 mt-1 line-clamp-2">{event.description}</p>
+          )}
+          <div className="flex items-center gap-2 text-xs text-zinc-500 mt-1.5">
+            <span className="font-medium">{event.league}</span>
             <span>•</span>
             <span>{formatVolume(event.volume)} vol</span>
           </div>
         </div>
         <Badge 
           variant={countdown.isLive ? "destructive" : "secondary"} 
-          className={`text-xs shrink-0 ${countdown.isLive ? "animate-pulse" : ""}`}
+          className={`shrink-0 ${countdown.isLive ? "animate-pulse" : ""}`}
         >
           {countdown.isLive ? (
             <Radio className="w-3 h-3 mr-1" />
@@ -536,6 +550,48 @@ function EventCard({
       ))}
     </Card>
   );
+}
+
+// Extract short display name from futures outcome label
+function getShortOutcomeLabel(label: string): string {
+  if (!label) return label;
+  
+  // If already short (20 chars or less with no common phrases), return as-is
+  const lower = label.toLowerCase();
+  if (label.length <= 20 && 
+      !lower.includes("finish") && 
+      !lower.includes(" win ") && 
+      !lower.includes(" to ") &&
+      !lower.includes("in the")) {
+    return label;
+  }
+  
+  // Remove "Will " prefix
+  let cleaned = label.replace(/^Will /i, "").trim();
+  
+  // Try to extract the subject (team/player name) before the verb
+  // Pattern: Extract everything before common verbs/prepositions
+  const verbPattern = /^(.+?)(?:\s+(?:to|will|finish|win|be|make|qualify|reach|place|get|score|have|become|in the|for the))/i;
+  const match = cleaned.match(verbPattern);
+  if (match && match[1] && match[1].length >= 3) {
+    return match[1].trim();
+  }
+  
+  // Fallback: take first few words (up to 25 chars)
+  if (cleaned.length > 25) {
+    const words = cleaned.split(" ");
+    let result = "";
+    for (const word of words) {
+      if ((result + " " + word).length <= 25) {
+        result = result ? result + " " + word : word;
+      } else {
+        break;
+      }
+    }
+    return result || cleaned.substring(0, 25);
+  }
+  
+  return cleaned;
 }
 
 function FuturesCard({ future, onPlaceBet, selectedOutcome }: { 
@@ -575,22 +631,22 @@ function FuturesCard({ future, onPlaceBet, selectedOutcome }: {
                 <button
                   key={index}
                   onClick={() => onPlaceBet(future.id, outcomeId, outcome.odds)}
-                  className={`flex flex-col p-2 rounded-md border transition-colors text-left ${
+                  className={`flex items-center justify-between gap-2 px-3 py-2 rounded-md border transition-colors ${
                     isSelected 
                       ? "border-wild-brand bg-wild-brand/10" 
                       : "border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900/50"
                   }`}
                   data-testid={`futures-outcome-${future.id}-${index}`}
                 >
-                  <span className="text-xs truncate w-full font-medium">{outcome.label}</span>
-                  <div className="flex items-center justify-between w-full mt-1">
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <span className="text-sm truncate font-medium">{getShortOutcomeLabel(outcome.label)}</span>
                     <span className="text-xs text-zinc-500">{probability.toFixed(0)}%</span>
-                    <span className={`font-mono text-sm font-bold ${
-                      isSelected ? "text-wild-brand" : "text-wild-gold"
-                    }`}>
-                      {outcome.odds.toFixed(2)}
-                    </span>
                   </div>
+                  <span className={`font-mono text-base font-bold shrink-0 ${
+                    isSelected ? "text-wild-brand" : "text-wild-gold"
+                  }`}>
+                    {outcome.odds.toFixed(2)}
+                  </span>
                 </button>
               );
             })}

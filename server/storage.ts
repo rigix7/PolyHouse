@@ -9,6 +9,7 @@ import {
   walletRecords,
   adminSettings,
   futures,
+  sportFieldConfigs,
   type Market,
   type InsertMarket,
   type Player,
@@ -22,6 +23,8 @@ import {
   type WalletRecord,
   type Futures,
   type InsertFutures,
+  type SportFieldConfig,
+  type InsertSportFieldConfig,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -58,6 +61,11 @@ export interface IStorage {
   getFuturesById(id: string): Promise<Futures | undefined>;
   createFutures(future: InsertFutures): Promise<Futures>;
   deleteFutures(id: string): Promise<boolean>;
+
+  getSportFieldConfigs(): Promise<SportFieldConfig[]>;
+  getSportFieldConfig(sportSlug: string): Promise<SportFieldConfig | undefined>;
+  createOrUpdateSportFieldConfig(config: InsertSportFieldConfig): Promise<SportFieldConfig>;
+  deleteSportFieldConfig(sportSlug: string): Promise<boolean>;
 
   seedInitialData(): Promise<void>;
 }
@@ -308,6 +316,55 @@ export class DatabaseStorage implements IStorage {
   async deleteFutures(id: string): Promise<boolean> {
     await db.delete(futures).where(eq(futures.id, id));
     return true;
+  }
+
+  async getSportFieldConfigs(): Promise<SportFieldConfig[]> {
+    return await db.select().from(sportFieldConfigs);
+  }
+
+  async getSportFieldConfig(sportSlug: string): Promise<SportFieldConfig | undefined> {
+    const [config] = await db.select().from(sportFieldConfigs).where(eq(sportFieldConfigs.sportSlug, sportSlug));
+    return config || undefined;
+  }
+
+  async createOrUpdateSportFieldConfig(config: InsertSportFieldConfig): Promise<SportFieldConfig> {
+    const now = new Date().toISOString();
+    const existing = await this.getSportFieldConfig(config.sportSlug);
+    
+    if (existing) {
+      const [updated] = await db
+        .update(sportFieldConfigs)
+        .set({
+          sportLabel: config.sportLabel,
+          titleField: config.titleField,
+          buttonLabelField: config.buttonLabelField,
+          betSlipTitleField: config.betSlipTitleField,
+          useQuestionForTitle: config.useQuestionForTitle,
+          sampleData: config.sampleData as Record<string, unknown> | undefined,
+          updatedAt: now,
+        })
+        .where(eq(sportFieldConfigs.sportSlug, config.sportSlug))
+        .returning();
+      return updated;
+    }
+    
+    const [newConfig] = await db.insert(sportFieldConfigs).values({
+      sportSlug: config.sportSlug,
+      sportLabel: config.sportLabel,
+      titleField: config.titleField || "groupItemTitle",
+      buttonLabelField: config.buttonLabelField || "outcomes",
+      betSlipTitleField: config.betSlipTitleField || "question",
+      useQuestionForTitle: config.useQuestionForTitle || false,
+      sampleData: config.sampleData as Record<string, unknown> | undefined,
+      createdAt: now,
+      updatedAt: now,
+    }).returning();
+    return newConfig;
+  }
+
+  async deleteSportFieldConfig(sportSlug: string): Promise<boolean> {
+    const result = await db.delete(sportFieldConfigs).where(eq(sportFieldConfigs.sportSlug, sportSlug)).returning();
+    return result.length > 0;
   }
 
   async seedInitialData(): Promise<void> {

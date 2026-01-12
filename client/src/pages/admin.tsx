@@ -20,7 +20,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { fetchSportsWithMarketTypes, type SportWithMarketTypes } from "@/lib/polymarket";
-import type { Market, Player, InsertMarket, InsertPlayer, AdminSettings, Futures } from "@shared/schema";
+import type { Market, Player, InsertMarket, InsertPlayer, AdminSettings, Futures, SportFieldConfig } from "@shared/schema";
 
 const playerFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -49,7 +49,7 @@ function extractSlugFromInput(input: string): string {
 
 export default function AdminPage() {
   const { toast } = useToast();
-  const [activeSection, setActiveSection] = useState<"matchday" | "futures" | "players">("matchday");
+  const [activeSection, setActiveSection] = useState<"matchday" | "futures" | "players" | "sportconfig">("matchday");
   const [sportsData, setSportsData] = useState<SportWithMarketTypes[]>([]);
   const [loadingLeagues, setLoadingLeagues] = useState(false);
   const [showPlayerForm, setShowPlayerForm] = useState(false);
@@ -434,6 +434,13 @@ export default function AdminPage() {
             data-testid="button-section-players"
           >
             Demo Players ({players.length})
+          </Button>
+          <Button
+            variant={activeSection === "sportconfig" ? "default" : "secondary"}
+            onClick={() => setActiveSection("sportconfig")}
+            data-testid="button-section-sportconfig"
+          >
+            Sport Config
           </Button>
         </div>
 
@@ -847,7 +854,329 @@ export default function AdminPage() {
             )}
           </div>
         )}
+
+        {activeSection === "sportconfig" && (
+          <SportConfigEditor sportsData={sportsData} toast={toast} />
+        )}
       </div>
+    </div>
+  );
+}
+
+interface SampleData {
+  event: { id: string; title: string; description: string; startDate: string; gameStartTime?: string } | null;
+  market: {
+    id: string;
+    question: string;
+    groupItemTitle: string;
+    sportsMarketType: string;
+    line?: number;
+    outcomes: string;
+    outcomePrices: string;
+    bestAsk?: number;
+    bestBid?: number;
+  } | null;
+  allMarketTypes: string[];
+  message?: string;
+}
+
+function SportConfigEditor({ 
+  sportsData, 
+  toast 
+}: { 
+  sportsData: SportWithMarketTypes[];
+  toast: ReturnType<typeof useToast>["toast"];
+}) {
+  const [selectedSport, setSelectedSport] = useState<string>("");
+  const [sampleData, setSampleData] = useState<SampleData | null>(null);
+  const [loadingSample, setLoadingSample] = useState(false);
+  const [formData, setFormData] = useState({
+    titleField: "groupItemTitle",
+    buttonLabelField: "outcomes",
+    betSlipTitleField: "question",
+    useQuestionForTitle: false,
+  });
+
+  const { data: configs = [], isLoading: configsLoading } = useQuery<SportFieldConfig[]>({
+    queryKey: ["/api/admin/sport-configs"],
+  });
+
+  const saveConfigMutation = useMutation({
+    mutationFn: async (data: {
+      sportSlug: string;
+      sportLabel: string;
+      titleField: string;
+      buttonLabelField: string;
+      betSlipTitleField: string;
+      useQuestionForTitle: boolean;
+      sampleData?: Record<string, unknown>;
+    }) => {
+      return apiRequest("POST", "/api/admin/sport-configs", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/sport-configs"] });
+      toast({ title: "Sport config saved" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save config", variant: "destructive" });
+    },
+  });
+
+  const deleteConfigMutation = useMutation({
+    mutationFn: async (sportSlug: string) => {
+      return apiRequest("DELETE", `/api/admin/sport-configs/${sportSlug}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/sport-configs"] });
+      toast({ title: "Config deleted" });
+    },
+  });
+
+  const handleSelectSport = async (sportId: string) => {
+    setSelectedSport(sportId);
+    const sport = sportsData.find(s => s.id === sportId);
+    if (!sport) return;
+
+    const existingConfig = configs.find(c => c.sportSlug === sport.slug);
+    if (existingConfig) {
+      setFormData({
+        titleField: existingConfig.titleField,
+        buttonLabelField: existingConfig.buttonLabelField,
+        betSlipTitleField: existingConfig.betSlipTitleField,
+        useQuestionForTitle: existingConfig.useQuestionForTitle,
+      });
+    } else {
+      setFormData({
+        titleField: "groupItemTitle",
+        buttonLabelField: "outcomes",
+        betSlipTitleField: "question",
+        useQuestionForTitle: false,
+      });
+    }
+
+    setLoadingSample(true);
+    try {
+      const response = await fetch(`/api/admin/sport-sample/${sport.seriesId}`);
+      const data = await response.json();
+      setSampleData(data);
+    } catch (error) {
+      console.error("Failed to fetch sample data:", error);
+      setSampleData(null);
+    } finally {
+      setLoadingSample(false);
+    }
+  };
+
+  const handleSave = () => {
+    const sport = sportsData.find(s => s.id === selectedSport);
+    if (!sport) return;
+
+    saveConfigMutation.mutate({
+      sportSlug: sport.slug,
+      sportLabel: sport.label,
+      ...formData,
+      sampleData: sampleData?.market as Record<string, unknown> | undefined,
+    });
+  };
+
+  const availableFields = [
+    { value: "question", label: "question - Full question text" },
+    { value: "groupItemTitle", label: "groupItemTitle - Short market title" },
+    { value: "sportsMarketType", label: "sportsMarketType - Market type label" },
+    { value: "outcomes", label: "outcomes - Outcome labels" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-bold">Sport Field Configuration</h2>
+        <p className="text-sm text-zinc-500">
+          Configure which API fields to use for displaying each sport's data
+        </p>
+      </div>
+
+      <Card className="p-4 space-y-4">
+        <div className="space-y-2">
+          <Label>Select Sport to Configure</Label>
+          <Select value={selectedSport} onValueChange={handleSelectSport}>
+            <SelectTrigger data-testid="select-sport-config">
+              <SelectValue placeholder="Choose a sport..." />
+            </SelectTrigger>
+            <SelectContent>
+              {sportsData.map((sport) => (
+                <SelectItem key={sport.id} value={sport.id}>
+                  {sport.label}
+                  {configs.some(c => c.sportSlug === sport.slug) && " ✓"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {selectedSport && (
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Market Title Field</Label>
+                <Select
+                  value={formData.titleField}
+                  onValueChange={(v) => setFormData(prev => ({ ...prev, titleField: v }))}
+                >
+                  <SelectTrigger data-testid="select-title-field">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableFields.map(f => (
+                      <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Button Labels Field</Label>
+                <Select
+                  value={formData.buttonLabelField}
+                  onValueChange={(v) => setFormData(prev => ({ ...prev, buttonLabelField: v }))}
+                >
+                  <SelectTrigger data-testid="select-button-field">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableFields.map(f => (
+                      <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Bet Slip Title Field</Label>
+                <Select
+                  value={formData.betSlipTitleField}
+                  onValueChange={(v) => setFormData(prev => ({ ...prev, betSlipTitleField: v }))}
+                >
+                  <SelectTrigger data-testid="select-betslip-field">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableFields.map(f => (
+                      <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Use Question for Market Title</Label>
+                <div className="flex items-center gap-2 pt-2">
+                  <Checkbox
+                    checked={formData.useQuestionForTitle}
+                    onCheckedChange={(checked) => 
+                      setFormData(prev => ({ ...prev, useQuestionForTitle: checked as boolean }))
+                    }
+                    data-testid="checkbox-use-question"
+                  />
+                  <span className="text-sm text-zinc-400">
+                    Override title with question field (like Tennis)
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <Button
+              onClick={handleSave}
+              disabled={saveConfigMutation.isPending}
+              className="w-full"
+              data-testid="button-save-config"
+            >
+              {saveConfigMutation.isPending ? "Saving..." : "Save Configuration"}
+            </Button>
+          </>
+        )}
+      </Card>
+
+      {selectedSport && (
+        <Card className="p-4 space-y-4">
+          <h3 className="font-bold text-zinc-300">Live Sample Data Preview</h3>
+          {loadingSample ? (
+            <div className="text-zinc-500 flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading sample data...
+            </div>
+          ) : sampleData?.market ? (
+            <div className="space-y-3">
+              <div className="p-3 bg-zinc-900 rounded text-sm font-mono overflow-x-auto">
+                <div className="text-zinc-500 mb-2">// Sample Market Object</div>
+                <div className="space-y-1">
+                  <div><span className="text-blue-400">question:</span> <span className="text-green-400">"{sampleData.market.question}"</span></div>
+                  <div><span className="text-blue-400">groupItemTitle:</span> <span className="text-green-400">"{sampleData.market.groupItemTitle}"</span></div>
+                  <div><span className="text-blue-400">sportsMarketType:</span> <span className="text-green-400">"{sampleData.market.sportsMarketType}"</span></div>
+                  <div><span className="text-blue-400">line:</span> <span className="text-yellow-400">{sampleData.market.line || "null"}</span></div>
+                  <div><span className="text-blue-400">outcomes:</span> <span className="text-green-400">{sampleData.market.outcomes}</span></div>
+                  <div><span className="text-blue-400">outcomePrices:</span> <span className="text-green-400">{sampleData.market.outcomePrices}</span></div>
+                  <div><span className="text-blue-400">bestAsk:</span> <span className="text-yellow-400">{sampleData.market.bestAsk}</span></div>
+                  <div><span className="text-blue-400">bestBid:</span> <span className="text-yellow-400">{sampleData.market.bestBid}</span></div>
+                </div>
+              </div>
+              
+              <div className="text-xs text-zinc-500">
+                <strong>Available market types:</strong> {sampleData.allMarketTypes.join(", ") || "None found"}
+              </div>
+
+              <div className="p-3 bg-zinc-800 rounded">
+                <div className="text-xs text-zinc-400 mb-1">Preview with current settings:</div>
+                <div className="text-white font-medium">
+                  Title: {formData.useQuestionForTitle || formData.titleField === "question" 
+                    ? sampleData.market.question 
+                    : formData.titleField === "groupItemTitle" 
+                      ? sampleData.market.groupItemTitle 
+                      : sampleData.market.sportsMarketType
+                  }
+                </div>
+              </div>
+            </div>
+          ) : sampleData?.message ? (
+            <div className="text-zinc-500">{sampleData.message}</div>
+          ) : (
+            <div className="text-zinc-500">No sample data available</div>
+          )}
+        </Card>
+      )}
+
+      {configs.length > 0 && (
+        <Card className="p-4 space-y-3">
+          <h3 className="font-bold text-zinc-300">Saved Configurations</h3>
+          {configs.map((config) => (
+            <div
+              key={config.id}
+              className="p-3 bg-zinc-900 rounded flex justify-between items-start gap-2"
+              data-testid={`config-${config.sportSlug}`}
+            >
+              <div className="text-sm">
+                <div className="font-medium text-white">{config.sportLabel}</div>
+                <div className="text-zinc-500 text-xs space-y-0.5">
+                  <div>Title: {config.titleField}</div>
+                  <div>Buttons: {config.buttonLabelField}</div>
+                  <div>BetSlip: {config.betSlipTitleField}</div>
+                  {config.useQuestionForTitle && (
+                    <div className="text-wild-brand">Uses question for title</div>
+                  )}
+                </div>
+              </div>
+              <Button
+                variant="destructive"
+                size="icon"
+                onClick={() => deleteConfigMutation.mutate(config.sportSlug)}
+                disabled={deleteConfigMutation.isPending}
+                data-testid={`delete-config-${config.sportSlug}`}
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          ))}
+        </Card>
+      )}
     </div>
   );
 }

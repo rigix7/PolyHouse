@@ -98,6 +98,19 @@ export const futures = pgTable("futures", {
   createdAt: text("created_at").notNull(),
 });
 
+export const sportFieldConfigs = pgTable("sport_field_configs", {
+  id: serial("id").primaryKey(),
+  sportSlug: text("sport_slug").notNull().unique(),
+  sportLabel: text("sport_label").notNull(),
+  titleField: text("title_field").notNull().default("groupItemTitle"),
+  buttonLabelField: text("button_label_field").notNull().default("outcomes"),
+  betSlipTitleField: text("bet_slip_title_field").notNull().default("question"),
+  useQuestionForTitle: boolean("use_question_for_title").notNull().default(false),
+  sampleData: jsonb("sample_data").$type<Record<string, unknown>>(),
+  createdAt: text("created_at"),
+  updatedAt: text("updated_at"),
+});
+
 // ============ ZOD SCHEMAS & TYPES ============
 
 export const insertMarketSchema = createInsertSchema(markets).omit({ id: true });
@@ -122,6 +135,10 @@ export type AdminSettings = typeof adminSettings.$inferSelect;
 export const insertFuturesSchema = createInsertSchema(futures).omit({ id: true, createdAt: true });
 export type InsertFutures = z.infer<typeof insertFuturesSchema>;
 export type Futures = typeof futures.$inferSelect;
+
+export const insertSportFieldConfigSchema = createInsertSchema(sportFieldConfigs).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSportFieldConfig = z.infer<typeof insertSportFieldConfigSchema>;
+export type SportFieldConfig = typeof sportFieldConfigs.$inferSelect;
 
 // ============ LEGACY ZOD SCHEMAS (for API validation) ============
 

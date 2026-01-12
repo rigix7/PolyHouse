@@ -555,6 +555,13 @@ function isSoccerLeague(league: string): boolean {
   return SOCCER_LEAGUES.some(sl => league.toLowerCase().includes(sl.toLowerCase()));
 }
 
+// Check if league is a tennis league
+const TENNIS_LEAGUES = ["ATP Tennis", "WTA Tennis", "ATP", "WTA"];
+
+function isTennisLeague(league: string): boolean {
+  return TENNIS_LEAGUES.some(tl => league.toLowerCase().includes(tl.toLowerCase()));
+}
+
 // Market group display with line selector for spreads/totals
 function MarketGroupDisplay({
   group,
@@ -614,13 +621,20 @@ function MarketGroupDisplay({
     ? (selectedDirection === "yes" ? 0 : selectedDirection === "no" ? 1 : null) 
     : null;
   
+  // For tennis, use the market's question field which is more descriptive
+  // e.g., "Medjedovic vs. Kovacevic: Match O/U 21.5" instead of "Tennis Match Totals"
+  const isTennis = league && isTennisLeague(league);
+  const displayLabel = isTennis && activeMarket.question 
+    ? activeMarket.question 
+    : formatMarketTypeLabel(group.label);
+  
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-          {formatMarketTypeLabel(group.label)}
+      <div className="flex items-center justify-between gap-2">
+        <span className={`text-xs font-medium text-zinc-400 ${isTennis ? "normal-case" : "uppercase"} tracking-wide truncate`}>
+          {displayLabel}
         </span>
-        <span className="text-xs text-zinc-600">
+        <span className="text-xs text-zinc-600 shrink-0">
           {formatVolume(group.volume)} Vol.
         </span>
       </div>

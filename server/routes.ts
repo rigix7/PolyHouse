@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { z } from "zod";
 import { storage } from "./storage";
-import { insertMarketSchema, insertPlayerSchema, insertBetSchema, insertTradeSchema, insertFuturesSchema } from "@shared/schema";
+import { insertMarketSchema, insertPlayerSchema, insertBetSchema, insertTradeSchema, insertFuturesSchema, insertSportFieldConfigSchema } from "@shared/schema";
 import { buildHmacSignature, type BuilderApiKeyCreds } from "@polymarket/builder-signing-sdk";
 
 // Polymarket Builder credentials (server-side only)
@@ -602,6 +602,115 @@ export async function registerRoutes(
       res.json(settings);
     } catch (error) {
       res.status(500).json({ error: "Failed to update admin settings" });
+    }
+  });
+
+  // Sport Field Config endpoints for admin UI
+  app.get("/api/admin/sport-configs", async (req, res) => {
+    try {
+      const configs = await storage.getSportFieldConfigs();
+      res.json(configs);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch sport configs" });
+    }
+  });
+
+  app.get("/api/admin/sport-configs/:sportSlug", async (req, res) => {
+    try {
+      const config = await storage.getSportFieldConfig(req.params.sportSlug);
+      if (!config) {
+        return res.status(404).json({ error: "Sport config not found" });
+      }
+      res.json(config);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch sport config" });
+    }
+  });
+
+  app.post("/api/admin/sport-configs", async (req, res) => {
+    try {
+      const parsed = insertSportFieldConfigSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.message });
+      }
+      const config = await storage.createOrUpdateSportFieldConfig(parsed.data);
+      res.status(201).json(config);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create sport config" });
+    }
+  });
+
+  app.put("/api/admin/sport-configs/:sportSlug", async (req, res) => {
+    try {
+      const data = { ...req.body, sportSlug: req.params.sportSlug };
+      const parsed = insertSportFieldConfigSchema.safeParse(data);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.message });
+      }
+      const config = await storage.createOrUpdateSportFieldConfig(parsed.data);
+      res.json(config);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update sport config" });
+    }
+  });
+
+  app.delete("/api/admin/sport-configs/:sportSlug", async (req, res) => {
+    try {
+      const deleted = await storage.deleteSportFieldConfig(req.params.sportSlug);
+      if (!deleted) {
+        return res.status(404).json({ error: "Sport config not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete sport config" });
+    }
+  });
+
+  // Fetch sample market data for a sport (for admin preview)
+  app.get("/api/admin/sport-sample/:seriesId", async (req, res) => {
+    try {
+      const { seriesId } = req.params;
+      const url = `${GAMMA_API_BASE}/events?active=true&closed=false&limit=1&series_id=${seriesId}`;
+      console.log(`[Sample Data] Fetching: ${url}`);
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Gamma API error: ${response.status}`);
+      }
+      
+      const events = await response.json();
+      if (!events || events.length === 0) {
+        return res.json({ sample: null, message: "No active events found for this sport" });
+      }
+      
+      // Return first event with its markets as sample data
+      const event = events[0];
+      const sampleMarket = event.markets?.[0] || null;
+      
+      res.json({
+        event: {
+          id: event.id,
+          title: event.title,
+          description: event.description,
+          startDate: event.startDate,
+          gameStartTime: sampleMarket?.gameStartTime,
+        },
+        market: sampleMarket ? {
+          id: sampleMarket.id,
+          question: sampleMarket.question,
+          groupItemTitle: sampleMarket.groupItemTitle,
+          sportsMarketType: sampleMarket.sportsMarketType,
+          line: sampleMarket.line,
+          outcomes: sampleMarket.outcomes,
+          outcomePrices: sampleMarket.outcomePrices,
+          bestAsk: sampleMarket.bestAsk,
+          bestBid: sampleMarket.bestBid,
+        } : null,
+        allMarketTypes: event.markets?.map((m: any) => m.sportsMarketType).filter(Boolean) || [],
+      });
+    } catch (error) {
+      console.error("Error fetching sample data:", error);
+      res.status(500).json({ error: "Failed to fetch sample data" });
     }
   });
 

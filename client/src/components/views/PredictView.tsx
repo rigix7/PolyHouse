@@ -145,8 +145,8 @@ function PriceTicker({ events }: { events: DisplayEvent[] }) {
   
   if (tickerItems.length === 0) return null;
   
-  // Calculate animation duration based on number of items (longer for more items)
-  const animationDuration = Math.max(20, tickerItems.length * 4);
+  // Calculate animation duration based on number of items (faster animation)
+  const animationDuration = Math.max(10, tickerItems.length * 2);
   
   return (
     <div className="bg-zinc-900/80 border-b border-zinc-800 overflow-hidden">
@@ -278,6 +278,16 @@ function LineSelector({
   );
 }
 
+// Helper to parse line from groupItemTitle if market.line is missing
+function parseLineFromTitle(title: string): number | null {
+  // Match patterns like "+3.5", "-4.5", "O 22.5", "U 21.5", "(+3.5)", "(-4.5)"
+  const match = title.match(/([+-]?\d+\.?\d*)/);
+  if (match) {
+    return parseFloat(match[1]);
+  }
+  return null;
+}
+
 // Spread market display component - shows two buttons like [SF +4.5 48¢] [PHI -4.5 53¢]
 function SpreadMarketDisplay({
   market,
@@ -295,7 +305,8 @@ function SpreadMarketDisplay({
   const outcomes = market.outcomes;
   if (outcomes.length < 2) return null;
   
-  const line = market.line || 0;
+  // Use market.line if available, otherwise try to parse from groupItemTitle
+  const line = market.line ?? parseLineFromTitle(market.groupItemTitle) ?? 0;
   const homeTeam = outcomes[0].label;
   const awayTeam = outcomes[1].label;
   const homeAbbr = getTeamAbbreviation(homeTeam);
@@ -359,7 +370,8 @@ function TotalsMarketDisplay({
   const outcomes = market.outcomes;
   if (outcomes.length < 2) return null;
   
-  const line = market.line || 0;
+  // Use market.line if available, otherwise try to parse from groupItemTitle
+  const line = market.line ?? parseLineFromTitle(market.groupItemTitle) ?? 0;
   
   // Outcomes: ["Over", "Under"] with their prices (use bestAsk with fallback to outcome.price)
   const overPrice = Math.round((outcomes[0].price || market.bestAsk) * 100);
@@ -419,8 +431,10 @@ function SoccerMoneylineDisplay({
   
   // Sort markets: try to order as Home, Draw, Away (draw in middle)
   const sortedMarkets = [...markets].slice(0, 3).sort((a, b) => {
-    const aIsDraw = a.question.toLowerCase().includes("draw") || a.question.toLowerCase().includes("tie");
-    const bIsDraw = b.question.toLowerCase().includes("draw") || b.question.toLowerCase().includes("tie");
+    const aQ = (a.question || "").toLowerCase();
+    const bQ = (b.question || "").toLowerCase();
+    const aIsDraw = aQ.includes("draw") || aQ.includes("tie");
+    const bIsDraw = bQ.includes("draw") || bQ.includes("tie");
     if (aIsDraw && !bIsDraw) return 1; // Draw goes to middle/end
     if (!aIsDraw && bIsDraw) return -1;
     return 0;
@@ -428,9 +442,10 @@ function SoccerMoneylineDisplay({
   
   // Reorder so draw is in the middle if we have 3 markets
   if (sortedMarkets.length === 3) {
-    const drawIdx = sortedMarkets.findIndex(m => 
-      m.question.toLowerCase().includes("draw") || m.question.toLowerCase().includes("tie")
-    );
+    const drawIdx = sortedMarkets.findIndex(m => {
+      const q = (m.question || "").toLowerCase();
+      return q.includes("draw") || q.includes("tie");
+    });
     if (drawIdx === 2) {
       // Move draw to middle
       const draw = sortedMarkets.splice(2, 1)[0];

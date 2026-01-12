@@ -52,3 +52,7 @@ Wildcard is a sports prediction terminal application featuring a HUD-style dark 
 - Built Admin CMS for data management
 - Migrated to PostgreSQL database with Drizzle ORM (January 10, 2026)
 - Auto-seeds 3 markets and 6 players on startup if database is empty
+- Fixed NBA events not showing by adding gameStartTime fallback to event.startDate (January 12, 2026)
+- Fixed Price Ticker sync with Match Day view using 5-day filter
+- Added getShortOutcomeLabel() helper for concise futures outcome display
+- Enlarged EventCard with more padding and description display

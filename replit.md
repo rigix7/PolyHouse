@@ -79,3 +79,8 @@ Key API Endpoints:
   - Simplified view uses question text directly (no field mapping needed)
   - Groups all markets by event (moneyline, spread, total together)
   - Side-by-side and tabs view modes for easy comparison
+- Implemented hybrid UI approach for EventCard (January 12, 2026)
+  - Core markets (moneyline, spreads, totals) use polished styled UI
+  - Additional markets (team totals, player props, etc.) in expandable "More Markets" section
+  - Simplified view uses question text directly, collapsed by default
+  - Only need to configure Sport Configs for 3 core market types per sport

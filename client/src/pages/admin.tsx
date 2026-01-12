@@ -20,7 +20,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { fetchSportsWithMarketTypes, type SportWithMarketTypes } from "@/lib/polymarket";
-import type { Market, Player, InsertMarket, InsertPlayer, AdminSettings, Futures, SportFieldConfig } from "@shared/schema";
+import type { Market, Player, InsertMarket, InsertPlayer, AdminSettings, Futures, SportFieldConfig, SportMarketConfig } from "@shared/schema";
 
 const playerFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -863,20 +863,39 @@ export default function AdminPage() {
   );
 }
 
-interface SampleData {
-  event: { id: string; title: string; description: string; startDate: string; gameStartTime?: string } | null;
+interface EnhancedSampleData {
+  event: { 
+    id: string; 
+    title: string; 
+    slug?: string;
+    description: string; 
+    startDate: string; 
+    seriesSlug?: string;
+  } | null;
   market: {
     id: string;
+    conditionId?: string;
+    slug?: string;
     question: string;
     groupItemTitle: string;
     sportsMarketType: string;
+    subtitle?: string;
+    extraInfo?: string;
     line?: number;
     outcomes: string;
     outcomePrices: string;
     bestAsk?: number;
     bestBid?: number;
+    volume?: string;
+    liquidity?: string;
+    gameStartTime?: string;
+    tokens?: unknown;
+    spread?: number;
+    active?: boolean;
+    closed?: boolean;
   } | null;
   allMarketTypes: string[];
+  availableMarketTypes?: string[];
   message?: string;
 }
 
@@ -888,34 +907,50 @@ function SportConfigEditor({
   toast: ReturnType<typeof useToast>["toast"];
 }) {
   const [selectedSport, setSelectedSport] = useState<string>("");
-  const [sampleData, setSampleData] = useState<SampleData | null>(null);
+  const [selectedMarketType, setSelectedMarketType] = useState<string>("");
+  const [availableMarketTypes, setAvailableMarketTypes] = useState<string[]>([]);
+  const [sampleData, setSampleData] = useState<EnhancedSampleData | null>(null);
   const [loadingSample, setLoadingSample] = useState(false);
+  const [showRawJson, setShowRawJson] = useState(false);
+  
   const [formData, setFormData] = useState({
     titleField: "groupItemTitle",
     buttonLabelField: "outcomes",
     betSlipTitleField: "question",
     useQuestionForTitle: false,
+    showLine: false,
+    lineFieldPath: "line",
+    lineFormatter: "default",
+    outcomeStrategy: { type: "default" } as { type: string; fallback?: string; regex?: string; template?: string },
+    notes: "",
   });
 
-  const { data: configs = [], isLoading: configsLoading } = useQuery<SportFieldConfig[]>({
-    queryKey: ["/api/admin/sport-configs"],
+  const { data: configs = [] } = useQuery<SportMarketConfig[]>({
+    queryKey: ["/api/admin/sport-market-configs"],
   });
 
   const saveConfigMutation = useMutation({
     mutationFn: async (data: {
       sportSlug: string;
       sportLabel: string;
+      marketType: string;
+      marketTypeLabel?: string;
       titleField: string;
       buttonLabelField: string;
       betSlipTitleField: string;
       useQuestionForTitle: boolean;
+      showLine: boolean;
+      lineFieldPath?: string;
+      lineFormatter?: string;
+      outcomeStrategy?: { type: string; fallback?: string; regex?: string; template?: string };
       sampleData?: Record<string, unknown>;
+      notes?: string;
     }) => {
-      return apiRequest("POST", "/api/admin/sport-configs", data);
+      return apiRequest("POST", "/api/admin/sport-market-configs", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/sport-configs"] });
-      toast({ title: "Sport config saved" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/sport-market-configs"] });
+      toast({ title: "Configuration saved" });
     },
     onError: () => {
       toast({ title: "Failed to save config", variant: "destructive" });
@@ -923,27 +958,58 @@ function SportConfigEditor({
   });
 
   const deleteConfigMutation = useMutation({
-    mutationFn: async (sportSlug: string) => {
-      return apiRequest("DELETE", `/api/admin/sport-configs/${sportSlug}`);
+    mutationFn: async ({ sportSlug, marketType }: { sportSlug: string; marketType: string }) => {
+      return apiRequest("DELETE", `/api/admin/sport-market-configs/${sportSlug}/${marketType}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/sport-configs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/sport-market-configs"] });
       toast({ title: "Config deleted" });
     },
   });
 
   const handleSelectSport = async (sportId: string) => {
     setSelectedSport(sportId);
+    setSelectedMarketType("");
+    setSampleData(null);
+    
     const sport = sportsData.find(s => s.id === sportId);
     if (!sport) return;
 
-    const existingConfig = configs.find(c => c.sportSlug === sport.slug);
+    setLoadingSample(true);
+    try {
+      const response = await fetch(`/api/admin/sport-sample/${sport.seriesId}`);
+      const data = await response.json();
+      setSampleData(data);
+      setAvailableMarketTypes(data.allMarketTypes || []);
+    } catch (error) {
+      console.error("Failed to fetch sample data:", error);
+      setAvailableMarketTypes([]);
+    } finally {
+      setLoadingSample(false);
+    }
+  };
+
+  const handleSelectMarketType = async (marketType: string) => {
+    setSelectedMarketType(marketType);
+    
+    const sport = sportsData.find(s => s.id === selectedSport);
+    if (!sport) return;
+
+    const existingConfig = configs.find(
+      c => c.sportSlug === sport.slug && c.marketType === marketType
+    );
+    
     if (existingConfig) {
       setFormData({
         titleField: existingConfig.titleField,
         buttonLabelField: existingConfig.buttonLabelField,
         betSlipTitleField: existingConfig.betSlipTitleField,
         useQuestionForTitle: existingConfig.useQuestionForTitle,
+        showLine: existingConfig.showLine,
+        lineFieldPath: existingConfig.lineFieldPath || "line",
+        lineFormatter: existingConfig.lineFormatter || "default",
+        outcomeStrategy: existingConfig.outcomeStrategy || { type: "default" },
+        notes: existingConfig.notes || "",
       });
     } else {
       setFormData({
@@ -951,17 +1017,21 @@ function SportConfigEditor({
         buttonLabelField: "outcomes",
         betSlipTitleField: "question",
         useQuestionForTitle: false,
+        showLine: marketType.includes("spread") || marketType.includes("total"),
+        lineFieldPath: "line",
+        lineFormatter: marketType.includes("spread") ? "spread" : marketType.includes("total") ? "total" : "default",
+        outcomeStrategy: { type: "default" },
+        notes: "",
       });
     }
 
     setLoadingSample(true);
     try {
-      const response = await fetch(`/api/admin/sport-sample/${sport.seriesId}`);
+      const response = await fetch(`/api/admin/sport-sample/${sport.seriesId}/${marketType}`);
       const data = await response.json();
       setSampleData(data);
     } catch (error) {
       console.error("Failed to fetch sample data:", error);
-      setSampleData(null);
     } finally {
       setLoadingSample(false);
     }
@@ -969,11 +1039,13 @@ function SportConfigEditor({
 
   const handleSave = () => {
     const sport = sportsData.find(s => s.id === selectedSport);
-    if (!sport) return;
+    if (!sport || !selectedMarketType) return;
 
     saveConfigMutation.mutate({
       sportSlug: sport.slug,
       sportLabel: sport.label,
+      marketType: selectedMarketType,
+      marketTypeLabel: selectedMarketType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()),
       ...formData,
       sampleData: sampleData?.market as Record<string, unknown> | undefined,
     });
@@ -984,104 +1056,230 @@ function SportConfigEditor({
     { value: "groupItemTitle", label: "groupItemTitle - Short market title" },
     { value: "sportsMarketType", label: "sportsMarketType - Market type label" },
     { value: "outcomes", label: "outcomes - Outcome labels" },
+    { value: "subtitle", label: "subtitle - Additional context" },
+    { value: "extraInfo", label: "extraInfo - Extra market info" },
   ];
+
+  const outcomeStrategies = [
+    { value: "default", label: "Default - Use raw outcome labels" },
+    { value: "team_abbrev", label: "Team Abbreviation - Parse team abbreviations" },
+    { value: "yes_no", label: "Yes/No - Binary outcome mapping" },
+    { value: "over_under", label: "Over/Under - O/U with line" },
+    { value: "spread", label: "Spread - +/- with line" },
+    { value: "regex", label: "Regex - Custom pattern extraction" },
+  ];
+
+  const lineFormatters = [
+    { value: "default", label: "Default - Show as-is" },
+    { value: "spread", label: "Spread - Show as +X.X or -X.X" },
+    { value: "total", label: "Total - Show as O/U X.X" },
+    { value: "none", label: "None - Hide line" },
+  ];
+
+  const getFieldPreview = (fieldName: string) => {
+    if (!sampleData?.market) return "N/A";
+    const market = sampleData.market as Record<string, unknown>;
+    const value = market[fieldName];
+    if (value === null || value === undefined) return "null";
+    if (typeof value === "string") return value.length > 50 ? value.slice(0, 50) + "..." : value;
+    return String(value);
+  };
 
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-bold">Sport Field Configuration</h2>
+        <h2 className="text-lg font-bold">Sport + Market Type Configuration</h2>
         <p className="text-sm text-zinc-500">
-          Configure which API fields to use for displaying each sport's data
+          Configure display settings for each sport and bet type combination
         </p>
       </div>
 
       <Card className="p-4 space-y-4">
-        <div className="space-y-2">
-          <Label>Select Sport to Configure</Label>
-          <Select value={selectedSport} onValueChange={handleSelectSport}>
-            <SelectTrigger data-testid="select-sport-config">
-              <SelectValue placeholder="Choose a sport..." />
-            </SelectTrigger>
-            <SelectContent>
-              {sportsData.map((sport) => (
-                <SelectItem key={sport.id} value={sport.id}>
-                  {sport.label}
-                  {configs.some(c => c.sportSlug === sport.slug) && " ✓"}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>1. Select Sport</Label>
+            <Select value={selectedSport} onValueChange={handleSelectSport}>
+              <SelectTrigger data-testid="select-sport-config">
+                <SelectValue placeholder="Choose a sport..." />
+              </SelectTrigger>
+              <SelectContent>
+                {sportsData.map((sport) => {
+                  const configCount = configs.filter(c => c.sportSlug === sport.slug).length;
+                  return (
+                    <SelectItem key={sport.id} value={sport.id}>
+                      {sport.label}
+                      {configCount > 0 && ` (${configCount} configs)`}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>2. Select Market Type</Label>
+            <Select 
+              value={selectedMarketType} 
+              onValueChange={handleSelectMarketType}
+              disabled={!selectedSport || availableMarketTypes.length === 0}
+            >
+              <SelectTrigger data-testid="select-market-type">
+                <SelectValue placeholder={loadingSample ? "Loading..." : "Choose bet type..."} />
+              </SelectTrigger>
+              <SelectContent>
+                {availableMarketTypes.map((mt) => {
+                  const sport = sportsData.find(s => s.id === selectedSport);
+                  const hasConfig = sport && configs.some(c => c.sportSlug === sport.slug && c.marketType === mt);
+                  return (
+                    <SelectItem key={mt} value={mt}>
+                      {mt.replace(/_/g, " ")}
+                      {hasConfig && " (configured)"}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        {selectedSport && (
+        {selectedSport && selectedMarketType && (
           <>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Market Title Field</Label>
-                <Select
-                  value={formData.titleField}
-                  onValueChange={(v) => setFormData(prev => ({ ...prev, titleField: v }))}
-                >
-                  <SelectTrigger data-testid="select-title-field">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableFields.map(f => (
-                      <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Button Labels Field</Label>
-                <Select
-                  value={formData.buttonLabelField}
-                  onValueChange={(v) => setFormData(prev => ({ ...prev, buttonLabelField: v }))}
-                >
-                  <SelectTrigger data-testid="select-button-field">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableFields.map(f => (
-                      <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            <div className="border-t border-zinc-800 pt-4">
+              <h3 className="font-medium text-zinc-300 mb-3">Field Mappings</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Market Title Field</Label>
+                  <Select
+                    value={formData.titleField}
+                    onValueChange={(v) => setFormData(prev => ({ ...prev, titleField: v }))}
+                  >
+                    <SelectTrigger data-testid="select-title-field">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableFields.map(f => (
+                        <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="text-xs text-zinc-500 truncate">Preview: {getFieldPreview(formData.titleField)}</div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Button Labels Field</Label>
+                  <Select
+                    value={formData.buttonLabelField}
+                    onValueChange={(v) => setFormData(prev => ({ ...prev, buttonLabelField: v }))}
+                  >
+                    <SelectTrigger data-testid="select-button-field">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableFields.map(f => (
+                        <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Bet Slip Title</Label>
+                  <Select
+                    value={formData.betSlipTitleField}
+                    onValueChange={(v) => setFormData(prev => ({ ...prev, betSlipTitleField: v }))}
+                  >
+                    <SelectTrigger data-testid="select-betslip-field">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableFields.map(f => (
+                        <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Bet Slip Title Field</Label>
-                <Select
-                  value={formData.betSlipTitleField}
-                  onValueChange={(v) => setFormData(prev => ({ ...prev, betSlipTitleField: v }))}
-                >
-                  <SelectTrigger data-testid="select-betslip-field">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableFields.map(f => (
-                      <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Use Question for Market Title</Label>
-                <div className="flex items-center gap-2 pt-2">
-                  <Checkbox
-                    checked={formData.useQuestionForTitle}
-                    onCheckedChange={(checked) => 
-                      setFormData(prev => ({ ...prev, useQuestionForTitle: checked as boolean }))
-                    }
-                    data-testid="checkbox-use-question"
-                  />
-                  <span className="text-sm text-zinc-400">
-                    Override title with question field (like Tennis)
-                  </span>
+            <div className="border-t border-zinc-800 pt-4">
+              <h3 className="font-medium text-zinc-300 mb-3">Line & Outcome Display</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Show Line Number</Label>
+                  <div className="flex items-center gap-2 pt-2">
+                    <Checkbox
+                      checked={formData.showLine}
+                      onCheckedChange={(checked) => 
+                        setFormData(prev => ({ ...prev, showLine: checked as boolean }))
+                      }
+                      data-testid="checkbox-show-line"
+                    />
+                    <span className="text-sm text-zinc-400">
+                      Display line (e.g., 246.5, +12.5)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Line Formatter</Label>
+                  <Select
+                    value={formData.lineFormatter}
+                    onValueChange={(v) => setFormData(prev => ({ ...prev, lineFormatter: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {lineFormatters.map(f => (
+                        <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Outcome Strategy</Label>
+                  <Select
+                    value={formData.outcomeStrategy.type}
+                    onValueChange={(v) => setFormData(prev => ({ 
+                      ...prev, 
+                      outcomeStrategy: { ...prev.outcomeStrategy, type: v }
+                    }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {outcomeStrategies.map(s => (
+                        <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
+
+              <div className="flex items-center gap-2 mt-3">
+                <Checkbox
+                  checked={formData.useQuestionForTitle}
+                  onCheckedChange={(checked) => 
+                    setFormData(prev => ({ ...prev, useQuestionForTitle: checked as boolean }))
+                  }
+                  data-testid="checkbox-use-question"
+                />
+                <span className="text-sm text-zinc-400">
+                  Use question field for market title (overrides title field selection)
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Notes (optional)</Label>
+              <Input
+                value={formData.notes}
+                onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                placeholder="Add notes about this configuration..."
+                data-testid="input-notes"
+              />
             </div>
 
             <Button
@@ -1090,91 +1288,91 @@ function SportConfigEditor({
               className="w-full"
               data-testid="button-save-config"
             >
-              {saveConfigMutation.isPending ? "Saving..." : "Save Configuration"}
+              {saveConfigMutation.isPending ? "Saving..." : `Save ${selectedMarketType.replace(/_/g, " ")} Configuration`}
             </Button>
           </>
         )}
       </Card>
 
-      {selectedSport && (
+      {selectedSport && sampleData?.market && (
         <Card className="p-4 space-y-4">
-          <h3 className="font-bold text-zinc-300">Live Sample Data Preview</h3>
-          {loadingSample ? (
-            <div className="text-zinc-500 flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Loading sample data...
+          <div className="flex justify-between items-center">
+            <h3 className="font-bold text-zinc-300">Sample API Data</h3>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => setShowRawJson(!showRawJson)}
+            >
+              {showRawJson ? "Hide Raw JSON" : "Show Raw JSON"}
+            </Button>
+          </div>
+          
+          {showRawJson ? (
+            <div className="p-3 bg-zinc-900 rounded text-xs font-mono overflow-x-auto max-h-96 overflow-y-auto">
+              <pre>{JSON.stringify(sampleData.market, null, 2)}</pre>
             </div>
-          ) : sampleData?.market ? (
-            <div className="space-y-3">
-              <div className="p-3 bg-zinc-900 rounded text-sm font-mono overflow-x-auto">
-                <div className="text-zinc-500 mb-2">// Sample Market Object</div>
-                <div className="space-y-1">
-                  <div><span className="text-blue-400">question:</span> <span className="text-green-400">"{sampleData.market.question}"</span></div>
-                  <div><span className="text-blue-400">groupItemTitle:</span> <span className="text-green-400">"{sampleData.market.groupItemTitle}"</span></div>
-                  <div><span className="text-blue-400">sportsMarketType:</span> <span className="text-green-400">"{sampleData.market.sportsMarketType}"</span></div>
-                  <div><span className="text-blue-400">line:</span> <span className="text-yellow-400">{sampleData.market.line || "null"}</span></div>
-                  <div><span className="text-blue-400">outcomes:</span> <span className="text-green-400">{sampleData.market.outcomes}</span></div>
-                  <div><span className="text-blue-400">outcomePrices:</span> <span className="text-green-400">{sampleData.market.outcomePrices}</span></div>
-                  <div><span className="text-blue-400">bestAsk:</span> <span className="text-yellow-400">{sampleData.market.bestAsk}</span></div>
-                  <div><span className="text-blue-400">bestBid:</span> <span className="text-yellow-400">{sampleData.market.bestBid}</span></div>
-                </div>
-              </div>
-              
-              <div className="text-xs text-zinc-500">
-                <strong>Available market types:</strong> {sampleData.allMarketTypes.join(", ") || "None found"}
-              </div>
-
-              <div className="p-3 bg-zinc-800 rounded">
-                <div className="text-xs text-zinc-400 mb-1">Preview with current settings:</div>
-                <div className="text-white font-medium">
-                  Title: {formData.useQuestionForTitle || formData.titleField === "question" 
-                    ? sampleData.market.question 
-                    : formData.titleField === "groupItemTitle" 
-                      ? sampleData.market.groupItemTitle 
-                      : sampleData.market.sportsMarketType
-                  }
-                </div>
-              </div>
-            </div>
-          ) : sampleData?.message ? (
-            <div className="text-zinc-500">{sampleData.message}</div>
           ) : (
-            <div className="text-zinc-500">No sample data available</div>
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                {Object.entries(sampleData.market).map(([key, value]) => (
+                  <div key={key} className="p-2 bg-zinc-900 rounded">
+                    <span className="text-blue-400 font-mono">{key}:</span>{" "}
+                    <span className="text-green-400">
+                      {typeof value === "object" ? JSON.stringify(value).slice(0, 60) + "..." : String(value).slice(0, 60)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
+          
+          <div className="text-xs text-zinc-500">
+            <strong>All market types for this sport:</strong> {availableMarketTypes.join(", ") || "None"}
+          </div>
         </Card>
       )}
 
       {configs.length > 0 && (
         <Card className="p-4 space-y-3">
-          <h3 className="font-bold text-zinc-300">Saved Configurations</h3>
-          {configs.map((config) => (
-            <div
-              key={config.id}
-              className="p-3 bg-zinc-900 rounded flex justify-between items-start gap-2"
-              data-testid={`config-${config.sportSlug}`}
-            >
-              <div className="text-sm">
-                <div className="font-medium text-white">{config.sportLabel}</div>
-                <div className="text-zinc-500 text-xs space-y-0.5">
-                  <div>Title: {config.titleField}</div>
-                  <div>Buttons: {config.buttonLabelField}</div>
-                  <div>BetSlip: {config.betSlipTitleField}</div>
-                  {config.useQuestionForTitle && (
-                    <div className="text-wild-brand">Uses question for title</div>
-                  )}
-                </div>
-              </div>
-              <Button
-                variant="destructive"
-                size="icon"
-                onClick={() => deleteConfigMutation.mutate(config.sportSlug)}
-                disabled={deleteConfigMutation.isPending}
-                data-testid={`delete-config-${config.sportSlug}`}
+          <h3 className="font-bold text-zinc-300">Saved Configurations ({configs.length})</h3>
+          <div className="space-y-2">
+            {configs.map((config) => (
+              <div
+                key={config.id}
+                className="p-3 bg-zinc-900 rounded flex justify-between items-start gap-2"
+                data-testid={`config-${config.sportSlug}-${config.marketType}`}
               >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </div>
-          ))}
+                <div className="text-sm min-w-0 flex-1">
+                  <div className="font-medium text-white">
+                    {config.sportLabel} - {config.marketType.replace(/_/g, " ")}
+                  </div>
+                  <div className="text-zinc-500 text-xs space-y-0.5">
+                    <div>Title: {config.titleField} | Buttons: {config.buttonLabelField}</div>
+                    <div className="flex flex-wrap gap-1">
+                      {config.showLine && <span className="text-wild-trade">Shows line</span>}
+                      {config.useQuestionForTitle && <span className="text-wild-brand">Uses question</span>}
+                      {config.outcomeStrategy && (
+                        <span className="text-wild-scout">Strategy: {(config.outcomeStrategy as { type: string }).type}</span>
+                      )}
+                    </div>
+                    {config.notes && <div className="text-zinc-600 italic truncate">{config.notes}</div>}
+                  </div>
+                </div>
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  onClick={() => deleteConfigMutation.mutate({ 
+                    sportSlug: config.sportSlug, 
+                    marketType: config.marketType 
+                  })}
+                  disabled={deleteConfigMutation.isPending}
+                  data-testid={`delete-config-${config.sportSlug}-${config.marketType}`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
     </div>

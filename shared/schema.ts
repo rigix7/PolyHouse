@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, real, timestamp, jsonb, varchar, boolean, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, real, timestamp, jsonb, varchar, boolean, numeric, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -121,7 +121,10 @@ export const sportMarketConfigs = pgTable("sport_market_configs", {
   notes: text("notes"),
   createdAt: text("created_at"),
   updatedAt: text("updated_at"),
-});
+}, (table) => [
+  // Composite unique index on sportSlug + marketType
+  uniqueIndex("sport_market_config_unique").on(table.sportSlug, table.marketType)
+]);
 
 export const sportFieldConfigs = pgTable("sport_field_configs", {
   id: serial("id").primaryKey(),

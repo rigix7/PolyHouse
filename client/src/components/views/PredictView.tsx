@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, createContext, useContext } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Shield, Lock, Loader2, TrendingUp, Calendar, Radio, Clock, ChevronLeft, ChevronRight } from "lucide-react";
 import { SubTabs } from "@/components/terminal/SubTabs";
 import { MarketCardSkeleton } from "@/components/terminal/MarketCard";
@@ -6,9 +7,25 @@ import { EmptyState } from "@/components/terminal/EmptyState";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { Market, Futures, AdminSettings } from "@shared/schema";
+import type { Market, Futures, AdminSettings, SportMarketConfig } from "@shared/schema";
 import type { DisplayEvent, ParsedMarket, MarketGroup } from "@/lib/polymarket";
 import { getTeamAbbreviation } from "@/lib/polymarket";
+
+// Context for sport market configs
+const SportConfigContext = createContext<Map<string, SportMarketConfig>>(new Map());
+
+function useSportConfig(sportSlug: string, marketType: string): SportMarketConfig | undefined {
+  const configMap = useContext(SportConfigContext);
+  return configMap.get(`${sportSlug}:${marketType}`);
+}
+
+function buildConfigMap(configs: SportMarketConfig[]): Map<string, SportMarketConfig> {
+  const map = new Map<string, SportMarketConfig>();
+  for (const config of configs) {
+    map.set(`${config.sportSlug}:${config.marketType}`, config);
+  }
+  return map;
+}
 
 type PredictSubTab = "matchday" | "futures" | "fantasy";
 
@@ -890,6 +907,14 @@ export function PredictView({
   const [activeSubTab, setActiveSubTab] = useState<PredictSubTab>("matchday");
   const [selectedLeagues, setSelectedLeagues] = useState<Set<string>>(new Set());
 
+  // Load sport market configs for dynamic formatting
+  const { data: sportConfigs = [] } = useQuery<SportMarketConfig[]>({
+    queryKey: ["/api/admin/sport-market-configs"],
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+  
+  const configMap = buildConfigMap(sportConfigs);
+
   // Filter and categorize events
   const filteredEvents = displayEvents.filter(event => {
     if (!isWithin5Days(event.gameStartTime)) return false;
@@ -975,11 +1000,12 @@ export function PredictView({
   };
 
   return (
-    <div className="flex flex-col h-full animate-fade-in">
-      <PriceTicker events={displayEvents} />
-      <SubTabs tabs={subTabs} activeTab={activeSubTab} onTabChange={setActiveSubTab} />
-      
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+    <SportConfigContext.Provider value={configMap}>
+      <div className="flex flex-col h-full animate-fade-in">
+        <PriceTicker events={displayEvents} />
+        <SubTabs tabs={subTabs} activeTab={activeSubTab} onTabChange={setActiveSubTab} />
+        
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {activeSubTab === "matchday" && (
           <div className="space-y-3">
             <LeagueFilters 
@@ -1081,7 +1107,8 @@ export function PredictView({
             description="Coming Q3 2026"
           />
         )}
+        </div>
       </div>
-    </div>
+    </SportConfigContext.Provider>
   );
 }

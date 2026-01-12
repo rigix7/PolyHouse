@@ -89,6 +89,8 @@ export interface GammaEvent {
   volume?: number;
   volume24hr?: number;
   liquidity?: number;
+  // Parent event linking (for "More Markets" child events)
+  parentEventId?: number;
 }
 
 // Helper to convert sport slug to human-readable label
@@ -289,6 +291,70 @@ export function parseTagId(tagId: string): { seriesId: string; marketType: strin
   return { seriesId: tagId, marketType: null };
 }
 
+// Merge child events (with parentEventId) into their parent events
+// Child events are "More Markets" events that share the same game
+function mergeChildEvents(events: GammaEvent[]): GammaEvent[] {
+  // Build a map of parentId -> child events
+  const childEventsMap = new Map<string, GammaEvent[]>();
+  const parentEvents: GammaEvent[] = [];
+  
+  for (const event of events) {
+    if (event.parentEventId) {
+      // This is a child event
+      const parentId = event.parentEventId.toString();
+      if (!childEventsMap.has(parentId)) {
+        childEventsMap.set(parentId, []);
+      }
+      childEventsMap.get(parentId)!.push(event);
+    } else {
+      // This is a parent event (or standalone event)
+      parentEvents.push(event);
+    }
+  }
+  
+  // Merge child markets into parent events
+  const mergedEvents: GammaEvent[] = [];
+  
+  for (const parent of parentEvents) {
+    const children = childEventsMap.get(parent.id) || [];
+    
+    if (children.length === 0) {
+      // No children, return parent as-is
+      mergedEvents.push(parent);
+    } else {
+      // Merge all child markets into the parent
+      const allMarkets = [...(parent.markets || [])];
+      let totalVolume = parent.volume || 0;
+      let totalLiquidity = parent.liquidity || 0;
+      
+      for (const child of children) {
+        if (child.markets?.length) {
+          allMarkets.push(...child.markets);
+        }
+        totalVolume += child.volume || 0;
+        totalLiquidity += child.liquidity || 0;
+      }
+      
+      mergedEvents.push({
+        ...parent,
+        markets: allMarkets,
+        volume: totalVolume,
+        liquidity: totalLiquidity,
+      });
+    }
+    
+    // Remove this parent from the map so we don't double-count
+    childEventsMap.delete(parent.id);
+  }
+  
+  // Add any orphan child events (whose parent wasn't fetched) as standalone events
+  Array.from(childEventsMap.values()).forEach(orphanChildren => {
+    mergedEvents.push(...orphanChildren);
+  });
+  
+  return mergedEvents;
+}
+
 // Fetch events via server proxy (bypasses CORS)
 // Supports new format (seriesId_marketType) and legacy format (series_seriesId)
 export async function fetchGammaEvents(tagIds: string[]): Promise<GammaEvent[]> {
@@ -353,7 +419,10 @@ export async function fetchGammaEvents(tagIds: string[]): Promise<GammaEvent[]> 
       index === self.findIndex(e => e.id === event.id)
     );
     
-    return uniqueEvents;
+    // Merge child events (with parentEventId) into their parent events
+    const mergedEvents = mergeChildEvents(uniqueEvents);
+    
+    return mergedEvents;
   } catch (error) {
     console.error("Error fetching Gamma events:", error);
     return [];

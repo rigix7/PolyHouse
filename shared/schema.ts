@@ -98,6 +98,31 @@ export const futures = pgTable("futures", {
   createdAt: text("created_at").notNull(),
 });
 
+export const sportMarketConfigs = pgTable("sport_market_configs", {
+  id: serial("id").primaryKey(),
+  sportSlug: text("sport_slug").notNull(),
+  sportLabel: text("sport_label").notNull(),
+  marketType: text("market_type").notNull(),
+  marketTypeLabel: text("market_type_label"),
+  titleField: text("title_field").notNull().default("groupItemTitle"),
+  buttonLabelField: text("button_label_field").notNull().default("outcomes"),
+  betSlipTitleField: text("bet_slip_title_field").notNull().default("question"),
+  useQuestionForTitle: boolean("use_question_for_title").notNull().default(false),
+  showLine: boolean("show_line").notNull().default(false),
+  lineFieldPath: text("line_field_path").default("line"),
+  lineFormatter: text("line_formatter").default("default"),
+  outcomeStrategy: jsonb("outcome_strategy").$type<{
+    type: string;
+    fallback?: string;
+    regex?: string;
+    template?: string;
+  }>(),
+  sampleData: jsonb("sample_data").$type<Record<string, unknown>>(),
+  notes: text("notes"),
+  createdAt: text("created_at"),
+  updatedAt: text("updated_at"),
+});
+
 export const sportFieldConfigs = pgTable("sport_field_configs", {
   id: serial("id").primaryKey(),
   sportSlug: text("sport_slug").notNull().unique(),
@@ -139,6 +164,10 @@ export type Futures = typeof futures.$inferSelect;
 export const insertSportFieldConfigSchema = createInsertSchema(sportFieldConfigs).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertSportFieldConfig = z.infer<typeof insertSportFieldConfigSchema>;
 export type SportFieldConfig = typeof sportFieldConfigs.$inferSelect;
+
+export const insertSportMarketConfigSchema = createInsertSchema(sportMarketConfigs).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSportMarketConfig = z.infer<typeof insertSportMarketConfigSchema>;
+export type SportMarketConfig = typeof sportMarketConfigs.$inferSelect;
 
 // ============ LEGACY ZOD SCHEMAS (for API validation) ============
 

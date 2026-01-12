@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { z } from "zod";
 import { storage } from "./storage";
-import { insertMarketSchema, insertPlayerSchema, insertBetSchema, insertTradeSchema, insertFuturesSchema, insertSportFieldConfigSchema } from "@shared/schema";
+import { insertMarketSchema, insertPlayerSchema, insertBetSchema, insertTradeSchema, insertFuturesSchema, insertSportFieldConfigSchema, insertSportMarketConfigSchema } from "@shared/schema";
 import { buildHmacSignature, type BuilderApiKeyCreds } from "@polymarket/builder-signing-sdk";
 
 // Polymarket Builder credentials (server-side only)
@@ -711,6 +711,162 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching sample data:", error);
       res.status(500).json({ error: "Failed to fetch sample data" });
+    }
+  });
+
+  // Enhanced sample endpoint that returns full market data for a specific market type
+  app.get("/api/admin/sport-sample/:seriesId/:marketType", async (req, res) => {
+    try {
+      const { seriesId, marketType } = req.params;
+      const url = `${GAMMA_API_BASE}/events?active=true&closed=false&limit=5&series_id=${seriesId}`;
+      console.log(`[Sample Data] Fetching for marketType ${marketType}: ${url}`);
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Gamma API error: ${response.status}`);
+      }
+      
+      const events = await response.json();
+      if (!events || events.length === 0) {
+        return res.json({ sample: null, message: "No active events found for this sport" });
+      }
+      
+      // Find a market matching the requested market type
+      let matchingMarket = null;
+      let matchingEvent = null;
+      
+      for (const event of events) {
+        const market = event.markets?.find((m: any) => m.sportsMarketType === marketType);
+        if (market) {
+          matchingMarket = market;
+          matchingEvent = event;
+          break;
+        }
+      }
+      
+      if (!matchingMarket) {
+        // Return first event with all available market types
+        const event = events[0];
+        return res.json({
+          sample: null,
+          message: `No markets found with type "${marketType}"`,
+          availableMarketTypes: event.markets?.map((m: any) => m.sportsMarketType).filter(Boolean) || [],
+        });
+      }
+      
+      // Return full market data for configuration
+      res.json({
+        event: {
+          id: matchingEvent.id,
+          title: matchingEvent.title,
+          slug: matchingEvent.slug,
+          description: matchingEvent.description,
+          startDate: matchingEvent.startDate,
+          seriesSlug: matchingEvent.seriesSlug,
+        },
+        market: {
+          id: matchingMarket.id,
+          conditionId: matchingMarket.conditionId,
+          slug: matchingMarket.slug,
+          question: matchingMarket.question,
+          groupItemTitle: matchingMarket.groupItemTitle,
+          sportsMarketType: matchingMarket.sportsMarketType,
+          subtitle: matchingMarket.subtitle,
+          extraInfo: matchingMarket.extraInfo,
+          line: matchingMarket.line,
+          outcomes: matchingMarket.outcomes,
+          outcomePrices: matchingMarket.outcomePrices,
+          bestAsk: matchingMarket.bestAsk,
+          bestBid: matchingMarket.bestBid,
+          volume: matchingMarket.volume,
+          liquidity: matchingMarket.liquidity,
+          gameStartTime: matchingMarket.gameStartTime,
+          tokens: matchingMarket.tokens,
+          spread: matchingMarket.spread,
+          active: matchingMarket.active,
+          closed: matchingMarket.closed,
+        },
+        allMarketTypes: events.flatMap((e: any) => 
+          e.markets?.map((m: any) => m.sportsMarketType).filter(Boolean) || []
+        ).filter((v: string, i: number, a: string[]) => a.indexOf(v) === i),
+      });
+    } catch (error) {
+      console.error("Error fetching sample data:", error);
+      res.status(500).json({ error: "Failed to fetch sample data" });
+    }
+  });
+
+  // Sport Market Config endpoints (sport + marketType composite key)
+  app.get("/api/admin/sport-market-configs", async (req, res) => {
+    try {
+      const configs = await storage.getSportMarketConfigs();
+      res.json(configs);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch sport market configs" });
+    }
+  });
+
+  app.get("/api/admin/sport-market-configs/:sportSlug", async (req, res) => {
+    try {
+      const configs = await storage.getSportMarketConfigsBySport(req.params.sportSlug);
+      res.json(configs);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch sport market configs" });
+    }
+  });
+
+  app.get("/api/admin/sport-market-configs/:sportSlug/:marketType", async (req, res) => {
+    try {
+      const config = await storage.getSportMarketConfig(req.params.sportSlug, req.params.marketType);
+      if (!config) {
+        return res.status(404).json({ error: "Config not found" });
+      }
+      res.json(config);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch sport market config" });
+    }
+  });
+
+  app.post("/api/admin/sport-market-configs", async (req, res) => {
+    try {
+      const parsed = insertSportMarketConfigSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.message });
+      }
+      const config = await storage.createOrUpdateSportMarketConfig(parsed.data);
+      res.status(201).json(config);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create sport market config" });
+    }
+  });
+
+  app.put("/api/admin/sport-market-configs/:sportSlug/:marketType", async (req, res) => {
+    try {
+      const data = { 
+        ...req.body, 
+        sportSlug: req.params.sportSlug,
+        marketType: req.params.marketType,
+      };
+      const parsed = insertSportMarketConfigSchema.safeParse(data);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.message });
+      }
+      const config = await storage.createOrUpdateSportMarketConfig(parsed.data);
+      res.json(config);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update sport market config" });
+    }
+  });
+
+  app.delete("/api/admin/sport-market-configs/:sportSlug/:marketType", async (req, res) => {
+    try {
+      const deleted = await storage.deleteSportMarketConfig(req.params.sportSlug, req.params.marketType);
+      if (!deleted) {
+        return res.status(404).json({ error: "Config not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete sport market config" });
     }
   });
 

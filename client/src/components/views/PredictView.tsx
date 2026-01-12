@@ -63,33 +63,15 @@ function getCountdown(dateString: string): { text: string; isLive: boolean } {
   return { text: `${days}d ${hours % 24}h`, isLive: false };
 }
 
-function parseDate(dateString: string): Date | null {
-  if (!dateString) return null;
-  
-  // Try parsing as-is first (ISO format)
-  let date = new Date(dateString);
-  if (!isNaN(date.getTime())) return date;
-  
-  // Try parsing YYYY-MM-DD format
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
-    date = new Date(dateString + "T00:00:00Z");
-    if (!isNaN(date.getTime())) return date;
-  }
-  
-  // Try adding timezone if missing
-  if (!dateString.includes("Z") && !dateString.includes("+")) {
-    date = new Date(dateString + "Z");
-    if (!isNaN(date.getTime())) return date;
-  }
-  
-  return null;
-}
-
 function isWithin5Days(dateString: string): boolean {
-  const eventTime = parseDate(dateString);
-  if (!eventTime) return false;
+  if (!dateString) return false;
   
   const now = new Date();
+  const eventTime = new Date(dateString);
+  
+  // Guard against invalid dates
+  if (isNaN(eventTime.getTime())) return false;
+  
   const diff = eventTime.getTime() - now.getTime();
   
   const fiveDaysMs = 5 * 24 * 60 * 60 * 1000;
@@ -98,24 +80,33 @@ function isWithin5Days(dateString: string): boolean {
   return diff >= sixHoursAgoMs && diff <= fiveDaysMs;
 }
 
-// Price ticker using DisplayEvents - continuous marquee loop
+// Price ticker using DisplayEvents
 function PriceTicker({ events }: { events: DisplayEvent[] }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [contentWidth, setContentWidth] = useState(0);
   const [offset, setOffset] = useState(0);
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setOffset((prev) => (prev + 1) % 100);
+    }, 50);
+    return () => clearInterval(interval);
+  }, []);
+  
+  if (events.length === 0) return null;
   
   // Filter to only events within 5 days (same as Match Day view)
   const filteredEvents = events.filter(e => isWithin5Days(e.gameStartTime) && e.status !== "ended");
   
+  if (filteredEvents.length === 0) return null;
+  
   // Extract ticker items from all events' moneyline markets
   const tickerItems: { title: string; price: number }[] = [];
   
-  for (const event of filteredEvents.slice(0, 12)) {
+  for (const event of filteredEvents.slice(0, 8)) {
     const moneylineGroup = event.marketGroups.find(g => g.type === "moneyline");
     if (!moneylineGroup) continue;
     
-    for (const market of moneylineGroup.markets.slice(0, 2)) {
+    for (const market of moneylineGroup.markets.slice(0, 3)) {
+      // Use groupItemTitle and bestAsk
       const yesPrice = market.bestAsk || market.outcomes[0]?.price || 0;
       tickerItems.push({
         title: `${event.league}: ${market.groupItemTitle}`,
@@ -124,48 +115,16 @@ function PriceTicker({ events }: { events: DisplayEvent[] }) {
     }
   }
   
-  // Measure content width after render
-  useEffect(() => {
-    if (contentRef.current) {
-      setContentWidth(contentRef.current.scrollWidth / 2); // Half since we duplicate
-    }
-  }, [tickerItems.length]);
-  
-  // Continuous scrolling animation
-  useEffect(() => {
-    if (contentWidth === 0 || tickerItems.length === 0) return;
-    
-    const speed = 0.5; // pixels per frame
-    let animationFrame: number;
-    
-    const animate = () => {
-      setOffset((prev) => {
-        const next = prev + speed;
-        // Reset when we've scrolled past half the content (seamless loop)
-        return next >= contentWidth ? 0 : next;
-      });
-      animationFrame = requestAnimationFrame(animate);
-    };
-    
-    animationFrame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animationFrame);
-  }, [contentWidth, tickerItems.length]);
-  
-  if (events.length === 0 || tickerItems.length === 0) return null;
+  if (tickerItems.length === 0) return null;
   
   return (
-    <div 
-      ref={containerRef}
-      className="bg-zinc-900/80 border-b border-zinc-800 overflow-hidden"
-    >
+    <div className="bg-zinc-900/80 border-b border-zinc-800 overflow-hidden">
       <div 
-        ref={contentRef}
-        className="flex whitespace-nowrap py-2 gap-8"
-        style={{ transform: `translateX(-${offset}px)` }}
+        className="flex whitespace-nowrap py-2 px-3 gap-8"
+        style={{ transform: `translateX(-${offset}%)`, transition: 'transform 0.05s linear' }}
       >
-        {/* Duplicate items for seamless loop */}
         {[...tickerItems, ...tickerItems].map((item, idx) => (
-          <div key={idx} className="flex items-center gap-2 text-xs shrink-0 px-2">
+          <div key={idx} className="flex items-center gap-2 text-xs">
             <span className="text-zinc-400">{item.title}</span>
             <span className="text-wild-gold font-mono font-bold">{item.price}¢</span>
           </div>
@@ -397,75 +356,6 @@ function TotalsMarketDisplay({
   );
 }
 
-// Check if market is a soccer 3-way moneyline (Home/Draw/Away)
-function isSoccer3WayMoneyline(market: ParsedMarket): boolean {
-  const type = market.sportsMarketType?.toLowerCase() || "";
-  const hasThreeOutcomes = market.outcomes.length === 3;
-  const hasDraw = market.outcomes.some(o => 
-    o.label.toLowerCase() === "draw" || o.label.toLowerCase() === "tie"
-  );
-  return (type.includes("soccer") || type.includes("football")) && hasThreeOutcomes && hasDraw;
-}
-
-// Soccer 3-way moneyline display - shows Home | Draw | Away
-function Soccer3WayMoneylineDisplay({
-  market,
-  onSelect,
-  selectedOutcomeIndex
-}: {
-  market: ParsedMarket;
-  onSelect: (market: ParsedMarket, outcomeIndex: number) => void;
-  selectedOutcomeIndex?: number | null;
-}) {
-  const outcomes = market.outcomes;
-  if (outcomes.length !== 3) return null;
-  
-  // Standard order: [Home, Draw, Away] or find Draw in middle
-  const drawIndex = outcomes.findIndex(o => 
-    o.label.toLowerCase() === "draw" || o.label.toLowerCase() === "tie"
-  );
-  
-  // Reorder: Home, Draw, Away
-  let homeIdx = 0, awayIdx = 2;
-  if (drawIndex === 0) { homeIdx = 1; awayIdx = 2; }
-  else if (drawIndex === 2) { homeIdx = 0; awayIdx = 1; }
-  else { homeIdx = 0; awayIdx = 2; }
-  
-  const displayOrder = [
-    { idx: homeIdx, label: outcomes[homeIdx].label, price: outcomes[homeIdx].price, type: "home" },
-    { idx: drawIndex, label: "Draw", price: outcomes[drawIndex].price, type: "draw" },
-    { idx: awayIdx, label: outcomes[awayIdx].label, price: outcomes[awayIdx].price, type: "away" },
-  ];
-  
-  return (
-    <div className="grid grid-cols-3 gap-2">
-      {displayOrder.map(({ idx, label, price, type }) => {
-        const priceInCents = Math.round((price || 0.33) * 100);
-        const abbr = type === "draw" ? "DRAW" : getTeamAbbreviation(label);
-        const isSelected = selectedOutcomeIndex === idx;
-        
-        const bgColor = type === "draw" 
-          ? (isSelected ? "bg-zinc-600 border-zinc-500" : "bg-zinc-800/60 border-zinc-700 hover:bg-zinc-700")
-          : type === "home"
-            ? (isSelected ? "bg-teal-600 border-teal-500" : "bg-teal-900/40 border-teal-800/50 hover:bg-teal-800/50")
-            : (isSelected ? "bg-red-600 border-red-500" : "bg-red-900/40 border-red-800/50 hover:bg-red-800/50");
-        
-        return (
-          <button
-            key={idx}
-            onClick={() => onSelect(market, idx)}
-            className={`flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-md border text-sm transition-all ${bgColor} text-white`}
-            data-testid={`moneyline-3way-${market.id}-${type}`}
-          >
-            <span className="font-medium text-xs truncate max-w-full">{abbr}</span>
-            <span className="font-mono font-bold text-wild-gold">{priceInCents}¢</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 // Moneyline market display - shows team buttons with prices
 function MoneylineMarketDisplay({
   market,
@@ -478,17 +368,6 @@ function MoneylineMarketDisplay({
   onSelect: (market: ParsedMarket, outcomeIndex: number) => void;
   selectedOutcomeIndex?: number | null;
 }) {
-  // Check for soccer 3-way moneyline
-  if (isSoccer3WayMoneyline(market)) {
-    return (
-      <Soccer3WayMoneylineDisplay
-        market={market}
-        onSelect={onSelect}
-        selectedOutcomeIndex={selectedOutcomeIndex}
-      />
-    );
-  }
-  
   const outcomes = market.outcomes;
   
   return (
@@ -557,28 +436,18 @@ function MarketGroupDisplay({
     onSelectMarket(market, eventTitle, group.type, direction);
   };
   
-  // Handle selection for moneyline - use index directly for 3-way support
+  // Handle selection for moneyline
   const handleMoneylineSelect = (market: ParsedMarket, outcomeIndex: number) => {
-    // Pass index as direction for proper 3-way handling (0=home/yes, 1=draw, 2=away/no)
-    const direction = String(outcomeIndex);
+    const direction = outcomeIndex === 0 ? "yes" : "no";
     onSelectMarket(market, eventTitle, group.type, direction);
   };
   
   // Compute selected direction only if this market is selected
   const spreadDirection = isThisMarketSelected ? (selectedDirection as "home" | "away" | null) : null;
   const totalsDirection = isThisMarketSelected ? (selectedDirection as "over" | "under" | null) : null;
-  // Parse moneyline direction - can be numeric index (0,1,2) or legacy "yes"/"no"
-  let moneylineOutcomeIndex: number | null = null;
-  if (isThisMarketSelected && selectedDirection) {
-    const parsed = parseInt(selectedDirection);
-    if (!isNaN(parsed)) {
-      moneylineOutcomeIndex = parsed;
-    } else if (selectedDirection === "yes") {
-      moneylineOutcomeIndex = 0;
-    } else if (selectedDirection === "no") {
-      moneylineOutcomeIndex = 1;
-    }
-  }
+  const moneylineOutcomeIndex = isThisMarketSelected && selectedDirection 
+    ? (selectedDirection === "yes" ? 0 : selectedDirection === "no" ? 1 : null) 
+    : null;
   
   return (
     <div className="space-y-2">
@@ -860,30 +729,19 @@ export function PredictView({
     // Determine which outcome based on direction
     // For spreads: "home" = index 0, "away" = index 1
     // For totals: "over" = index 0, "under" = index 1
-    // For moneyline: numeric index (0, 1, 2 for 3-way) or legacy "yes"/"no"
+    // For moneyline: "yes" = index 0, "no" = index 1
     let outcomeIndex = 0;
-    
-    // Try parsing as numeric index first (for 3-way moneylines)
-    if (direction) {
-      const parsedIndex = parseInt(direction);
-      if (!isNaN(parsedIndex) && parsedIndex < market.outcomes.length) {
-        outcomeIndex = parsedIndex;
-      } else if (direction === "away" || direction === "under" || direction === "no") {
-        outcomeIndex = 1;
-      }
+    if (direction === "away" || direction === "under" || direction === "no") {
+      outcomeIndex = 1;
     }
     
     const outcome = market.outcomes[outcomeIndex];
     const price = outcome?.price || market.bestAsk || 0.5;
     const odds = price > 0 ? 1 / price : 2;
     
-    // Extract CLOB token ID for the selected outcome
-    // User has already selected their outcome in EventCard, so we just need the selected token
-    const selectedTokenId = market.clobTokenIds?.[outcomeIndex] || outcome?.tokenId;
-    
-    // Pass selected token as yesTokenId - BetSlip will confirm with direction="yes"
-    const yesTokenId = selectedTokenId;
-    const noTokenId: string | undefined = undefined; // Not needed - outcome already selected
+    // Extract CLOB token IDs based on direction
+    const yesTokenId = market.clobTokenIds?.[0] || market.outcomes[0]?.tokenId;
+    const noTokenId = market.clobTokenIds?.[1] || market.outcomes[1]?.tokenId;
     
     // Create a descriptive outcome label
     let outcomeLabel = market.groupItemTitle;
@@ -897,7 +755,6 @@ export function PredictView({
     } else if (marketType === "totals" && market.line !== undefined) {
       outcomeLabel = direction === "over" ? `O ${market.line}` : `U ${market.line}`;
     } else if (outcome) {
-      // For moneylines (including 3-way), use the outcome label
       outcomeLabel = getTeamAbbreviation(outcome.label);
     }
     
@@ -910,7 +767,7 @@ export function PredictView({
       outcomeLabel,
       marketType,
       direction,
-      selectedTokenId || yesTokenId,
+      yesTokenId,
       noTokenId
     );
   };

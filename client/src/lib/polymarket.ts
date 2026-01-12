@@ -483,7 +483,8 @@ export interface DisplayEvent {
   title: string;
   description: string;
   sport: string;
-  league: string;
+  league: string;       // Human-readable label (e.g., "La Liga", "Premier League")
+  leagueSlug: string;   // Raw slug for logic checks (e.g., "lal", "soccer", "epl")
   image: string;
   gameStartTime: string;
   status: "live" | "upcoming" | "ended";
@@ -619,12 +620,17 @@ export function gammaEventToDisplayEvent(event: GammaEvent): DisplayEvent | null
     )
   );
   
+  // Get league label (human-readable) and slug (for logic)
+  const leagueSlug = sportTag?.slug?.toLowerCase() || "";
+  const leagueLabel = sportTag?.label || humanizeSportSlug(leagueSlug) || "Sports";
+  
   return {
     id: event.id,
     title: event.title,
     description: event.description,
     sport: sportTag?.label || "Sports",
-    league: sportTag?.slug?.toUpperCase() || "LIVE",
+    league: leagueLabel,
+    leagueSlug,
     image: event.image || event.icon,
     gameStartTime,
     status,

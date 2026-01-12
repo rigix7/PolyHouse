@@ -481,10 +481,11 @@ function SoccerMoneylineDisplay({
         const yesPrice = market.outcomes[0]?.price || market.bestAsk || 0;
         const priceInCents = Math.round(yesPrice * 100);
         
-        // Parse team name from question (e.g., "Will Genoa win?" -> "Genoa")
-        // Use groupItemTitle as fallback if question parsing fails
-        const label = parseSoccerOutcomeName(market.question, market.groupItemTitle);
-        const isDraw = label === "Draw";
+        // Use groupItemTitle directly - it contains the team name (e.g., "Sevilla FC", "Draw", "RC Celta")
+        // Fall back to parsing from question if groupItemTitle is not available
+        const label = market.groupItemTitle || parseSoccerOutcomeName(market.question, "Team");
+        const lowerLabel = label.toLowerCase();
+        const isDraw = lowerLabel.includes("draw") || lowerLabel.includes("tie");
         
         const isSelected = selectedMarketId === market.id;
         const isYesSelected = isSelected && selectedDirection === "yes";
@@ -565,17 +566,33 @@ function MoneylineMarketDisplay({
   );
 }
 
-// Check if league is a soccer league
-const SOCCER_LEAGUES = ["Premier League", "La Liga", "Bundesliga", "Serie A", "Ligue 1", "Champions League", "Europa League", "MLS"];
+// Check if league is a soccer league by slug
+const SOCCER_LEAGUE_SLUGS = ["soccer", "epl", "lal", "bun", "sea", "fl1", "ucl", "uel", "mls", "premier-league", "la-liga", "bundesliga", "serie-a", "ligue-1", "champions-league", "europa-league"];
 
-function isSoccerLeague(league: string): boolean {
+function isSoccerLeagueBySlug(leagueSlug: string): boolean {
+  if (!leagueSlug) return false;
+  const slug = leagueSlug.toLowerCase();
+  return SOCCER_LEAGUE_SLUGS.some(s => slug.includes(s));
+}
+
+// Legacy label-based check (fallback)
+const SOCCER_LEAGUES = ["Premier League", "La Liga", "Bundesliga", "Serie A", "Ligue 1", "Champions League", "Europa League", "MLS", "Soccer"];
+
+function isSoccerLeague(league: string, leagueSlug?: string): boolean {
+  // First check by slug (more reliable)
+  if (leagueSlug && isSoccerLeagueBySlug(leagueSlug)) return true;
+  // Fallback to label check
   return SOCCER_LEAGUES.some(sl => league.toLowerCase().includes(sl.toLowerCase()));
 }
 
 // Check if league is a tennis league
-const TENNIS_LEAGUES = ["ATP Tennis", "WTA Tennis", "ATP", "WTA"];
+const TENNIS_LEAGUE_SLUGS = ["atp", "wta", "tennis"];
+const TENNIS_LEAGUES = ["ATP Tennis", "WTA Tennis", "ATP", "WTA", "Tennis"];
 
-function isTennisLeague(league: string): boolean {
+function isTennisLeague(league: string, leagueSlug?: string): boolean {
+  // First check by slug
+  if (leagueSlug && TENNIS_LEAGUE_SLUGS.some(s => leagueSlug.toLowerCase().includes(s))) return true;
+  // Fallback to label check
   return TENNIS_LEAGUES.some(tl => league.toLowerCase().includes(tl.toLowerCase()));
 }
 
@@ -706,6 +723,7 @@ function MarketGroupDisplay({
   group,
   eventTitle,
   league,
+  leagueSlug,
   onSelectMarket,
   selectedMarketId,
   selectedDirection
@@ -713,12 +731,13 @@ function MarketGroupDisplay({
   group: MarketGroup;
   eventTitle: string;
   league?: string;
+  leagueSlug?: string;
   onSelectMarket: (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string, outcomeLabel?: string) => void;
   selectedMarketId?: string;
   selectedDirection?: string;
 }) {
   // Check if this is a soccer moneyline (3-way: Home/Draw/Away)
-  const isSoccerMoneyline = league && isSoccerLeague(league) && group.type === "moneyline" && group.markets.length >= 3;
+  const isSoccerMoneyline = league && isSoccerLeague(league, leagueSlug) && group.type === "moneyline" && group.markets.length >= 3;
   
   // Extract unique lines from markets and sort them
   const lines = Array.from(new Set(group.markets.map(m => Math.abs(m.line || 0)))).sort((a, b) => a - b);
@@ -762,7 +781,7 @@ function MarketGroupDisplay({
   
   // For tennis, use the market's question field which is more descriptive
   // e.g., "Medjedovic vs. Kovacevic: Match O/U 21.5" instead of "Tennis Match Totals"
-  const isTennis = league && isTennisLeague(league);
+  const isTennis = league && isTennisLeague(league, leagueSlug);
   const displayLabel = isTennis && activeMarket.question 
     ? activeMarket.question 
     : formatMarketTypeLabel(group.label);
@@ -889,6 +908,7 @@ function EventCard({
           group={group}
           eventTitle={event.title}
           league={event.league}
+          leagueSlug={event.leagueSlug}
           onSelectMarket={onSelectMarket}
           selectedMarketId={selectedMarketId}
           selectedDirection={selectedDirection}

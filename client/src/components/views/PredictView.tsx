@@ -80,6 +80,44 @@ function isWithin5Days(dateString: string): boolean {
   return diff >= sixHoursAgoMs && diff <= fiveDaysMs;
 }
 
+// Format market type labels: replace underscores with spaces
+function formatMarketTypeLabel(label: string): string {
+  return label.replace(/_/g, " ");
+}
+
+// Parse team name from soccer market question (e.g., "Will Genoa win?" -> "Genoa")
+function parseSoccerOutcomeName(question: string | undefined, fallback?: string): string {
+  // Handle undefined/empty question
+  if (!question) {
+    return fallback || "Unknown";
+  }
+  
+  const lowerQ = question.toLowerCase();
+  
+  // Check for draw first
+  if (lowerQ.includes("draw") || lowerQ.includes("tie")) {
+    return "Draw";
+  }
+  
+  // Try to extract team name from "Will [Team] win?" pattern
+  const willWinMatch = question.match(/Will (.+?) win\??/i);
+  if (willWinMatch) {
+    return willWinMatch[1].trim();
+  }
+  
+  // Try "[Team] to win" pattern
+  const toWinMatch = question.match(/^(.+?) to win/i);
+  if (toWinMatch) {
+    return toWinMatch[1].trim();
+  }
+  
+  // Fallback: return the question itself shortened or use fallback
+  if (question.length > 15) {
+    return question.substring(0, 12) + "...";
+  }
+  return question;
+}
+
 // Price ticker using DisplayEvents with CSS infinite marquee animation
 function PriceTicker({ events }: { events: DisplayEvent[] }) {
   if (events.length === 0) return null;
@@ -371,24 +409,38 @@ function SoccerMoneylineDisplay({
 }: {
   markets: ParsedMarket[];
   eventTitle: string;
-  onSelect: (market: ParsedMarket, direction: "yes" | "no") => void;
+  onSelect: (market: ParsedMarket, direction: "yes" | "no", outcomeLabel: string) => void;
   selectedMarketId?: string;
   selectedDirection?: string | null;
 }) {
   // Soccer markets come as separate markets for Home Win, Draw, Away Win
-  // Each market has outcomes ["Yes", "No"] with prices
+  // Each market has a question like "Will Genoa win?" or "Will the match be a draw?"
+  // We parse the team name from the question field
   
-  // Try to identify Home/Draw/Away from groupItemTitle or question
-  const getMarketType = (market: ParsedMarket): "home" | "draw" | "away" | null => {
-    const title = (market.groupItemTitle || market.question || "").toLowerCase();
-    if (title.includes("draw") || title.includes("tie")) return "draw";
-    // Check if it's the first team (home) or second team (away)
-    // Usually home team appears first in event title
-    return null;
-  };
+  // Sort markets: try to order as Home, Draw, Away (draw in middle)
+  const sortedMarkets = [...markets].slice(0, 3).sort((a, b) => {
+    const aIsDraw = a.question.toLowerCase().includes("draw") || a.question.toLowerCase().includes("tie");
+    const bIsDraw = b.question.toLowerCase().includes("draw") || b.question.toLowerCase().includes("tie");
+    if (aIsDraw && !bIsDraw) return 1; // Draw goes to middle/end
+    if (!aIsDraw && bIsDraw) return -1;
+    return 0;
+  });
   
-  // Sort markets: try to order as Home, Draw, Away
-  const sortedMarkets = [...markets].slice(0, 3);
+  // Reorder so draw is in the middle if we have 3 markets
+  if (sortedMarkets.length === 3) {
+    const drawIdx = sortedMarkets.findIndex(m => 
+      m.question.toLowerCase().includes("draw") || m.question.toLowerCase().includes("tie")
+    );
+    if (drawIdx === 2) {
+      // Move draw to middle
+      const draw = sortedMarkets.splice(2, 1)[0];
+      sortedMarkets.splice(1, 0, draw);
+    } else if (drawIdx === 0) {
+      // Move draw to middle
+      const draw = sortedMarkets.splice(0, 1)[0];
+      sortedMarkets.splice(1, 0, draw);
+    }
+  }
   
   return (
     <div className="flex gap-2">
@@ -397,33 +449,34 @@ function SoccerMoneylineDisplay({
         const yesPrice = market.outcomes[0]?.price || market.bestAsk || 0;
         const priceInCents = Math.round(yesPrice * 100);
         
-        // Determine label: use groupItemTitle or extract from question
-        let label = market.groupItemTitle || market.question || `Option ${idx + 1}`;
-        // If label is too long, try to extract team name or shorten
-        if (label.length > 15) {
-          // Try to extract key part (team name or Draw)
-          if (label.toLowerCase().includes("draw")) {
-            label = "Draw";
-          } else {
-            // Take first word or abbreviation
-            label = getTeamAbbreviation(label.split(" ")[0]);
-          }
-        }
+        // Parse team name from question (e.g., "Will Genoa win?" -> "Genoa")
+        // Use groupItemTitle as fallback if question parsing fails
+        const label = parseSoccerOutcomeName(market.question, market.groupItemTitle);
+        const isDraw = label === "Draw";
         
         const isSelected = selectedMarketId === market.id;
         const isYesSelected = isSelected && selectedDirection === "yes";
         
-        // Color based on position: Home (teal), Draw (zinc), Away (red)
-        const colorClass = idx === 0 
-          ? (isYesSelected ? "bg-teal-600 border-teal-500" : "bg-teal-900/40 border-teal-800/50 hover:bg-teal-800/50")
-          : idx === 1
-          ? (isYesSelected ? "bg-zinc-600 border-zinc-500" : "bg-zinc-800/60 border-zinc-700/50 hover:bg-zinc-700/50")
-          : (isYesSelected ? "bg-red-600 border-red-500" : "bg-red-900/40 border-red-800/50 hover:bg-red-800/50");
+        // Color: Home (teal), Draw (zinc), Away (red)
+        let colorClass: string;
+        if (isDraw) {
+          colorClass = isYesSelected 
+            ? "bg-zinc-600 border-zinc-500" 
+            : "bg-zinc-800/60 border-zinc-700/50 hover:bg-zinc-700/50";
+        } else if (idx === 0) {
+          colorClass = isYesSelected 
+            ? "bg-teal-600 border-teal-500" 
+            : "bg-teal-900/40 border-teal-800/50 hover:bg-teal-800/50";
+        } else {
+          colorClass = isYesSelected 
+            ? "bg-red-600 border-red-500" 
+            : "bg-red-900/40 border-red-800/50 hover:bg-red-800/50";
+        }
         
         return (
           <button
             key={market.id}
-            onClick={() => onSelect(market, "yes")}
+            onClick={() => onSelect(market, "yes", label)}
             className={`flex-1 flex flex-col items-center gap-1 px-3 py-2 rounded-md border text-sm transition-all ${colorClass} text-zinc-100`}
             data-testid={`soccer-moneyline-${market.id}`}
           >
@@ -499,7 +552,7 @@ function MarketGroupDisplay({
   group: MarketGroup;
   eventTitle: string;
   league?: string;
-  onSelectMarket: (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string) => void;
+  onSelectMarket: (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string, outcomeLabel?: string) => void;
   selectedMarketId?: string;
   selectedDirection?: string;
 }) {
@@ -535,8 +588,8 @@ function MarketGroupDisplay({
   };
   
   // Handle selection for soccer 3-way moneyline
-  const handleSoccerMoneylineSelect = (market: ParsedMarket, direction: "yes" | "no") => {
-    onSelectMarket(market, eventTitle, group.type, direction);
+  const handleSoccerMoneylineSelect = (market: ParsedMarket, direction: "yes" | "no", outcomeLabel: string) => {
+    onSelectMarket(market, eventTitle, group.type, direction, outcomeLabel);
   };
   
   // Compute selected direction only if this market is selected
@@ -550,7 +603,7 @@ function MarketGroupDisplay({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-          {group.label}
+          {formatMarketTypeLabel(group.label)}
         </span>
         <span className="text-xs text-zinc-600">
           {formatVolume(group.volume)} Vol.
@@ -619,7 +672,7 @@ function EventCard({
   selectedDirection
 }: { 
   event: DisplayEvent;
-  onSelectMarket: (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string) => void;
+  onSelectMarket: (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string, outcomeLabel?: string) => void;
   selectedMarketId?: string;
   selectedDirection?: string;
 }) {
@@ -842,7 +895,7 @@ export function PredictView({
     });
   };
 
-  const handleSelectMarket = (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string) => {
+  const handleSelectMarket = (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string, soccerOutcomeLabel?: string) => {
     // Determine which outcome based on direction
     // For spreads: "home" = index 0, "away" = index 1
     // For totals: "over" = index 0, "under" = index 1
@@ -861,18 +914,21 @@ export function PredictView({
     const noTokenId = market.clobTokenIds?.[1] || market.outcomes[1]?.tokenId;
     
     // Create a descriptive outcome label
-    let outcomeLabel = market.groupItemTitle;
-    if (marketType === "spreads" && market.line !== undefined) {
-      const line = market.line;
-      if (direction === "home") {
-        outcomeLabel = `${getTeamAbbreviation(market.outcomes[0].label)} ${line > 0 ? "+" : ""}${line}`;
-      } else {
-        outcomeLabel = `${getTeamAbbreviation(market.outcomes[1].label)} ${-line > 0 ? "+" : ""}${-line}`;
+    // For soccer 3-way, use the parsed team name passed from SoccerMoneylineDisplay
+    let outcomeLabel = soccerOutcomeLabel || market.groupItemTitle;
+    if (!soccerOutcomeLabel) {
+      if (marketType === "spreads" && market.line !== undefined) {
+        const line = market.line;
+        if (direction === "home") {
+          outcomeLabel = `${getTeamAbbreviation(market.outcomes[0].label)} ${line > 0 ? "+" : ""}${line}`;
+        } else {
+          outcomeLabel = `${getTeamAbbreviation(market.outcomes[1].label)} ${-line > 0 ? "+" : ""}${-line}`;
+        }
+      } else if (marketType === "totals" && market.line !== undefined) {
+        outcomeLabel = direction === "over" ? `O ${market.line}` : `U ${market.line}`;
+      } else if (outcome) {
+        outcomeLabel = getTeamAbbreviation(outcome.label);
       }
-    } else if (marketType === "totals" && market.line !== undefined) {
-      outcomeLabel = direction === "over" ? `O ${market.line}` : `U ${market.line}`;
-    } else if (outcome) {
-      outcomeLabel = getTeamAbbreviation(outcome.label);
     }
     
     // Pass to parent with all info for bet slip

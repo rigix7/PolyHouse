@@ -70,6 +70,7 @@ export interface GammaMarket {
   sportsMarketType?: string;
   clobTokenIds?: string;
   line?: number;
+  orderMinSize?: number;
 }
 
 export interface GammaEvent {
@@ -467,6 +468,7 @@ export interface ParsedMarket {
     tokenId?: string;
   }>;
   clobTokenIds?: string[];
+  orderMinSize?: number;
 }
 
 // Grouped markets by type within an event
@@ -561,6 +563,7 @@ export function gammaEventToDisplayEvent(event: GammaEvent): DisplayEvent | null
       liquidity,
       outcomes,
       clobTokenIds: clobTokenIds.length > 0 ? clobTokenIds : undefined,
+      orderMinSize: market.orderMinSize,
     };
     
     if (!marketsByType.has(marketType)) {

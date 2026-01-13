@@ -16,6 +16,7 @@ interface BetSlipProps {
   initialDirection?: "yes" | "no";
   yesPrice?: number;
   noPrice?: number;
+  orderMinSize?: number;
 }
 
 export function BetSlip({
@@ -31,6 +32,7 @@ export function BetSlip({
   initialDirection = "yes",
   yesPrice,
   noPrice,
+  orderMinSize,
 }: BetSlipProps) {
   const [stake, setStake] = useState<string>("10");
   const [betDirection, setBetDirection] = useState<"yes" | "no">(initialDirection);

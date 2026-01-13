@@ -41,7 +41,7 @@ interface PredictViewProps {
   futures: Futures[];
   isLoading: boolean;
   futuresLoading: boolean;
-  onPlaceBet: (marketId: string, outcomeId: string, odds: number, marketTitle?: string, outcomeLabel?: string, marketType?: string, direction?: "yes" | "no", yesTokenId?: string, noTokenId?: string, yesPrice?: number, noPrice?: number) => void;
+  onPlaceBet: (marketId: string, outcomeId: string, odds: number, marketTitle?: string, outcomeLabel?: string, marketType?: string, direction?: "yes" | "no", yesTokenId?: string, noTokenId?: string, yesPrice?: number, noPrice?: number, orderMinSize?: number) => void;
   selectedBet?: { marketId: string; outcomeId: string; direction?: string };
   adminSettings?: AdminSettings;
   userPositions?: { tokenId: string; size: number; avgPrice: number; outcomeLabel?: string }[];
@@ -1211,7 +1211,8 @@ export function PredictView({
       yesTokenId,
       noTokenId,
       yesPrice,
-      noPrice
+      noPrice,
+      market.orderMinSize
     );
   };
   
@@ -1247,7 +1248,8 @@ export function PredictView({
       selectedTokenId,
       otherTokenId,
       yesPrice,
-      noPrice
+      noPrice,
+      market.orderMinSize
     );
   };
 

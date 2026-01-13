@@ -38,6 +38,7 @@ export default function HomePage() {
     outcomeLabels?: [string, string];
     yesPrice?: number;
     noPrice?: number;
+    orderMinSize?: number;
   } | undefined>();
   const [showBetSlip, setShowBetSlip] = useState(false);
   const [liveMarkets, setLiveMarkets] = useState<Market[]>([]);
@@ -206,6 +207,7 @@ export default function HomePage() {
       price?: number;
       marketTitle?: string;
       outcomeLabel?: string;
+      orderMinSize?: number;
     }) => {
       const walletAddr = safeAddress || address || "";
       
@@ -217,6 +219,7 @@ export default function HomePage() {
           price: data.price,
           size,
           wallet: walletAddr,
+          orderMinSize: data.orderMinSize,
         });
         
         // Use the ClobClient SDK for real wallet-signed orders
@@ -227,6 +230,7 @@ export default function HomePage() {
           size,
           tickSize: "0.01",
           negRisk: false,
+          orderMinSize: data.orderMinSize,
         });
         
         if (!result.success) {
@@ -306,7 +310,8 @@ export default function HomePage() {
     yesTokenId?: string,
     noTokenId?: string,
     yesPrice?: number,
-    noPrice?: number
+    noPrice?: number,
+    orderMinSize?: number
   ) => {
     if (!isConnected) {
       showToast("Connect wallet to place bets", "info");
@@ -342,6 +347,7 @@ export default function HomePage() {
         outcomeLabels: foundOutcomeLabels,
         yesPrice,
         noPrice,
+        orderMinSize,
       });
       setShowBetSlip(true);
       return;
@@ -370,6 +376,7 @@ export default function HomePage() {
       noTokenId,
       yesPrice,
       noPrice,
+      orderMinSize,
     });
     setShowBetSlip(true);
   };
@@ -395,6 +402,7 @@ export default function HomePage() {
         price,
         marketTitle: selectedBet.marketTitle,
         outcomeLabel: selectedBet.outcomeLabel,
+        orderMinSize: selectedBet.orderMinSize,
       });
     }
   };
@@ -507,6 +515,7 @@ export default function HomePage() {
           initialDirection={selectedBet.direction || "yes"}
           yesPrice={selectedBet.yesPrice}
           noPrice={selectedBet.noPrice}
+          orderMinSize={selectedBet.orderMinSize}
         />
       )}
 

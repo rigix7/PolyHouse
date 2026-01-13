@@ -28,6 +28,7 @@ export interface OrderParams {
   size: number;
   tickSize?: TickSize;
   negRisk?: boolean;
+  orderMinSize?: number;
 }
 
 export interface OrderResult {
@@ -185,18 +186,20 @@ export function usePolymarketClient() {
       setError(null);
 
       try {
-        // Validate minimum order size (Polymarket requires minimum $5 orders)
-        const orderValue = params.price * params.size;
-        const MIN_ORDER_VALUE = 5;
-        if (orderValue < MIN_ORDER_VALUE) {
-          const errorMsg = `Order too small: $${orderValue.toFixed(2)} minimum is $${MIN_ORDER_VALUE}`;
+        // Validate price is within valid range
+        if (params.price <= 0 || params.price >= 1) {
+          const errorMsg = `Invalid price: ${params.price}. Must be between 0 and 1`;
           setError(errorMsg);
           return { success: false, error: errorMsg };
         }
         
-        // Validate price is within valid range
-        if (params.price <= 0 || params.price >= 1) {
-          const errorMsg = `Invalid price: ${params.price}. Must be between 0 and 1`;
+        // Validate minimum order value using market's orderMinSize from Polymarket (in USDC)
+        // Default to 5 if not specified (Polymarket's typical minimum)
+        // orderMinSize is the minimum order value in USDC, not shares
+        const minOrderValueUSDC = params.orderMinSize ?? 5;
+        const orderValueUSDC = params.price * params.size;
+        if (orderValueUSDC < minOrderValueUSDC) {
+          const errorMsg = `Order value too small: $${orderValueUSDC.toFixed(2)}. Polymarket requires minimum $${minOrderValueUSDC} for this market.`;
           setError(errorMsg);
           return { success: false, error: errorMsg };
         }
@@ -214,7 +217,8 @@ export function usePolymarketClient() {
           price: params.price,
           size: params.size,
           side: params.side,
-          orderValue: orderValue.toFixed(2),
+          orderValueUSDC: orderValueUSDC.toFixed(2),
+          minOrderValueUSDC,
         });
 
         // Use createAndPostOrder for full order lifecycle

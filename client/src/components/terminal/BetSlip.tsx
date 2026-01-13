@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { X, AlertTriangle, Loader2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { X, AlertTriangle, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { OrderBookData } from "@/hooks/usePolymarketClient";
 
 interface BetSlipProps {
   marketTitle: string;
@@ -17,6 +18,9 @@ interface BetSlipProps {
   yesPrice?: number;
   noPrice?: number;
   orderMinSize?: number;
+  yesTokenId?: string;
+  noTokenId?: string;
+  getOrderBook?: (tokenId: string) => Promise<OrderBookData | null>;
 }
 
 export function BetSlip({
@@ -33,53 +37,122 @@ export function BetSlip({
   yesPrice,
   noPrice,
   orderMinSize,
+  yesTokenId,
+  noTokenId,
+  getOrderBook,
 }: BetSlipProps) {
   const [stake, setStake] = useState<string>("10");
   const [betDirection, setBetDirection] = useState<"yes" | "no">(initialDirection);
+  const [orderBook, setOrderBook] = useState<OrderBookData | null>(null);
+  const [isLoadingBook, setIsLoadingBook] = useState(false);
+  const [bookError, setBookError] = useState<string | null>(null);
+  const [lastFetchTime, setLastFetchTime] = useState<number>(0);
+  
   const stakeNum = parseFloat(stake) || 0;
   
-  // Calculate odds based on direction using the correct price for each side
-  // If we have both prices, use them directly; otherwise fall back to odds prop
-  const getOddsForDirection = (dir: "yes" | "no"): number => {
-    if (yesPrice !== undefined && noPrice !== undefined) {
-      const price = dir === "yes" ? yesPrice : noPrice;
-      return price > 0 ? 1 / price : 2;
+  // Get the token ID for the current direction
+  const currentTokenId = betDirection === "yes" ? yesTokenId : noTokenId;
+  
+  // Fetch order book for the selected direction
+  const fetchOrderBook = useCallback(async () => {
+    if (!getOrderBook || !currentTokenId) {
+      setOrderBook(null);
+      return;
     }
-    // Fallback: use provided odds for yes, calculate inverse for no
-    return dir === "yes" 
-      ? odds 
-      : odds > 1 ? odds / (odds - 1) : 2;
+    
+    setIsLoadingBook(true);
+    setBookError(null);
+    
+    try {
+      const book = await getOrderBook(currentTokenId);
+      setOrderBook(book);
+      setLastFetchTime(Date.now());
+      
+      if (!book) {
+        setBookError("Could not fetch order book");
+      }
+    } catch (err) {
+      console.error("Failed to fetch order book:", err);
+      setBookError("Failed to fetch market data");
+      setOrderBook(null);
+    } finally {
+      setIsLoadingBook(false);
+    }
+  }, [getOrderBook, currentTokenId]);
+  
+  // Fetch order book on mount and when direction changes
+  useEffect(() => {
+    fetchOrderBook();
+  }, [fetchOrderBook]);
+  
+  // Calculate the execution price from order book (bestAsk + 0.01 for guaranteed fill)
+  const getExecutionPrice = (): number => {
+    if (orderBook && orderBook.bestAsk > 0) {
+      // Add 1 cent to ensure we cross the spread
+      return Math.min(orderBook.bestAsk + 0.01, 0.99);
+    }
+    // Fallback to passed-in prices
+    const fallbackPrice = betDirection === "yes" ? yesPrice : noPrice;
+    if (fallbackPrice && fallbackPrice > 0) {
+      return Math.min(fallbackPrice + 0.01, 0.99);
+    }
+    // Last resort: calculate from odds
+    return odds > 0 ? Math.min(1 / odds + 0.01, 0.99) : 0.5;
   };
   
-  const effectiveOdds = getOddsForDirection(betDirection);
-    
+  const executionPrice = getExecutionPrice();
+  const effectiveOdds = executionPrice > 0 ? 1 / executionPrice : 2;
+  
   const potentialWin = stakeNum * effectiveOdds;
   const wildPoints = Math.floor(stakeNum);
   const insufficientBalance = stakeNum > maxBalance;
   
+  // Liquidity warnings
+  const isLowLiquidity = orderBook?.isLowLiquidity ?? false;
+  const isWideSpread = orderBook?.isWideSpread ?? false;
+  const hasLiquidityWarning = isLowLiquidity || isWideSpread;
+  
+  // Check if order book is stale (older than 10 seconds)
+  const isBookStale = Date.now() - lastFetchTime > 10000;
+  
   // Determine button labels based on market type or custom outcomeLabels
   const getDirectionLabels = () => {
-    // Use custom outcome labels if provided
     if (outcomeLabels && outcomeLabels[0] && outcomeLabels[1]) {
       return { yes: outcomeLabels[0].toUpperCase(), no: outcomeLabels[1].toUpperCase() };
     }
     if (marketType === "totals") {
       return { yes: "OVER", no: "UNDER" };
     }
-    // Default for moneyline, spreads, and other types
     return { yes: "YES", no: "NO" };
   };
   
   const labels = getDirectionLabels();
   
-  const handleConfirm = () => {
-    if (stakeNum > 0 && !insufficientBalance) {
-      // Get the actual execution price for the selected direction
-      const executionPrice = betDirection === "yes" 
-        ? (yesPrice || (effectiveOdds > 0 ? 1 / effectiveOdds : 0.5))
-        : (noPrice || (effectiveOdds > 0 ? 1 / effectiveOdds : 0.5));
-      onConfirm(stakeNum, betDirection, effectiveOdds, executionPrice);
+  const handleConfirm = async () => {
+    if (stakeNum <= 0 || insufficientBalance) return;
+    
+    // If book is stale, refresh before submitting
+    if (isBookStale && getOrderBook && currentTokenId) {
+      setIsLoadingBook(true);
+      try {
+        const freshBook = await getOrderBook(currentTokenId);
+        setOrderBook(freshBook);
+        setLastFetchTime(Date.now());
+        
+        if (freshBook && freshBook.bestAsk > 0) {
+          const freshPrice = Math.min(freshBook.bestAsk + 0.01, 0.99);
+          const freshOdds = 1 / freshPrice;
+          onConfirm(stakeNum, betDirection, freshOdds, freshPrice);
+          return;
+        }
+      } catch (err) {
+        console.error("Failed to refresh order book:", err);
+      } finally {
+        setIsLoadingBook(false);
+      }
     }
+    
+    onConfirm(stakeNum, betDirection, effectiveOdds, executionPrice);
   };
 
   return (
@@ -113,7 +186,7 @@ export function BetSlip({
                   ? "bg-wild-scout text-white border-2 border-wild-scout"
                   : "bg-zinc-800 text-zinc-400 border-2 border-zinc-700 hover:border-zinc-600"
               }`}
-              disabled={isPending}
+              disabled={isPending || isLoadingBook}
               data-testid="button-direction-yes"
             >
               {labels.yes}
@@ -125,12 +198,54 @@ export function BetSlip({
                   ? "bg-wild-brand text-white border-2 border-wild-brand"
                   : "bg-zinc-800 text-zinc-400 border-2 border-zinc-700 hover:border-zinc-600"
               }`}
-              disabled={isPending}
+              disabled={isPending || isLoadingBook}
               data-testid="button-direction-no"
             >
               {labels.no}
             </button>
           </div>
+
+          {/* Order Book Status */}
+          {isLoadingBook && (
+            <div className="flex items-center justify-center gap-2 text-zinc-400 text-sm py-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Fetching live prices...</span>
+            </div>
+          )}
+
+          {/* Liquidity Warnings */}
+          {hasLiquidityWarning && !isLoadingBook && orderBook && (
+            <div className="rounded-lg p-3 space-y-1 bg-amber-500/10 border border-amber-500/30">
+              <div className="flex items-center gap-2 text-amber-400 text-sm font-medium">
+                <AlertTriangle className="w-4 h-4" />
+                <span>Low Liquidity Warning</span>
+              </div>
+              <div className="text-xs text-amber-400/80 space-y-0.5">
+                {isWideSpread && (
+                  <p>Wide spread ({orderBook.spreadPercent.toFixed(1)}%) - you may experience slippage</p>
+                )}
+                {isLowLiquidity && (
+                  <p>Thin order book (${orderBook.askDepth.toFixed(0)} available) - large orders may not fully fill</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {bookError && !isLoadingBook && (
+            <div className="flex items-center justify-between text-amber-400 text-sm bg-amber-400/10 rounded p-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                <span>{bookError}</span>
+              </div>
+              <button
+                onClick={fetchOrderBook}
+                className="p-1 hover:bg-amber-400/20 rounded"
+                data-testid="button-refresh-book"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            </div>
+          )}
 
           <div className="flex items-center gap-3">
             <div className="flex-1">
@@ -150,6 +265,11 @@ export function BetSlip({
             <div className="text-right">
               <p className="text-xs text-zinc-500">Odds</p>
               <p className="text-2xl font-black font-mono text-wild-gold">{effectiveOdds.toFixed(2)}</p>
+              {orderBook && (
+                <p className="text-[10px] text-zinc-500">
+                  @ ${executionPrice.toFixed(2)}
+                </p>
+              )}
             </div>
           </div>
 
@@ -182,6 +302,14 @@ export function BetSlip({
               <span className="text-zinc-500">Available Balance</span>
               <span className="font-mono text-zinc-400">${maxBalance.toFixed(2)} USDC</span>
             </div>
+            {orderBook && (
+              <div className="flex justify-between text-xs border-t border-zinc-700 pt-2 mt-2">
+                <span className="text-zinc-500">Order Book Spread</span>
+                <span className={`font-mono ${isWideSpread ? 'text-amber-400' : 'text-zinc-400'}`}>
+                  {orderBook.spreadPercent.toFixed(1)}%
+                </span>
+              </div>
+            )}
           </div>
 
           {insufficientBalance && (
@@ -193,7 +321,7 @@ export function BetSlip({
 
           <Button
             onClick={handleConfirm}
-            disabled={stakeNum <= 0 || insufficientBalance || isPending}
+            disabled={stakeNum <= 0 || insufficientBalance || isPending || isLoadingBook}
             className="w-full h-12 bg-wild-brand hover:bg-wild-brand/90 text-white font-bold text-lg"
             data-testid="button-confirm-bet"
           >
@@ -201,6 +329,11 @@ export function BetSlip({
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Placing Bet...
+              </>
+            ) : isLoadingBook ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Loading...
               </>
             ) : (
               `Place Bet · $${stakeNum.toFixed(2)}`

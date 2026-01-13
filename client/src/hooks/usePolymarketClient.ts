@@ -52,6 +52,26 @@ export interface PositionData {
   side: string;
 }
 
+export interface OrderBookLevel {
+  price: number;
+  size: number;
+}
+
+export interface OrderBookData {
+  bids: OrderBookLevel[];
+  asks: OrderBookLevel[];
+  bestBid: number;
+  bestAsk: number;
+  spread: number;
+  spreadPercent: number;
+  bidDepth: number;  // Total $ available at best bid
+  askDepth: number;  // Total $ available at best ask
+  totalBidLiquidity: number;
+  totalAskLiquidity: number;
+  isLowLiquidity: boolean;
+  isWideSpread: boolean;
+}
+
 const CLOB_HOST = "https://clob.polymarket.com";
 const RELAYER_HOST = "https://relayer-v2.polymarket.com/";
 const CHAIN_ID = 137; // Polygon mainnet
@@ -695,6 +715,83 @@ export function usePolymarketClient() {
     [initializeRelayClient],
   );
 
+  // Fetch order book for a specific token - no auth required
+  const getOrderBook = useCallback(async (tokenId: string): Promise<OrderBookData | null> => {
+    try {
+      // Create a read-only client (no signer needed for public data)
+      const readOnlyClient = new ClobClient(CLOB_HOST, CHAIN_ID);
+      
+      console.log("[PolymarketClient] Fetching order book for token:", tokenId);
+      const book = await readOnlyClient.getOrderBook(tokenId);
+      
+      if (!book) {
+        console.warn("[PolymarketClient] No order book data returned");
+        return null;
+      }
+      
+      // Parse bids and asks
+      const bids: OrderBookLevel[] = (book.bids || []).map((b: { price: string; size: string }) => ({
+        price: parseFloat(b.price),
+        size: parseFloat(b.size),
+      }));
+      
+      const asks: OrderBookLevel[] = (book.asks || []).map((a: { price: string; size: string }) => ({
+        price: parseFloat(a.price),
+        size: parseFloat(a.size),
+      }));
+      
+      // Sort: bids descending (highest first), asks ascending (lowest first)
+      bids.sort((a, b) => b.price - a.price);
+      asks.sort((a, b) => a.price - b.price);
+      
+      const bestBid = bids.length > 0 ? bids[0].price : 0;
+      const bestAsk = asks.length > 0 ? asks[0].price : 1;
+      const spread = bestAsk - bestBid;
+      const midPrice = (bestAsk + bestBid) / 2;
+      const spreadPercent = midPrice > 0 ? (spread / midPrice) * 100 : 0;
+      
+      // Calculate depth at best prices (in $)
+      const bidDepth = bids.length > 0 ? bids[0].size * bids[0].price : 0;
+      const askDepth = asks.length > 0 ? asks[0].size * asks[0].price : 0;
+      
+      // Total liquidity
+      const totalBidLiquidity = bids.reduce((sum, b) => sum + b.size * b.price, 0);
+      const totalAskLiquidity = asks.reduce((sum, a) => sum + a.size * a.price, 0);
+      
+      // Risk flags
+      const isLowLiquidity = askDepth < 100; // Less than $100 at best ask
+      const isWideSpread = spreadPercent > 5; // Spread wider than 5%
+      
+      console.log("[PolymarketClient] Order book:", {
+        bestBid,
+        bestAsk,
+        spread,
+        spreadPercent: spreadPercent.toFixed(2) + "%",
+        askDepth: "$" + askDepth.toFixed(2),
+        isLowLiquidity,
+        isWideSpread,
+      });
+      
+      return {
+        bids,
+        asks,
+        bestBid,
+        bestAsk,
+        spread,
+        spreadPercent,
+        bidDepth,
+        askDepth,
+        totalBidLiquidity,
+        totalAskLiquidity,
+        isLowLiquidity,
+        isWideSpread,
+      };
+    } catch (err) {
+      console.error("[PolymarketClient] Failed to fetch order book:", err);
+      return null;
+    }
+  }, []);
+
   const resetClient = useCallback(() => {
     clientRef.current = null;
     relayClientRef.current = null;
@@ -725,6 +822,7 @@ export function usePolymarketClient() {
     placeOrder,
     getOpenOrders,
     cancelOrder,
+    getOrderBook,
     getWalletAddress,
     getSafeAddress,
     initializeClient,

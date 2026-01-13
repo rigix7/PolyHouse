@@ -21,7 +21,7 @@ import type { Market, Player, Trade, Bet, Wallet, AdminSettings, WalletRecord, F
 export default function HomePage() {
   const { authenticated: isConnected, eoaAddress: address, login, logout, isReady } = useWallet();
   const { safeAddress, isDeployed: isSafeDeployed, isDeploying: isSafeDeploying, deploy: deploySafe } = useSafeWallet();
-  const { placeOrder, isSubmitting: isPolymarketSubmitting, isInitializing, error: polymarketError } = usePolymarketClient();
+  const { placeOrder, getOrderBook, isSubmitting: isPolymarketSubmitting, isInitializing, error: polymarketError } = usePolymarketClient();
   const walletLoading = !isReady;
   const [activeTab, setActiveTab] = useState<TabType>("predict");
   const [isWalletOpen, setIsWalletOpen] = useState(false);
@@ -518,6 +518,9 @@ export default function HomePage() {
           yesPrice={selectedBet.yesPrice}
           noPrice={selectedBet.noPrice}
           orderMinSize={selectedBet.orderMinSize}
+          yesTokenId={selectedBet.yesTokenId}
+          noTokenId={selectedBet.noTokenId}
+          getOrderBook={getOrderBook}
         />
       )}
 

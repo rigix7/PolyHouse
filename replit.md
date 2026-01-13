@@ -47,8 +47,10 @@ Wildcard is a sports prediction terminal application featuring a HUD-style dark 
 
 ### Polymarket CLOB Integration
 - POST /api/polymarket/sign - Returns HMAC signature headers for Builder attribution (used by RelayClient remote signing)
-- POST /api/polymarket/orders - Submits orders to Polymarket CLOB with Builder credentials
+- POST /api/polymarket/orders - Stores order records in database (order submission happens client-side via SDK to avoid Cloudflare blocks)
 - GET /api/polymarket/positions/:address - Fetches user's tracked positions from database
+
+**Important Architecture Note**: Order submission MUST happen client-side via ClobClient SDK because Polymarket's CLOB API uses Cloudflare protection that blocks server IPs. The server endpoint only stores order records for tracking.
 
 ### Polymarket SDK Integration (Client-side)
 - usePolymarketClient hook (client/src/hooks/usePolymarketClient.ts):

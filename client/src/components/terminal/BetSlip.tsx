@@ -8,7 +8,7 @@ interface BetSlipProps {
   outcomeLabel: string;
   odds: number;
   maxBalance: number;
-  onConfirm: (stake: number, direction: "yes" | "no", effectiveOdds: number) => void;
+  onConfirm: (stake: number, direction: "yes" | "no", effectiveOdds: number, executionPrice: number) => void;
   onCancel: () => void;
   isPending: boolean;
   marketType?: string;
@@ -74,7 +74,11 @@ export function BetSlip({
   
   const handleConfirm = () => {
     if (stakeNum > 0 && !insufficientBalance) {
-      onConfirm(stakeNum, betDirection, effectiveOdds);
+      // Get the actual execution price for the selected direction
+      const executionPrice = betDirection === "yes" 
+        ? (yesPrice || (effectiveOdds > 0 ? 1 / effectiveOdds : 0.5))
+        : (noPrice || (effectiveOdds > 0 ? 1 / effectiveOdds : 0.5));
+      onConfirm(stakeNum, betDirection, effectiveOdds, executionPrice);
     }
   };
 

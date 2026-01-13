@@ -381,7 +381,7 @@ export default function HomePage() {
     setShowBetSlip(true);
   };
 
-  const handleConfirmBet = (stake: number, direction: "yes" | "no", effectiveOdds: number) => {
+  const handleConfirmBet = (stake: number, direction: "yes" | "no", effectiveOdds: number, executionPrice: number) => {
     if (selectedBet) {
       const tokenId = direction === "yes" 
         ? selectedBet.yesTokenId
@@ -391,7 +391,9 @@ export default function HomePage() {
         ? (selectedBet.yesTokenId || selectedBet.outcomeId)
         : (selectedBet.noTokenId || `${selectedBet.outcomeId}_NO`);
       
-      const price = effectiveOdds > 0 ? 1 / effectiveOdds : 0.5;
+      // Use the execution price directly from BetSlip (bestAsk or buffered price for instant fills)
+      // This ensures orders match against existing sells rather than sitting in the book
+      const price = executionPrice;
       
       placeBetMutation.mutate({
         marketId: selectedBet.marketId,

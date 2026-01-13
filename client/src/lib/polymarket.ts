@@ -542,20 +542,35 @@ export function gammaEventToDisplayEvent(event: GammaEvent): DisplayEvent | null
       }
       
       // Calculate execution prices for each outcome
-      // For instant fills, we use bestAsk for outcome 0, and add a small buffer for others
-      // The buffer (0.01) ensures we cross the spread to match existing sell orders
-      const SPREAD_BUFFER = 0.01;
+      // For instant fills, we need the actual ask price to cross the spread
+      // SPREAD_BUFFER ensures we're willing to pay slightly above the quoted price
+      const SPREAD_BUFFER = 0.02;
       
       outcomes = outcomeLabels.map((label: string, i: number) => {
         const midPrice = parseFloat(prices[i] || "0");
-        // For outcome 0, use bestAsk if available, else add buffer to mid price
-        // For other outcomes, add buffer to mid price (they have separate order books)
         let executionPrice = midPrice;
-        if (i === 0 && market.bestAsk && market.bestAsk > 0) {
-          executionPrice = market.bestAsk;
-        } else if (midPrice > 0) {
-          // Add buffer but cap at 0.99 (price must be < 1)
-          executionPrice = Math.min(midPrice + SPREAD_BUFFER, 0.99);
+        
+        if (i === 0) {
+          // Outcome 0: Use bestAsk directly if available, else mid + buffer
+          if (market.bestAsk && market.bestAsk > 0) {
+            executionPrice = market.bestAsk;
+          } else if (midPrice > 0) {
+            executionPrice = Math.min(midPrice + SPREAD_BUFFER, 0.99);
+          }
+        } else if (i === 1) {
+          // Outcome 1 (binary complement): Use (1 - bestBid) as the effective ask price
+          // In binary markets, buying NO at (1-bestBid) is equivalent to selling YES at bestBid
+          if (market.bestBid && market.bestBid > 0) {
+            // Add buffer to ensure we cross the spread
+            executionPrice = Math.min(1 - market.bestBid + SPREAD_BUFFER, 0.99);
+          } else if (midPrice > 0) {
+            executionPrice = Math.min(midPrice + SPREAD_BUFFER, 0.99);
+          }
+        } else {
+          // Multi-outcome markets: add buffer to mid price
+          if (midPrice > 0) {
+            executionPrice = Math.min(midPrice + SPREAD_BUFFER, 0.99);
+          }
         }
         
         return {

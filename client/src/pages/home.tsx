@@ -12,17 +12,32 @@ import { DashboardView } from "@/components/views/DashboardView";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { fetchGammaEvents, gammaEventToMarket, gammaEventToDisplayEvent, type DisplayEvent } from "@/lib/polymarket";
 import { fetchPositions, type PolymarketPosition } from "@/lib/polymarketOrder";
-import { usePolymarketClient } from "@/hooks/usePolymarketClient";
 import { getUSDCBalance } from "@/lib/polygon";
-import { useWallet } from "@/providers/PrivyProvider";
-import { useSafeWallet } from "@/hooks/useSafeWallet";
+import { useWallet } from "@/providers/WalletContext";
+import useTradingSession from "@/hooks/useTradingSession";
+import useClobClient from "@/hooks/useClobClient";
+import useClobOrder from "@/hooks/useClobOrder";
+import useSafeDeployment from "@/hooks/useSafeDeployment";
 import type { Market, Player, Trade, Bet, Wallet, AdminSettings, WalletRecord, Futures } from "@shared/schema";
 
 export default function HomePage() {
   const { authenticated: isConnected, eoaAddress: address, login, logout, isReady } = useWallet();
-  const { safeAddress, isDeployed: isSafeDeployed, isDeploying: isSafeDeploying, deploy: deploySafe } = useSafeWallet();
-  const { placeOrder, getOrderBook, isSubmitting: isPolymarketSubmitting, isInitializing, error: polymarketError } = usePolymarketClient();
+  const { derivedSafeAddressFromEoa: safeAddress } = useSafeDeployment(address);
+  const { 
+    tradingSession, 
+    currentStep, 
+    isTradingSessionComplete, 
+    initializeTradingSession, 
+    endTradingSession,
+    relayClient 
+  } = useTradingSession();
+  const { clobClient } = useClobClient(tradingSession, isTradingSessionComplete, safeAddress);
+  const { submitOrder, isSubmitting: isPolymarketSubmitting, error: polymarketError } = useClobOrder(clobClient, safeAddress);
+  
   const walletLoading = !isReady;
+  const isSafeDeployed = tradingSession?.isSafeDeployed ?? false;
+  const isSafeDeploying = currentStep === "deploying";
+  const isInitializing = currentStep !== "idle" && currentStep !== "complete";
   const [activeTab, setActiveTab] = useState<TabType>("predict");
   const [isWalletOpen, setIsWalletOpen] = useState(false);
   const [selectedBet, setSelectedBet] = useState<{ 
@@ -219,20 +234,14 @@ export default function HomePage() {
           orderMinSize: data.orderMinSize,
         });
         
-        // Use FOK (Fill-or-Kill) market order - instant execution or reject
-        // No price needed - SDK calculates based on order book
-        const result = await placeOrder({
+        // Use FOK (Fill-or-Kill) market order via official useClobOrder hook
+        const result = await submitOrder({
           tokenId: data.tokenId,
           side: "BUY",
-          amount: data.amount, // USDC amount to spend
-          tickSize: "0.01",
+          size: data.amount, // USDC amount to spend
           negRisk: false,
-          orderMinSize: data.orderMinSize,
+          isMarketOrder: true, // Use FOK market order
         });
-        
-        if (!result.success) {
-          throw new Error(result.error || "Order failed");
-        }
         
         return result;
       }
@@ -529,7 +538,7 @@ export default function HomePage() {
         safeAddress={safeAddress}
         isSafeDeployed={isSafeDeployed}
         isSafeDeploying={isSafeDeploying}
-        onDeploySafe={deploySafe}
+        onDeploySafe={initializeTradingSession}
         onRefreshBalance={() => fetchBalance(true)}
         isRefreshingBalance={isRefreshingBalance}
       />
@@ -551,7 +560,44 @@ export default function HomePage() {
           orderMinSize={selectedBet.orderMinSize}
           yesTokenId={selectedBet.yesTokenId}
           noTokenId={selectedBet.noTokenId}
-          getOrderBook={getOrderBook}
+          getOrderBook={clobClient ? async (tokenId: string) => {
+            try {
+              const book = await clobClient.getOrderBook(tokenId);
+              const bids = (book.bids || []).map((b: any) => ({
+                price: parseFloat(b.price || "0"),
+                size: parseFloat(b.size || "0"),
+              }));
+              const asks = (book.asks || []).map((a: any) => ({
+                price: parseFloat(a.price || "0"),
+                size: parseFloat(a.size || "0"),
+              }));
+              const bestBid = bids[0]?.price || 0;
+              const bestAsk = asks[0]?.price || 0;
+              const spread = bestAsk > 0 && bestBid > 0 ? bestAsk - bestBid : 0;
+              const spreadPercent = bestAsk > 0 && bestBid > 0 ? (spread / bestBid) * 100 : 0;
+              const bidDepth = bids[0]?.size || 0;
+              const askDepth = asks[0]?.size || 0;
+              const totalBidLiquidity = bids.reduce((sum: number, b: any) => sum + b.size * b.price, 0);
+              const totalAskLiquidity = asks.reduce((sum: number, a: any) => sum + a.size * a.price, 0);
+              return {
+                bids,
+                asks,
+                bestBid,
+                bestAsk,
+                spread,
+                spreadPercent,
+                bidDepth,
+                askDepth,
+                totalBidLiquidity,
+                totalAskLiquidity,
+                isLowLiquidity: totalAskLiquidity < 100,
+                isWideSpread: spreadPercent > 5,
+              };
+            } catch (err) {
+              console.error("Failed to get order book:", err);
+              return null;
+            }
+          } : undefined}
         />
       )}
 

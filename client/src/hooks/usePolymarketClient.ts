@@ -26,7 +26,7 @@ function deriveSafe(address: string, safeFactory: string): string {
   });
 }
 import { polygon } from "viem/chains";
-import { useWallet } from "@/providers/PrivyProvider";
+import { useWallet } from "@/providers/WalletContext";
 
 interface ApiKeyCreds {
   key: string;
@@ -138,7 +138,7 @@ const CTF_ABI = [
 ] as const;
 
 export function usePolymarketClient() {
-  const { eoaAddress, isReady, authenticated, getProvider } = useWallet();
+  const { eoaAddress, walletClient, ethersSigner, isReady, authenticated } = useWallet();
   const [isInitializing, setIsInitializing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRelayerLoading, setIsRelayerLoading] = useState(false);
@@ -149,7 +149,6 @@ export function usePolymarketClient() {
   const credsRef = useRef<ApiKeyCreds | null>(null);
   const addressRef = useRef<string | null>(null);
   const safeAddressRef = useRef<string | null>(null);
-  const providerRef = useRef<unknown | null>(null);
 
   const initializeClient = useCallback(async (): Promise<ClobClient | null> => {
     if (clientRef.current && credsRef.current) {
@@ -157,7 +156,7 @@ export function usePolymarketClient() {
       return clientRef.current;
     }
 
-    if (!isReady || !authenticated || !eoaAddress) {
+    if (!isReady || !authenticated || !eoaAddress || !ethersSigner || !walletClient) {
       setError("Wallet not connected");
       return null;
     }
@@ -166,19 +165,8 @@ export function usePolymarketClient() {
     setError(null);
 
     try {
-      // Get the EIP-1193 provider from Privy via context
-      const privyProvider = await getProvider();
-      if (!privyProvider) {
-        setError("Failed to get wallet provider");
-        return null;
-      }
-      providerRef.current = privyProvider;
-
-      // Wrap with ethers v5 Web3Provider
-      const ethersProvider = new providers.Web3Provider(
-        privyProvider as providers.ExternalProvider,
-      );
-      const signer = ethersProvider.getSigner();
+      // Use ethersSigner directly from context (already created in WalletProvider)
+      const signer = ethersSigner;
 
       const address = await signer.getAddress();
       addressRef.current = address;
@@ -189,11 +177,7 @@ export function usePolymarketClient() {
       let safeAddress = safeAddressRef.current;
       if (!safeAddress) {
         console.log("[PolymarketClient] Deriving Safe address...");
-        const viemWallet = createWalletClient({
-          chain: polygon,
-          transport: custom(privyProvider as any),
-        });
-        
+        // Use walletClient directly from context
         const builderConfig = new BuilderConfig({
           remoteBuilderConfig: {
             url: `${window.location.origin}/api/polymarket/sign`,
@@ -203,7 +187,7 @@ export function usePolymarketClient() {
         const relayClient = new RelayClient(
           RELAYER_HOST,
           CHAIN_ID,
-          viemWallet,
+          walletClient,
           builderConfig,
           RelayerTxType.SAFE,
         );
@@ -278,7 +262,7 @@ export function usePolymarketClient() {
     } finally {
       setIsInitializing(false);
     }
-  }, [isReady, authenticated, eoaAddress, getProvider]);
+  }, [isReady, authenticated, eoaAddress, ethersSigner, walletClient]);
 
   const placeOrder = useCallback(
     async (params: OrderParams): Promise<OrderResult> => {
@@ -451,22 +435,16 @@ export function usePolymarketClient() {
   const getWalletAddress = useCallback(async (): Promise<string | null> => {
     if (addressRef.current) return addressRef.current;
 
-    if (!isReady || !authenticated) return null;
+    if (!isReady || !authenticated || !ethersSigner) return null;
 
     try {
-      const privyProvider = await getProvider();
-      if (!privyProvider) return null;
-      const ethersProvider = new providers.Web3Provider(
-        privyProvider as providers.ExternalProvider,
-      );
-      const signer = ethersProvider.getSigner();
-      const address = await signer.getAddress();
+      const address = await ethersSigner.getAddress();
       addressRef.current = address;
       return address;
     } catch {
       return null;
     }
-  }, [isReady, authenticated, getProvider]);
+  }, [isReady, authenticated, ethersSigner]);
 
   const initializeRelayClient =
     useCallback(async (): Promise<RelayClient | null> => {
@@ -475,7 +453,7 @@ export function usePolymarketClient() {
         return relayClientRef.current;
       }
 
-      if (!isReady || !authenticated) {
+      if (!isReady || !authenticated || !walletClient) {
         setError("Wallet not connected");
         return null;
       }
@@ -484,19 +462,8 @@ export function usePolymarketClient() {
       setError(null);
 
       try {
-        const privyProvider = await getProvider();
-        if (!privyProvider) {
-          setError("Failed to get wallet provider");
-          return null;
-        }
-
-        // Create viem wallet client for RelayClient
-        const viemWallet = createWalletClient({
-          chain: polygon,
-          transport: custom(privyProvider as any),
-        });
-
-        const [address] = await viemWallet.getAddresses();
+        // Use walletClient directly from context
+        const [address] = await walletClient.getAddresses();
         addressRef.current = address;
 
         // Configure Builder with remote signing via our server endpoint
@@ -509,7 +476,7 @@ export function usePolymarketClient() {
         const relayClient = new RelayClient(
           RELAYER_HOST,
           CHAIN_ID,
-          viemWallet,
+          walletClient,
           builderConfig,
           RelayerTxType.SAFE,
         );
@@ -532,7 +499,7 @@ export function usePolymarketClient() {
       } finally {
         setIsRelayerLoading(false);
       }
-    }, [isReady, authenticated, getProvider]);
+    }, [isReady, authenticated, walletClient]);
 
   const deploySafe = useCallback(async (): Promise<TransactionResult> => {
     setIsRelayerLoading(true);

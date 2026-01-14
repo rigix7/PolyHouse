@@ -3,10 +3,28 @@ import {
   RelayClient,
   RelayerTransactionState,
 } from "@polymarket/builder-relayer-client";
+import {
+  getCreate2Address,
+  keccak256,
+  encodeAbiParameters,
+  type Address,
+} from "viem";
 import { useWallet } from "@/providers/WalletContext";
-import { deriveSafe } from "@polymarket/builder-relayer-client/dist/builder/derive";
-import { getContractConfig } from "@polymarket/builder-relayer-client/dist/config";
 import { POLYGON_CHAIN_ID } from "@/constants/polymarket";
+
+// Safe factory address on Polygon (from Polymarket SDK)
+const SAFE_FACTORY_ADDRESS = "0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67";
+// Safe init code hash for CREATE2 address derivation (from Polymarket SDK)
+const SAFE_INIT_CODE_HASH = "0x2bce2127ff07fb632d16c8347c4ebf501f4841168bed00d9e6ef715ddb6fcecf" as `0x${string}`;
+
+// Derive Safe wallet address from EOA using CREATE2 (same as Polymarket SDK)
+function deriveSafeAddress(eoaAddress: string, safeFactory: string): string {
+  return getCreate2Address({
+    bytecodeHash: SAFE_INIT_CODE_HASH,
+    from: safeFactory as Address,
+    salt: keccak256(encodeAbiParameters([{ name: 'address', type: 'address' }], [eoaAddress as Address])),
+  });
+}
 
 // This hook is responsible for deploying the Safe wallet and offers two additional helper functions
 // to check if the Safe is already deployed and what the deterministic address is for the Safe
@@ -16,16 +34,15 @@ export default function useSafeDeployment(eoaAddress?: string) {
 
   // This function derives the Safe address from the EOA address
   const derivedSafeAddressFromEoa = useMemo(() => {
-    if (!eoaAddress || !publicClient || !POLYGON_CHAIN_ID) return undefined;
+    if (!eoaAddress || !POLYGON_CHAIN_ID) return undefined;
 
     try {
-      const config = getContractConfig(POLYGON_CHAIN_ID);
-      return deriveSafe(eoaAddress, config.SafeContracts.SafeFactory);
+      return deriveSafeAddress(eoaAddress, SAFE_FACTORY_ADDRESS);
     } catch (err) {
       console.error("Error deriving Safe address:", err);
       return undefined;
     }
-  }, [eoaAddress, publicClient]);
+  }, [eoaAddress]);
 
   // This function checks if the Safe is deployed by querying the relay client or RPC
   const isSafeDeployed = useCallback(

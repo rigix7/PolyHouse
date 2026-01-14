@@ -138,7 +138,14 @@ const CTF_ABI = [
   },
 ] as const;
 
-export function usePolymarketClient() {
+// Optional props to pass session credentials - avoids duplicate credential derivation
+export interface PolymarketClientProps {
+  sessionCredentials?: ApiKeyCreds | null;
+  sessionSafeAddress?: string | null;
+}
+
+export function usePolymarketClient(props?: PolymarketClientProps) {
+  const { sessionCredentials, sessionSafeAddress } = props || {};
   const { eoaAddress, walletClient, ethersSigner, isReady, authenticated } = useWallet();
   const [isInitializing, setIsInitializing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -173,9 +180,8 @@ export function usePolymarketClient() {
       addressRef.current = address;
       console.log("[PolymarketClient] Connected wallet:", address);
 
-      // STEP 1: Derive Safe address FIRST before creating any ClobClient
-      // The Safe is deterministically derived from the EOA address
-      let safeAddress = safeAddressRef.current;
+      // STEP 1: Use session Safe address if provided, otherwise derive
+      let safeAddress = sessionSafeAddress || safeAddressRef.current;
       if (!safeAddress) {
         console.log("[PolymarketClient] Deriving Safe address...");
         // Use walletClient directly from context
@@ -196,42 +202,39 @@ export function usePolymarketClient() {
         relayClientRef.current = relayClient;
         
         // Derive the Safe address from the EOA using SDK's static contract config
-        // v0.0.8 relayClient.contractConfig can return stale factory from relayer
-        // Using getContractConfig(137) gives us the correct static factory bundled with SDK
         const config = getContractConfig(137); // Polygon chainId
         const safeFactory = config.SafeContracts.SafeFactory;
         safeAddress = deriveSafe(address, safeFactory);
-        safeAddressRef.current = safeAddress;
         console.log("[PolymarketClient] Safe address:", safeAddress, "from SDK factory:", safeFactory);
+      } else {
+        console.log("[PolymarketClient] Using session Safe address:", safeAddress);
       }
+      safeAddressRef.current = safeAddress;
 
       if (!safeAddress) {
         throw new Error("Failed to derive Safe address");
       }
 
-      // STEP 2: Create temporary ClobClient for API key derivation
-      // Per official Polymarket example: use basic EOA-only client to derive/create credentials
-      // The trading client (authenticatedClient) handles Safe association via signatureType=2
-      const tempClient = new ClobClient(
-        CLOB_HOST,
-        CHAIN_ID,
-        signer
-      );
+      // STEP 2: Use session credentials if provided, otherwise derive
+      let creds = sessionCredentials || credsRef.current;
+      if (!creds || !creds.key || !creds.secret || !creds.passphrase) {
+        console.log("[PolymarketClient] No session credentials, deriving fresh API credentials...");
+        const tempClient = new ClobClient(
+          CLOB_HOST,
+          CHAIN_ID,
+          signer
+        );
 
-      // STEP 3: Force CREATE new API credentials (don't derive - old creds may be tied to EOA)
-      // For fresh accounts, this ensures credentials are created fresh
-      // For existing accounts, createApiKey() will create a new key set
-      console.log("[PolymarketClient] Creating fresh API credentials for EOA:", address);
-      let creds;
-      try {
-        // Always create new credentials to avoid using stale EOA-derived ones
-        creds = await tempClient.createApiKey();
-        console.log("[PolymarketClient] Successfully created new API credentials");
-      } catch (createErr: any) {
-        // If creation fails (e.g., already exists), try deriving
-        console.log("[PolymarketClient] Create failed, trying to derive existing...", createErr?.message);
-        creds = await tempClient.deriveApiKey();
-        console.log("[PolymarketClient] Successfully derived existing API credentials");
+        try {
+          creds = await tempClient.createApiKey();
+          console.log("[PolymarketClient] Successfully created new API credentials");
+        } catch (createErr: any) {
+          console.log("[PolymarketClient] Create failed, trying to derive existing...", createErr?.message);
+          creds = await tempClient.deriveApiKey();
+          console.log("[PolymarketClient] Successfully derived existing API credentials");
+        }
+      } else {
+        console.log("[PolymarketClient] Using session credentials, key:", creds.key.substring(0, 8) + "...");
       }
       credsRef.current = creds;
 
@@ -271,7 +274,7 @@ export function usePolymarketClient() {
     } finally {
       setIsInitializing(false);
     }
-  }, [isReady, authenticated, eoaAddress, ethersSigner, walletClient]);
+  }, [isReady, authenticated, eoaAddress, ethersSigner, walletClient, sessionCredentials, sessionSafeAddress]);
 
   const placeOrder = useCallback(
     async (params: OrderParams): Promise<OrderResult> => {

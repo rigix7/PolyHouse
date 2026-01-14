@@ -11,7 +11,7 @@ import { TradeView } from "@/components/views/TradeView";
 import { DashboardView } from "@/components/views/DashboardView";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { fetchGammaEvents, gammaEventToMarket, gammaEventToDisplayEvent, type DisplayEvent } from "@/lib/polymarket";
-import { calculateOrderSize, fetchPositions, type PolymarketPosition } from "@/lib/polymarketOrder";
+import { fetchPositions, type PolymarketPosition } from "@/lib/polymarketOrder";
 import { usePolymarketClient } from "@/hooks/usePolymarketClient";
 import { getUSDCBalance } from "@/lib/polygon";
 import { useWallet } from "@/providers/PrivyProvider";
@@ -211,23 +211,20 @@ export default function HomePage() {
     }) => {
       const walletAddr = safeAddress || address || "";
       
-      if (data.tokenId && data.price) {
-        const size = calculateOrderSize(data.amount, data.price);
-        
-        console.log("[Bet] Submitting to Polymarket via SDK:", {
+      if (data.tokenId) {
+        console.log("[Bet] Submitting FOK market order to Polymarket:", {
           tokenId: data.tokenId,
-          price: data.price,
-          size,
+          amount: data.amount,
           wallet: walletAddr,
           orderMinSize: data.orderMinSize,
         });
         
-        // Use the ClobClient SDK for real wallet-signed orders
+        // Use FOK (Fill-or-Kill) market order - instant execution or reject
+        // No price needed - SDK calculates based on order book
         const result = await placeOrder({
           tokenId: data.tokenId,
           side: "BUY",
-          price: data.price,
-          size,
+          amount: data.amount, // USDC amount to spend
           tickSize: "0.01",
           negRisk: false,
           orderMinSize: data.orderMinSize,

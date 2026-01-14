@@ -43,6 +43,21 @@ export default function useTradingSession() {
     }
 
     const stored = loadSession(eoaAddress);
+
+    // CRITICAL: Detect stale sessions that have credentials derived for EOA (or no tracking field)
+    // These sessions MUST be cleared to force re-derivation with Safe-based credentials
+    // This is a one-time migration for users who had sessions before the Safe credential fix
+    if (stored && stored.hasApiCredentials && !stored.credentialsDerivedFor) {
+      console.log(
+        "[TradingSession] Detected stale session with EOA credentials - clearing to force re-initialization"
+      );
+      clearStoredSession(eoaAddress);
+      setTradingSession(null);
+      setCurrentStep("idle");
+      setSessionError(null);
+      return;
+    }
+
     setTradingSession(stored);
 
     if (!stored) {

@@ -221,32 +221,48 @@ export function usePolymarketClient() {
         throw new Error("Failed to derive Safe address");
       }
 
-      // STEP 2: Create ClobClient with Safe wallet config for API key derivation
-      // This ensures the API key is tied to the Safe wallet, not the EOA
-      // signatureType: 2 = Safe proxy wallet
-      const initClient = new ClobClient(
+      // STEP 2: Create temporary ClobClient with EOA only for API key derivation
+      // Per Polymarket docs: API keys are ALWAYS derived with basic EOA-only client
+      const tempClient = new ClobClient(
         CLOB_HOST,
         CHAIN_ID,
         signer,
-        undefined, // No creds yet - we're deriving them
-        2, // signatureType: 2 = Safe proxy wallet
-        safeAddress, // funder = Safe address where USDC is deposited
       );
 
-      // STEP 3: Derive or create API credentials with Safe wallet configuration
-      console.log("[PolymarketClient] Deriving API credentials for Safe wallet...");
-      const creds = await initClient.createOrDeriveApiKey();
+      // STEP 3: Derive or create API credentials using EOA signature
+      console.log("[PolymarketClient] Deriving API credentials...");
+      let creds;
+      try {
+        creds = await tempClient.deriveApiKey();
+        console.log("[PolymarketClient] Successfully derived existing API credentials");
+      } catch {
+        console.log("[PolymarketClient] Creating new API credentials...");
+        creds = await tempClient.createApiKey();
+        console.log("[PolymarketClient] Successfully created new API credentials");
+      }
       credsRef.current = creds;
-      console.log("[PolymarketClient] API credentials obtained for Safe wallet");
 
-      // STEP 4: Create authenticated client with credentials (same Safe config)
+      // STEP 4: Create authenticated ClobClient with Safe config + BuilderConfig
+      // Per official privy-safe-builder-example:
+      // - signatureType: 2 = Safe proxy wallet (gasless)
+      // - funder = Safe address where USDC is deposited
+      // - BuilderConfig = enables order attribution
+      const clobBuilderConfig = new BuilderConfig({
+        remoteBuilderConfig: {
+          url: `${window.location.origin}/api/polymarket/sign`,
+        },
+      });
+      
       const authenticatedClient = new ClobClient(
         CLOB_HOST,
         CHAIN_ID,
         signer,
         creds,
-        2, // signatureType: 2 = Safe proxy wallet
+        2, // signatureType: 2 = Safe proxy wallet (gasless trading)
         safeAddress, // funder = Safe address where USDC is deposited
+        undefined, // mandatory placeholder (7th param)
+        false, // (8th param)
+        clobBuilderConfig, // Builder order attribution (9th param)
       );
 
       clientRef.current = authenticatedClient;

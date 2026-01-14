@@ -1176,8 +1176,13 @@ export async function registerRoutes(
         return res.status(400).json({ error: "order and walletAddress required" });
       }
       
+      // Handle both new FOK orders (amount) and legacy limit orders (price/size)
+      const orderAmount = order.amount ?? (order.price && order.size ? order.price * order.size : 0);
+      const orderPrice = order.price ?? "0";
+      const orderSize = order.size ?? orderAmount.toString();
+      
       console.log(`[Orders] Storing order for wallet ${walletAddress}`);
-      console.log(`[Orders] Details: tokenID=${order.tokenID}, price=${order.price}, size=${order.size}, side=${order.side}, status=${status}`);
+      console.log(`[Orders] Details: tokenID=${order.tokenID}, amount=${orderAmount}, side=${order.side}, orderType=${order.orderType}, status=${status}`);
       
       // Store order in our database for tracking
       const now = new Date().toISOString();
@@ -1186,9 +1191,9 @@ export async function registerRoutes(
           walletAddress,
           tokenId: order.tokenID,
           side: order.side,
-          price: order.price.toString(),
-          size: order.size.toString(),
-          orderType: order.orderType || "GTC",
+          price: orderPrice.toString(),
+          size: orderSize.toString(),
+          orderType: order.orderType || "FOK",
           polymarketOrderId: polymarketOrderId || null,
           status: status || "submitted",
           errorMessage: null,
@@ -1203,10 +1208,10 @@ export async function registerRoutes(
       }
       
       // Award WILD points only for filled/matched orders (actual execution)
-      // "open" means order is sitting in order book - don't award until filled
+      // "cancelled" means order was rejected - don't award
       // "filled" or "matched" means order executed and USDC was spent
       if (walletAddress && (status === "filled" || status === "matched")) {
-        const stakeAmount = order.price * order.size;
+        const stakeAmount = Math.floor(orderAmount);
         await storage.addWildPoints(walletAddress, stakeAmount);
         console.log(`[Orders] Awarded ${stakeAmount} WILD points to ${walletAddress}`);
       } else {

@@ -209,24 +209,28 @@ export function usePolymarketClient() {
         throw new Error("Failed to derive Safe address");
       }
 
-      // STEP 2: Create temporary ClobClient with EOA only for API key derivation
-      // Per Polymarket docs: API keys are ALWAYS derived with basic EOA-only client
+      // STEP 2: Create temporary ClobClient for API key derivation
+      // IMPORTANT: Must use signatureType=2 and safeAddress so credentials are owned by the Safe
+      // The EOA signs on behalf of the Safe, but the credentials belong to the Safe address
       const tempClient = new ClobClient(
         CLOB_HOST,
         CHAIN_ID,
         signer,
+        undefined, // no credentials yet
+        2,         // signatureType = 2 for Safe proxy (EOA signing on behalf of Safe)
+        safeAddress // credentials will be owned by the Safe proxy address
       );
 
-      // STEP 3: Derive or create API credentials using EOA signature
-      console.log("[PolymarketClient] Deriving API credentials...");
+      // STEP 3: Derive or create API credentials for the Safe proxy address
+      console.log("[PolymarketClient] Deriving API credentials for Safe:", safeAddress);
       let creds;
       try {
         creds = await tempClient.deriveApiKey();
-        console.log("[PolymarketClient] Successfully derived existing API credentials");
+        console.log("[PolymarketClient] Successfully derived existing API credentials for Safe");
       } catch {
-        console.log("[PolymarketClient] Creating new API credentials...");
+        console.log("[PolymarketClient] Creating new API credentials for Safe...");
         creds = await tempClient.createApiKey();
-        console.log("[PolymarketClient] Successfully created new API credentials");
+        console.log("[PolymarketClient] Successfully created new API credentials for Safe");
       }
       credsRef.current = creds;
 

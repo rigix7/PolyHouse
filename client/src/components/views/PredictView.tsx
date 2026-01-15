@@ -428,7 +428,7 @@ function TotalsMarketDisplay({
   );
 }
 
-// Soccer 3-way moneyline display - shows Home/Draw/Away with prices
+// Soccer 3-way moneyline display - shows Home/Draw/Away with prices (enhanced styling)
 // Clicking any option opens betslip with Yes/No choice for that specific market
 function SoccerMoneylineDisplay({
   markets,
@@ -475,52 +475,91 @@ function SoccerMoneylineDisplay({
     }
   }
   
+  // Calculate prices and find favorite using normalized probabilities
+  const prices = sortedMarkets.map(m => m.outcomes[0]?.price ?? m.bestAsk ?? 0);
+  const totalProb = prices.reduce((sum, p) => sum + p, 0);
+  const normalizedProbs = prices.map(p => totalProb > 0 ? p / totalProb : 0.33);
+  const maxNormalizedProb = Math.max(...normalizedProbs);
+  const favoriteIndex = normalizedProbs.indexOf(maxNormalizedProb);
+  const isFavoriteStrong = maxNormalizedProb >= 0.50; // 50%+ of total probability
+  
+  // Calculate probability percentages for the 3-segment bar
+  const probabilities = normalizedProbs.map(p => p * 100);
+  
   return (
-    <div className="flex gap-2">
-      {sortedMarkets.map((market, idx) => {
-        // Use static price from Gamma API (live prices shown in BetSlip)
-        const priceInCents = Math.round((market.outcomes[0]?.price ?? market.bestAsk ?? 0) * 100);
-        
-        // Use groupItemTitle directly - it contains the team name (e.g., "Sevilla FC", "Draw", "RC Celta")
-        // Fall back to parsing from question if groupItemTitle is not available
-        const fullLabel = market.groupItemTitle || parseSoccerOutcomeName(market.question, "Team");
-        const lowerLabel = fullLabel.toLowerCase();
-        const isDraw = lowerLabel.includes("draw") || lowerLabel.includes("tie");
-        
-        // Use 3-letter abbreviation for teams, "DRAW" for draw
-        const displayLabel = isDraw ? "DRAW" : getTeamAbbreviation(fullLabel);
-        
-        const isSelected = selectedMarketId === market.id;
-        const isYesSelected = isSelected && selectedDirection === "yes";
-        
-        // Color: Home (teal), Draw (zinc), Away (red)
-        let colorClass: string;
-        if (isDraw) {
-          colorClass = isYesSelected 
-            ? "bg-zinc-600 border-zinc-500" 
-            : "bg-zinc-800/60 border-zinc-700/50 hover:bg-zinc-700/50";
-        } else if (idx === 0) {
-          colorClass = isYesSelected 
-            ? "bg-teal-600 border-teal-500" 
-            : "bg-teal-900/40 border-teal-800/50 hover:bg-teal-800/50";
-        } else {
-          colorClass = isYesSelected 
-            ? "bg-red-600 border-red-500" 
-            : "bg-red-900/40 border-red-800/50 hover:bg-red-800/50";
-        }
-        
-        return (
-          <button
-            key={market.id}
-            onClick={() => onSelect(market, "yes", fullLabel)}
-            className={`flex-1 flex flex-col items-center gap-1 px-3 py-2 rounded-md border text-sm transition-all ${colorClass} text-zinc-100`}
-            data-testid={`soccer-moneyline-${market.id}`}
-          >
-            <span className="font-medium text-xs truncate max-w-full">{displayLabel}</span>
-            <span className="font-mono font-bold text-white">{priceInCents}¢</span>
-          </button>
-        );
-      })}
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        {sortedMarkets.map((market, idx) => {
+          // Use static price from Gamma API (live prices shown in BetSlip)
+          const priceInCents = Math.round(prices[idx] * 100);
+          
+          // Use groupItemTitle directly - it contains the team name (e.g., "Sevilla FC", "Draw", "RC Celta")
+          // Fall back to parsing from question if groupItemTitle is not available
+          const fullLabel = market.groupItemTitle || parseSoccerOutcomeName(market.question, "Team");
+          const lowerLabel = fullLabel.toLowerCase();
+          const isDraw = lowerLabel.includes("draw") || lowerLabel.includes("tie");
+          
+          // Use 3-letter abbreviation for teams, "DRAW" for draw
+          const displayLabel = isDraw ? "DRAW" : getTeamAbbreviation(fullLabel);
+          
+          const isSelected = selectedMarketId === market.id;
+          const isYesSelected = isSelected && selectedDirection === "yes";
+          const isFavorite = idx === favoriteIndex && isFavoriteStrong;
+          
+          // Color: Home (teal), Draw (zinc), Away (amber)
+          let colorClass: string;
+          if (isDraw) {
+            colorClass = isYesSelected 
+              ? "bg-zinc-600 border-zinc-500" 
+              : "bg-zinc-800/60 border-zinc-700/50 hover:bg-zinc-700/50";
+          } else if (idx === 0) {
+            colorClass = isYesSelected 
+              ? "bg-teal-600 border-teal-500" 
+              : "bg-teal-900/40 border-teal-800/50 hover:bg-teal-800/50";
+          } else {
+            colorClass = isYesSelected 
+              ? "bg-amber-600 border-amber-500" 
+              : "bg-amber-900/40 border-amber-800/50 hover:bg-amber-800/50";
+          }
+          
+          return (
+            <button
+              key={market.id}
+              onClick={() => onSelect(market, "yes", fullLabel)}
+              className={`flex-1 flex flex-col items-center justify-center gap-1 px-3 py-4 rounded-lg border text-sm transition-all ${colorClass} text-zinc-100`}
+              data-testid={`soccer-moneyline-${market.id}`}
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold">{displayLabel}</span>
+                {isFavorite && (
+                  <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-wild-gold/20 text-wild-gold uppercase">
+                    FAV
+                  </span>
+                )}
+              </div>
+              <span className="font-mono font-bold text-lg text-white">{priceInCents}¢</span>
+            </button>
+          );
+        })}
+      </div>
+      
+      {/* 3-segment odds differential bar */}
+      {sortedMarkets.length === 3 && (
+        <div className="relative h-1.5 bg-zinc-800 rounded-full overflow-hidden flex">
+          <div 
+            className="h-full bg-gradient-to-r from-teal-500 to-teal-400 transition-all duration-300"
+            style={{ width: `${probabilities[0]}%` }}
+          />
+          <div 
+            className="h-full bg-gradient-to-r from-zinc-500 to-zinc-400 transition-all duration-300"
+            style={{ width: `${probabilities[1]}%` }}
+          />
+          <div 
+            className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-300"
+            style={{ width: `${probabilities[2]}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -563,7 +602,7 @@ function MoneylineMarketDisplay({
             <button
               key={idx}
               onClick={() => onSelect(market, idx)}
-              className={`flex-1 flex flex-col items-center gap-1 px-4 py-3 rounded-lg border text-sm transition-all ${
+              className={`flex-1 flex flex-col items-center justify-center gap-1 px-4 py-4 rounded-lg border text-sm transition-all ${
                 isSelected 
                   ? idx === 0 
                     ? "bg-teal-600 border-teal-500 text-white" 

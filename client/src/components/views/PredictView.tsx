@@ -525,7 +525,7 @@ function SoccerMoneylineDisplay({
   );
 }
 
-// Moneyline market display - shows team buttons with prices
+// Moneyline market display - shows team buttons with prices (enhanced styling)
 function MoneylineMarketDisplay({
   market,
   eventTitle,
@@ -539,32 +539,70 @@ function MoneylineMarketDisplay({
 }) {
   const outcomes = market.outcomes;
   
+  // Calculate prices and find favorite
+  const prices = outcomes.map((o, idx) => o.price ?? (idx === 0 ? market.bestAsk : market.bestBid) ?? 0.5);
+  const maxPrice = Math.max(...prices);
+  const favoriteIndex = prices.indexOf(maxPrice);
+  const isFavoriteStrong = maxPrice >= 0.70; // Show FAV badge if 70%+ implied probability
+  
+  // Calculate probability percentages for the bar
+  const totalProb = prices.reduce((sum, p) => sum + p, 0);
+  const probabilities = prices.map(p => totalProb > 0 ? (p / totalProb) * 100 : 50);
+  
   return (
-    <div className="flex flex-wrap gap-2">
-      {outcomes.map((outcome, idx) => {
-        // Use static price from Gamma API (live prices shown in BetSlip)
-        const priceInCents = Math.round((outcome.price ?? market.bestAsk) * 100);
-        const abbr = getTeamAbbreviation(outcome.label);
-        const isSelected = selectedOutcomeIndex === idx;
-        
-        return (
-          <button
-            key={idx}
-            onClick={() => onSelect(market, idx)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-md border text-sm transition-all ${
-              isSelected 
-                ? "border-wild-brand bg-wild-brand/20 text-white" 
-                : "border-zinc-700 bg-zinc-800/50 hover:border-zinc-600 hover:bg-zinc-800 text-zinc-200"
-            }`}
-            data-testid={`moneyline-${market.id}-${idx}`}
-          >
-            <span className="font-medium">{abbr}</span>
-            <span className={`font-mono font-bold ${isSelected ? "text-wild-brand" : "text-wild-gold"}`}>
-              {priceInCents}¢
-            </span>
-          </button>
-        );
-      })}
+    <div className="space-y-2">
+      {/* Larger styled buttons */}
+      <div className="flex gap-2">
+        {outcomes.map((outcome, idx) => {
+          const priceInCents = Math.round(prices[idx] * 100);
+          const abbr = getTeamAbbreviation(outcome.label);
+          const isSelected = selectedOutcomeIndex === idx;
+          const isFavorite = idx === favoriteIndex && isFavoriteStrong;
+          
+          return (
+            <button
+              key={idx}
+              onClick={() => onSelect(market, idx)}
+              className={`flex-1 flex flex-col items-center gap-1 px-4 py-3 rounded-lg border text-sm transition-all ${
+                isSelected 
+                  ? idx === 0 
+                    ? "bg-teal-600 border-teal-500 text-white" 
+                    : "bg-amber-600 border-amber-500 text-white"
+                  : idx === 0
+                    ? "bg-teal-900/40 border-teal-800/50 hover:bg-teal-800/50 text-zinc-100"
+                    : "bg-amber-900/40 border-amber-800/50 hover:bg-amber-800/50 text-zinc-100"
+              }`}
+              data-testid={`moneyline-${market.id}-${idx}`}
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold">{abbr}</span>
+                {isFavorite && (
+                  <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-wild-gold/20 text-wild-gold uppercase">
+                    FAV
+                  </span>
+                )}
+              </div>
+              <span className="font-mono font-bold text-lg text-white">
+                {priceInCents}¢
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      
+      {/* Odds differential bar */}
+      {outcomes.length === 2 && (
+        <div className="relative h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+          <div 
+            className="absolute left-0 top-0 h-full bg-gradient-to-r from-teal-500 to-teal-400 transition-all duration-300"
+            style={{ width: `${probabilities[0]}%` }}
+          />
+          <div 
+            className="absolute right-0 top-0 h-full bg-gradient-to-l from-amber-500 to-amber-400 transition-all duration-300"
+            style={{ width: `${probabilities[1]}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 }

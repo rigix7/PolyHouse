@@ -133,3 +133,20 @@ Key API Endpoints:
   - Added deriveSafeFromRelayClient() function that gets factory address from RelayClient after initialization
   - This ensures Safe address is consistent between dashboard and trading session (both now show 0x8474...)
   - Safe address derivation is now async and happens after RelayClient is initialized
+- Added social login options for Privy (January 16, 2026)
+  - Enabled Google, Apple, Twitter login methods alongside email and wallet
+  - Uses Privy's default OAuth credentials (can configure custom credentials in Privy Dashboard for production branding)
+- Added "Powered by Polymarket" attribution (January 16, 2026)
+  - Footer in Predict view links to polymarket.com for credibility and transparency
+  - Uses Button component with ghost variant per design guidelines
+- Fixed claimable positions detection (January 16, 2026)
+  - Position status now uses `redeemable` field from Polymarket Data API as authoritative source
+  - Winning resolved positions now correctly appear in Dashboard "Claim Winnings" section
+  - See: https://docs.polymarket.com/developers/misc-endpoints/data-api-get-positions
+
+## Geo-Blocking Behavior
+Polymarket enforces geo-restrictions at the API level for trading/orders. Blocked countries include:
+- Singapore, France, Switzerland, Poland, Romania, UK, Australia, Netherlands
+- OFAC-sanctioned countries (Iran, Cuba, North Korea, Syria, etc.)
+
+When geo-blocked, users see "no liquidity available" error. Viewing markets/prices still works.

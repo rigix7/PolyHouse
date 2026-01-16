@@ -1465,6 +1465,26 @@ export function PredictView({
           />
         )}
         </div>
+        
+        {/* Powered by Polymarket attribution */}
+        <div className="shrink-0 py-3 px-4 border-t border-zinc-800 bg-zinc-950 flex justify-center" data-testid="container-polymarket-attribution">
+          <Button
+            variant="ghost"
+            size="sm"
+            asChild
+          >
+            <a 
+              href="https://polymarket.com" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-zinc-500"
+              data-testid="link-polymarket-attribution"
+            >
+              <span className="text-xs font-medium">Powered by</span>
+              <span className="text-xs font-bold tracking-wide">POLYMARKET</span>
+            </a>
+          </Button>
+        </div>
       </div>
     </SportConfigContext.Provider>
   );

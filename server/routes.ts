@@ -1307,19 +1307,34 @@ export async function registerRoutes(
       console.log(`[Positions] Found ${rawPositions.length} positions for ${address}`);
       
       // Transform API response to match client-expected format
-      const positions = rawPositions.map((p: any) => ({
-        tokenId: p.asset || p.tokenId,
-        conditionId: p.conditionId,
-        marketQuestion: p.title || p.marketQuestion,
-        outcomeLabel: p.outcome || p.outcomeLabel,
-        side: p.side || "BUY",
-        size: parseFloat(p.size) || 0,
-        avgPrice: parseFloat(p.avgPrice) || 0,
-        currentPrice: parseFloat(p.curPrice) || parseFloat(p.currentPrice) || 0,
-        unrealizedPnl: parseFloat(p.cashPnl) || parseFloat(p.unrealizedPnl) || 0,
-        // If position exists and has size > 0, consider it "open"
-        status: parseFloat(p.size) > 0 ? "open" : (p.redeemable ? "claimable" : "closed"),
-      }));
+      // Per Polymarket Data API docs: redeemable=true means market is resolved and user holds winning tokens
+      // See: https://docs.polymarket.com/developers/misc-endpoints/data-api-get-positions
+      const positions = rawPositions.map((p: any) => {
+        const size = parseFloat(p.size) || 0;
+        const redeemable = p.redeemable === true;
+        
+        // Determine status: redeemable takes priority (winning resolved markets)
+        // redeemable is the authoritative field from Polymarket indicating claimable winnings
+        let status = "closed";
+        if (redeemable) {
+          status = "claimable"; // Market resolved, user has winning tokens to redeem
+        } else if (size > 0) {
+          status = "open"; // Active position in unresolved market
+        }
+        
+        return {
+          tokenId: p.asset || p.tokenId,
+          conditionId: p.conditionId,
+          marketQuestion: p.title || p.marketQuestion,
+          outcomeLabel: p.outcome || p.outcomeLabel,
+          side: p.side || "BUY",
+          size,
+          avgPrice: parseFloat(p.avgPrice) || 0,
+          currentPrice: parseFloat(p.curPrice) || parseFloat(p.currentPrice) || 0,
+          unrealizedPnl: parseFloat(p.cashPnl) || parseFloat(p.unrealizedPnl) || 0,
+          status,
+        };
+      });
       
       res.json(positions);
     } catch (error) {

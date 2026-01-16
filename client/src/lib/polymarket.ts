@@ -510,8 +510,76 @@ function getMarketTypeLabel(type: string): string {
   return labels[type] || type.charAt(0).toUpperCase() + type.slice(1);
 }
 
+// Parse team abbreviations from event slug
+// Format: {league}-{homeAbbrev}-{awayAbbrev}-{date} (e.g., "sea-udi-int-2026-01-18")
+// Returns { homeAbbrev, awayAbbrev } or null if not parseable
+function parseTeamAbbrevsFromEventSlug(slug: string): { homeAbbrev: string; awayAbbrev: string } | null {
+  if (!slug) return null;
+  
+  const parts = slug.split("-");
+  // Need at least: league + home + away + year + month + day = 6 parts minimum
+  if (parts.length < 6) return null;
+  
+  // Find the date portion (4-digit year followed by 2-digit month and day)
+  // The team abbreviations come BEFORE the date
+  let dateStartIdx = -1;
+  for (let i = 1; i < parts.length - 2; i++) {
+    // Check if this looks like a year (4 digits, starts with 20)
+    if (/^20\d{2}$/.test(parts[i])) {
+      dateStartIdx = i;
+      break;
+    }
+  }
+  
+  if (dateStartIdx < 3) return null; // Need at least league + 2 teams before date
+  
+  // Extract team abbreviations (parts 1 and 2 after league at index 0)
+  // Format: league-home-away-date... or league-team1-team2-date...
+  const homeAbbrev = parts[1].toUpperCase();
+  const awayAbbrev = parts[2].toUpperCase();
+  
+  // Validate abbreviations are reasonable (1-7 chars, letters/numbers only)
+  if (!homeAbbrev || !awayAbbrev) return null;
+  if (!/^[A-Z0-9]{1,7}$/i.test(homeAbbrev) || !/^[A-Z0-9]{1,7}$/i.test(awayAbbrev)) return null;
+  
+  return { homeAbbrev, awayAbbrev };
+}
+
+// Match a market to its team abbreviation based on market slug or groupItemTitle
+function getMarketTeamAbbrev(
+  market: GammaMarket,
+  eventSlug: string,
+  teamAbbrevs: { homeAbbrev: string; awayAbbrev: string } | null
+): string | undefined {
+  if (!teamAbbrevs) return undefined;
+  
+  const marketSlug = market.slug?.toLowerCase() || "";
+  const groupTitle = market.groupItemTitle?.toLowerCase() || "";
+  
+  // Check if market slug ends with a team abbreviation (e.g., "sea-udi-int-2026-01-18-udi")
+  const slugParts = marketSlug.split("-");
+  if (slugParts.length > 0) {
+    const lastPart = slugParts[slugParts.length - 1].toUpperCase();
+    if (lastPart === teamAbbrevs.homeAbbrev) return teamAbbrevs.homeAbbrev;
+    if (lastPart === teamAbbrevs.awayAbbrev) return teamAbbrevs.awayAbbrev;
+  }
+  
+  // Check if groupItemTitle contains "draw" - no team abbreviation for draws
+  if (groupTitle.includes("draw") || groupTitle.includes("tie")) {
+    return undefined;
+  }
+  
+  // Fall back to checking if groupItemTitle position indicates home vs away
+  // For 3-way markets, first team in title is usually home
+  // This is less reliable, so only use as fallback
+  return undefined;
+}
+
 export function gammaEventToDisplayEvent(event: GammaEvent): DisplayEvent | null {
   if (!event.markets?.length) return null;
+  
+  // Parse team abbreviations from event slug (e.g., "sea-udi-int-2026-01-18" -> {homeAbbrev: "UDI", awayAbbrev: "INT"})
+  const teamAbbrevs = parseTeamAbbrevsFromEventSlug(event.slug);
   
   // Parse all markets and group by sportsMarketType
   const marketsByType = new Map<string, ParsedMarket[]>();
@@ -604,7 +672,8 @@ export function gammaEventToDisplayEvent(event: GammaEvent): DisplayEvent | null
       outcomes,
       clobTokenIds: clobTokenIds.length > 0 ? clobTokenIds : undefined,
       orderMinSize: market.orderMinSize,
-      teamAbbrev: market.teamAbbrev,
+      // Get team abbreviation from market slug parsing (falls back to undefined)
+      teamAbbrev: getMarketTeamAbbrev(market, event.slug, teamAbbrevs),
     };
     
     if (!marketsByType.has(marketType)) {

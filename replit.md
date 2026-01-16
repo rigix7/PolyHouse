@@ -143,6 +143,16 @@ Key API Endpoints:
   - Position status now uses `redeemable` field from Polymarket Data API as authoritative source
   - Winning resolved positions now correctly appear in Dashboard "Claim Winnings" section
   - See: https://docs.polymarket.com/developers/misc-endpoints/data-api-get-positions
+- Enhanced bet confirmation UX (January 16, 2026)
+  - BetSlip now shows prominent inline success/error panels after submission
+  - Success panel: Large green checkmark, stake amount, "Done" button
+  - Error panel: Red X icon, error message from API, "Try Again" button
+  - Button lockout with spinner during "Submitting to Polymarket..." state
+  - Positions refresh automatically on successful bet placement
+  - Toast component has new success/error variants with colored borders and backgrounds
+- Added Dashboard Activity tab with Polymarket activity history (January 16, 2026)
+  - Fetches complete trade history from Polymarket Data API /activity endpoint
+  - Shows BOUGHT (teal), SOLD (gold), CLAIMED (green) badges with amounts and timestamps
 
 ## Geo-Blocking Behavior
 Polymarket enforces geo-restrictions at the API level for trading/orders. Blocked countries include:

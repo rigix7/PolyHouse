@@ -290,28 +290,21 @@ export function BetSlip({
     try {
       let result: { success: boolean; error?: string; orderId?: string };
       
-      // If book is stale, refresh before submitting
-      if (isBookStale && getOrderBook && yesTokenId) {
+      // If book is stale, refresh before submitting using the current direction's token
+      if (isBookStale && getOrderBook && currentTokenId) {
         setIsLoadingBook(true);
         try {
-          const freshBook = await getOrderBook(yesTokenId);
+          const freshBook = await getOrderBook(currentTokenId);
           setOrderBook(freshBook);
           setLastFetchTime(Date.now());
           
           if (freshBook) {
             let freshPrice: number;
-            if (betDirection === "yes") {
-              if (freshBook.bestAsk > 0 && freshBook.bestAsk < 0.99) {
-                freshPrice = Math.min(freshBook.bestAsk + PRICE_BUFFER, 0.99);
-              } else {
-                freshPrice = executionPrice;
-              }
+            // Use bestAsk from the selected outcome's order book directly
+            if (freshBook.bestAsk > 0 && freshBook.bestAsk < 0.99) {
+              freshPrice = Math.min(freshBook.bestAsk + PRICE_BUFFER, 0.99);
             } else {
-              if (freshBook.bestBid > 0) {
-                freshPrice = Math.min(1 - freshBook.bestBid + PRICE_BUFFER, 0.99);
-              } else {
-                freshPrice = executionPrice;
-              }
+              freshPrice = executionPrice;
             }
             const freshOdds = 1 / freshPrice;
             result = await onConfirm(stakeNum, betDirection, freshOdds, freshPrice);
@@ -360,18 +353,21 @@ export function BetSlip({
             <div className="pt-2 space-y-3">
               <Button
                 onClick={onCancel}
-                className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
+                size="lg"
+                className="w-full bg-emerald-600 text-white font-bold"
                 data-testid="button-success-done"
               >
                 Done
               </Button>
-              <button
+              <Button
                 onClick={onCancel}
-                className="w-full text-sm text-zinc-400 hover:text-white flex items-center justify-center gap-1"
+                variant="ghost"
+                size="sm"
+                className="w-full text-zinc-400"
                 data-testid="button-view-activity"
               >
-                View in Activity <ArrowRight className="w-4 h-4" />
-              </button>
+                View in Activity <ArrowRight className="w-4 h-4 ml-1" />
+              </Button>
             </div>
           </div>
         </div>
@@ -395,18 +391,21 @@ export function BetSlip({
             <div className="pt-2 space-y-3">
               <Button
                 onClick={handleRetry}
-                className="w-full h-12 bg-wild-brand hover:bg-wild-brand/90 text-white font-bold"
+                size="lg"
+                className="w-full bg-wild-brand text-white font-bold"
                 data-testid="button-retry-bet"
               >
                 Try Again
               </Button>
-              <button
+              <Button
                 onClick={onCancel}
-                className="w-full text-sm text-zinc-400 hover:text-white"
+                variant="ghost"
+                size="sm"
+                className="w-full text-zinc-400"
                 data-testid="button-cancel-bet"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -591,7 +590,8 @@ export function BetSlip({
           <Button
             onClick={handleConfirm}
             disabled={stakeNum <= 0 || isPending || isLoadingBook || isBelowMinimum || submissionStatus === "pending"}
-            className="w-full h-12 bg-wild-brand hover:bg-wild-brand/90 text-white font-bold text-lg"
+            size="lg"
+            className="w-full bg-wild-brand text-white font-bold text-lg"
             data-testid="button-confirm-bet"
           >
             {submissionStatus === "pending" || isPending ? (

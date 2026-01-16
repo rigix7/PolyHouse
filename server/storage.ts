@@ -62,6 +62,7 @@ export interface IStorage {
   getWalletRecord(address: string): Promise<WalletRecord | undefined>;
   getOrCreateWalletRecord(address: string): Promise<WalletRecord>;
   addWildPoints(address: string, amount: number): Promise<WalletRecord>;
+  updateWalletSafeStatus(address: string, safeAddress: string, isSafeDeployed: boolean): Promise<WalletRecord>;
 
   getAdminSettings(): Promise<AdminSettings>;
   updateAdminSettings(updates: Partial<AdminSettings>): Promise<AdminSettings>;
@@ -268,6 +269,20 @@ export class DatabaseStorage implements IStorage {
       .set({
         wildPoints: record.wildPoints + amount,
         totalBetAmount: record.totalBetAmount + amount,
+        updatedAt,
+      })
+      .where(eq(walletRecords.address, record.address))
+      .returning();
+    return updated;
+  }
+
+  async updateWalletSafeStatus(address: string, safeAddress: string, isSafeDeployed: boolean): Promise<WalletRecord> {
+    const record = await this.getOrCreateWalletRecord(address);
+    const updatedAt = new Date().toISOString();
+    const [updated] = await db.update(walletRecords)
+      .set({
+        safeAddress,
+        isSafeDeployed,
         updatedAt,
       })
       .where(eq(walletRecords.address, record.address))

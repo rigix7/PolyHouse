@@ -270,6 +270,32 @@ export async function registerRoutes(
     }
   });
 
+  // Update Safe deployment status for wallet
+  app.post("/api/wallet/:address/safe", async (req, res) => {
+    try {
+      const { address } = req.params;
+      const { safeAddress, isSafeDeployed } = req.body;
+      
+      // Validate inputs
+      if (!address || typeof address !== "string" || !address.startsWith("0x")) {
+        return res.status(400).json({ error: "Valid EOA address required" });
+      }
+      if (!safeAddress || typeof safeAddress !== "string" || !safeAddress.startsWith("0x")) {
+        return res.status(400).json({ error: "Valid Safe address required" });
+      }
+      
+      const normalizedAddress = address.toLowerCase();
+      const normalizedSafeAddress = safeAddress.toLowerCase();
+      const deployed = typeof isSafeDeployed === "boolean" ? isSafeDeployed : true;
+      
+      const record = await storage.updateWalletSafeStatus(normalizedAddress, normalizedSafeAddress, deployed);
+      res.json(record);
+    } catch (error) {
+      console.error("Failed to update Safe status:", error);
+      res.status(500).json({ error: "Failed to update Safe status" });
+    }
+  });
+
   // Polymarket relayer proxy - server handles all credential management
   // Client sends request details, server makes authenticated call to Polymarket
   app.post("/api/polymarket/relay", async (req, res) => {

@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { X, AlertTriangle, Loader2, RefreshCw } from "lucide-react";
+import { X, AlertTriangle, Loader2, RefreshCw, CheckCircle2, XCircle, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { OrderBookData } from "@/hooks/usePolymarketClient";
+
+type SubmissionStatus = "idle" | "pending" | "success" | "error";
 
 // Simulate filling an order through multiple price levels
 // Returns fill simulation with total available depth across all levels
@@ -116,7 +118,7 @@ interface BetSlipProps {
   outcomeLabel: string;
   odds: number;
   maxBalance: number;
-  onConfirm: (stake: number, direction: "yes" | "no", effectiveOdds: number, executionPrice: number) => void;
+  onConfirm: (stake: number, direction: "yes" | "no", effectiveOdds: number, executionPrice: number) => Promise<{ success: boolean; error?: string; orderId?: string }>;
   onCancel: () => void;
   isPending: boolean;
   marketType?: string;
@@ -128,6 +130,7 @@ interface BetSlipProps {
   yesTokenId?: string;
   noTokenId?: string;
   getOrderBook?: (tokenId: string) => Promise<OrderBookData | null>;
+  onSuccess?: () => void;
 }
 
 export function BetSlip({
@@ -147,6 +150,7 @@ export function BetSlip({
   yesTokenId,
   noTokenId,
   getOrderBook,
+  onSuccess,
 }: BetSlipProps) {
   const [stake, setStake] = useState<string>("10");
   const [betDirection, setBetDirection] = useState<"yes" | "no">(initialDirection);
@@ -154,6 +158,9 @@ export function BetSlip({
   const [isLoadingBook, setIsLoadingBook] = useState(false);
   const [bookError, setBookError] = useState<string | null>(null);
   const [lastFetchTime, setLastFetchTime] = useState<number>(0);
+  const [submissionStatus, setSubmissionStatus] = useState<SubmissionStatus>("idle");
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [confirmedStake, setConfirmedStake] = useState<number>(0);
   
   const stakeNum = parseFloat(stake) || 0;
   
@@ -274,47 +281,138 @@ export function BetSlip({
   const labels = getDirectionLabels();
   
   const handleConfirm = async () => {
-    // TEMPORARILY DISABLED insufficientBalance check for testing signature flow
     if (stakeNum <= 0) return;
     
-    // If book is stale, refresh before submitting
-    if (isBookStale && getOrderBook && yesTokenId) {
-      setIsLoadingBook(true);
-      try {
-        const freshBook = await getOrderBook(yesTokenId);
-        setOrderBook(freshBook);
-        setLastFetchTime(Date.now());
-        
-        if (freshBook) {
-          let freshPrice: number;
-          if (betDirection === "yes") {
-            // For YES: use bestAsk from YES order book
-            if (freshBook.bestAsk > 0 && freshBook.bestAsk < 0.99) {
-              freshPrice = Math.min(freshBook.bestAsk + PRICE_BUFFER, 0.99);
-            } else {
-              freshPrice = executionPrice;
-            }
-          } else {
-            // For NO: derive from YES bestBid (NO price = 1 - YES bestBid)
-            if (freshBook.bestBid > 0) {
-              freshPrice = Math.min(1 - freshBook.bestBid + PRICE_BUFFER, 0.99);
-            } else {
-              freshPrice = executionPrice;
-            }
-          }
-          const freshOdds = 1 / freshPrice;
-          onConfirm(stakeNum, betDirection, freshOdds, freshPrice);
-          return;
-        }
-      } catch (err) {
-        console.error("Failed to refresh order book:", err);
-      } finally {
-        setIsLoadingBook(false);
-      }
-    }
+    setSubmissionStatus("pending");
+    setSubmissionError(null);
+    setConfirmedStake(stakeNum);
     
-    onConfirm(stakeNum, betDirection, effectiveOdds, executionPrice);
+    try {
+      let result: { success: boolean; error?: string; orderId?: string };
+      
+      // If book is stale, refresh before submitting
+      if (isBookStale && getOrderBook && yesTokenId) {
+        setIsLoadingBook(true);
+        try {
+          const freshBook = await getOrderBook(yesTokenId);
+          setOrderBook(freshBook);
+          setLastFetchTime(Date.now());
+          
+          if (freshBook) {
+            let freshPrice: number;
+            if (betDirection === "yes") {
+              if (freshBook.bestAsk > 0 && freshBook.bestAsk < 0.99) {
+                freshPrice = Math.min(freshBook.bestAsk + PRICE_BUFFER, 0.99);
+              } else {
+                freshPrice = executionPrice;
+              }
+            } else {
+              if (freshBook.bestBid > 0) {
+                freshPrice = Math.min(1 - freshBook.bestBid + PRICE_BUFFER, 0.99);
+              } else {
+                freshPrice = executionPrice;
+              }
+            }
+            const freshOdds = 1 / freshPrice;
+            result = await onConfirm(stakeNum, betDirection, freshOdds, freshPrice);
+          } else {
+            result = await onConfirm(stakeNum, betDirection, effectiveOdds, executionPrice);
+          }
+        } finally {
+          setIsLoadingBook(false);
+        }
+      } else {
+        result = await onConfirm(stakeNum, betDirection, effectiveOdds, executionPrice);
+      }
+      
+      if (result.success) {
+        setSubmissionStatus("success");
+        onSuccess?.();
+      } else {
+        setSubmissionStatus("error");
+        setSubmissionError(result.error || "Order failed");
+      }
+    } catch (err) {
+      setSubmissionStatus("error");
+      setSubmissionError(err instanceof Error ? err.message : "Unknown error");
+    }
   };
+  
+  const handleRetry = () => {
+    setSubmissionStatus("idle");
+    setSubmissionError(null);
+  };
+
+  // Success Panel
+  if (submissionStatus === "success") {
+    return (
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm">
+        <div className="w-full max-w-[430px] bg-zinc-900 border-t border-emerald-500/50 rounded-t-xl p-6 animate-slide-up">
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-10 h-10 text-emerald-400" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-white mb-1">Bet Placed!</h3>
+              <p className="text-emerald-400 font-mono text-lg">${confirmedStake.toFixed(2)} on {outcomeLabel}</p>
+              <p className="text-zinc-400 text-sm mt-2">{marketTitle}</p>
+            </div>
+            <div className="pt-2 space-y-3">
+              <Button
+                onClick={onCancel}
+                className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
+                data-testid="button-success-done"
+              >
+                Done
+              </Button>
+              <button
+                onClick={onCancel}
+                className="w-full text-sm text-zinc-400 hover:text-white flex items-center justify-center gap-1"
+                data-testid="button-view-activity"
+              >
+                View in Activity <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Error Panel
+  if (submissionStatus === "error") {
+    return (
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm">
+        <div className="w-full max-w-[430px] bg-zinc-900 border-t border-red-500/50 rounded-t-xl p-6 animate-slide-up">
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mx-auto">
+              <XCircle className="w-10 h-10 text-red-400" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-white mb-1">Bet Failed</h3>
+              <p className="text-red-400 text-sm">{submissionError || "Something went wrong"}</p>
+            </div>
+            <div className="pt-2 space-y-3">
+              <Button
+                onClick={handleRetry}
+                className="w-full h-12 bg-wild-brand hover:bg-wild-brand/90 text-white font-bold"
+                data-testid="button-retry-bet"
+              >
+                Try Again
+              </Button>
+              <button
+                onClick={onCancel}
+                className="w-full text-sm text-zinc-400 hover:text-white"
+                data-testid="button-cancel-bet"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm">
@@ -330,7 +428,7 @@ export function BetSlip({
           <button
             onClick={onCancel}
             className="text-zinc-400 hover:text-white p-1"
-            disabled={isPending}
+            disabled={isPending || submissionStatus === "pending"}
             data-testid="button-close-betslip"
           >
             <X className="w-5 h-5" />
@@ -347,7 +445,7 @@ export function BetSlip({
                   ? "bg-wild-scout text-white border-2 border-wild-scout"
                   : "bg-zinc-800 text-zinc-400 border-2 border-zinc-700 hover:border-zinc-600"
               }`}
-              disabled={isPending || isLoadingBook}
+              disabled={isPending || isLoadingBook || submissionStatus === "pending"}
               data-testid="button-direction-yes"
             >
               {labels.yes}
@@ -359,7 +457,7 @@ export function BetSlip({
                   ? "bg-wild-brand text-white border-2 border-wild-brand"
                   : "bg-zinc-800 text-zinc-400 border-2 border-zinc-700 hover:border-zinc-600"
               }`}
-              disabled={isPending || isLoadingBook}
+              disabled={isPending || isLoadingBook || submissionStatus === "pending"}
               data-testid="button-direction-no"
             >
               {labels.no}
@@ -422,7 +520,7 @@ export function BetSlip({
                 className="bg-zinc-800 border-zinc-700 text-white text-lg font-mono h-12"
                 min="0"
                 step="1"
-                disabled={isPending}
+                disabled={isPending || submissionStatus === "pending"}
                 data-testid="input-stake"
               />
             </div>
@@ -443,7 +541,7 @@ export function BetSlip({
                 key={amount}
                 onClick={() => setStake(amount.toString())}
                 className="flex-1 py-2 text-sm font-mono bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300 transition-colors"
-                disabled={isPending}
+                disabled={isPending || submissionStatus === "pending"}
                 data-testid={`button-quick-${amount}`}
               >
                 ${amount}
@@ -452,7 +550,7 @@ export function BetSlip({
             <button
               onClick={() => setStake((Math.floor(maxBalance * 100) / 100).toString())}
               className="flex-1 py-2 text-sm font-bold bg-wild-gold/20 hover:bg-wild-gold/30 rounded text-wild-gold transition-colors border border-wild-gold/30"
-              disabled={isPending || maxBalance <= 0}
+              disabled={isPending || maxBalance <= 0 || submissionStatus === "pending"}
               data-testid="button-quick-max"
             >
               MAX
@@ -492,14 +590,14 @@ export function BetSlip({
 
           <Button
             onClick={handleConfirm}
-            disabled={stakeNum <= 0 || isPending || isLoadingBook || isBelowMinimum}
+            disabled={stakeNum <= 0 || isPending || isLoadingBook || isBelowMinimum || submissionStatus === "pending"}
             className="w-full h-12 bg-wild-brand hover:bg-wild-brand/90 text-white font-bold text-lg"
             data-testid="button-confirm-bet"
           >
-            {isPending ? (
+            {submissionStatus === "pending" || isPending ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Placing Bet...
+                Submitting to Polymarket...
               </>
             ) : isLoadingBook ? (
               <>

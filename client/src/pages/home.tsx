@@ -258,62 +258,12 @@ export default function HomePage() {
         walletAddress: walletAddr,
       });
     },
-    onSuccess: (result, variables) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/wallet", address] });
       queryClient.invalidateQueries({ queryKey: ["/api/polymarket/orders", safeAddress || address] });
-      
-      // Check if this was a Polymarket order and determine fill status
-      const orderResult = result as { 
-        orderID?: string; 
-        filled?: boolean; 
-        status?: string; 
-        error?: string;
-        isPartialFill?: boolean;
-        sizeFilled?: number;
-        sizeRemaining?: number;
-      };
-      const isFilled = orderResult?.filled !== false; // true if filled or no status returned (demo bets)
-      const isPartialFill = orderResult?.isPartialFill === true;
-      
-      if (isFilled) {
-        // Refetch positions after any fill (full or partial)
-        const walletAddr = safeAddress || address;
-        if (walletAddr && !walletAddr.startsWith("0xDemo")) {
-          fetchPositions(walletAddr).then(setUserPositions);
-        }
-        
-        if (isPartialFill) {
-          // Partial fill - show warning with details
-          const filledPct = orderResult.sizeFilled && orderResult.sizeRemaining
-            ? Math.round((orderResult.sizeFilled / (orderResult.sizeFilled + orderResult.sizeRemaining)) * 100)
-            : null;
-          const msg = filledPct 
-            ? `Order partially filled (${filledPct}%) - rest cancelled due to liquidity`
-            : "Order partially filled - rest cancelled due to liquidity";
-          showToast(msg, "info");
-        } else {
-          // Full fill - show success
-          const wildEarned = Math.floor(variables.amount);
-          const orderMsg = orderResult?.orderID 
-            ? `Order filled! ${orderResult.orderID.slice(0, 8)}...` 
-            : "Bet placed!";
-          showToast(`${orderMsg} +${wildEarned} WILD earned`, "success");
-        }
-      } else {
-        // Order was cancelled due to insufficient liquidity
-        // Show the specific error message from the order result
-        const errorMsg = orderResult?.error || "Order not filled - not enough liquidity";
-        showToast(errorMsg, "error");
-      }
-      
-      setSelectedBet(undefined);
-      setShowBetSlip(false);
-      fetchBalance();
     },
-    onError: (error) => {
-      const msg = error instanceof Error ? error.message : "Failed to place bet";
-      showToast(msg, "error");
+    onError: () => {
     },
   });
 
@@ -425,21 +375,23 @@ export default function HomePage() {
     setShowBetSlip(true);
   };
 
-  const handleConfirmBet = (stake: number, direction: "yes" | "no", effectiveOdds: number, executionPrice: number) => {
-    if (selectedBet) {
-      const tokenId = direction === "yes" 
-        ? selectedBet.yesTokenId
-        : selectedBet.noTokenId;
-      
-      const betOutcomeId = direction === "yes" 
-        ? (selectedBet.yesTokenId || selectedBet.outcomeId)
-        : (selectedBet.noTokenId || `${selectedBet.outcomeId}_NO`);
-      
-      // Use the execution price directly from BetSlip (bestAsk or buffered price for instant fills)
-      // This ensures orders match against existing sells rather than sitting in the book
-      const price = executionPrice;
-      
-      placeBetMutation.mutate({
+  const handleConfirmBet = async (stake: number, direction: "yes" | "no", effectiveOdds: number, executionPrice: number): Promise<{ success: boolean; error?: string; orderId?: string }> => {
+    if (!selectedBet) {
+      return { success: false, error: "No bet selected" };
+    }
+    
+    const tokenId = direction === "yes" 
+      ? selectedBet.yesTokenId
+      : selectedBet.noTokenId;
+    
+    const betOutcomeId = direction === "yes" 
+      ? (selectedBet.yesTokenId || selectedBet.outcomeId)
+      : (selectedBet.noTokenId || `${selectedBet.outcomeId}_NO`);
+    
+    const price = executionPrice;
+    
+    try {
+      const result = await placeBetMutation.mutateAsync({
         marketId: selectedBet.marketId,
         outcomeId: betOutcomeId,
         amount: stake,
@@ -450,7 +402,32 @@ export default function HomePage() {
         outcomeLabel: selectedBet.outcomeLabel,
         orderMinSize: selectedBet.orderMinSize,
       });
+      
+      const orderResult = result as { 
+        orderID?: string; 
+        filled?: boolean; 
+        status?: string; 
+        error?: string;
+      };
+      
+      const isFilled = orderResult?.filled !== false;
+      
+      if (isFilled) {
+        return { success: true, orderId: orderResult?.orderID };
+      } else {
+        return { success: false, error: orderResult?.error || "Order not filled - not enough liquidity" };
+      }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : "Failed to place bet" };
     }
+  };
+  
+  const handleBetSuccess = () => {
+    const walletAddr = safeAddress || address;
+    if (walletAddr && !walletAddr.startsWith("0xDemo")) {
+      fetchPositions(walletAddr).then(setUserPositions);
+    }
+    fetchBalance();
   };
 
   const handleCancelBet = () => {
@@ -564,6 +541,7 @@ export default function HomePage() {
           orderMinSize={selectedBet.orderMinSize}
           yesTokenId={selectedBet.yesTokenId}
           noTokenId={selectedBet.noTokenId}
+          onSuccess={handleBetSuccess}
           getOrderBook={clobClient ? async (tokenId: string) => {
             try {
               console.log("[OrderBook] Fetching for token:", tokenId);

@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { fetchPositions, type PolymarketPosition } from "@/lib/polymarketOrder";
+import { fetchPositions, fetchActivity, type PolymarketPosition, type PolymarketActivity } from "@/lib/polymarketOrder";
 import { usePolymarketClient } from "@/hooks/usePolymarketClient";
 import { DepositInstructions } from "@/components/terminal/DepositInstructions";
 import type { Wallet as WalletType, Bet, Trade } from "@shared/schema";
@@ -22,7 +22,9 @@ interface DashboardViewProps {
 
 export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, safeAddress, isSafeDeployed }: DashboardViewProps) {
   const [positions, setPositions] = useState<PolymarketPosition[]>([]);
+  const [activity, setActivity] = useState<PolymarketActivity[]>([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
+  const [activityLoading, setActivityLoading] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawTo, setWithdrawTo] = useState("");
   const [copied, setCopied] = useState(false);
@@ -36,18 +38,32 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
   useEffect(() => {
     if (walletAddress) {
       setPositionsLoading(true);
+      setActivityLoading(true);
+      
       fetchPositions(walletAddress)
         .then(setPositions)
         .finally(() => setPositionsLoading(false));
+      
+      fetchActivity(walletAddress)
+        .then(setActivity)
+        .finally(() => setActivityLoading(false));
     }
   }, [walletAddress]);
 
   const refreshPositions = async () => {
     if (walletAddress) {
       setPositionsLoading(true);
-      const pos = await fetchPositions(walletAddress);
+      setActivityLoading(true);
+      
+      const [pos, act] = await Promise.all([
+        fetchPositions(walletAddress),
+        fetchActivity(walletAddress)
+      ]);
+      
       setPositions(pos);
+      setActivity(act);
       setPositionsLoading(false);
+      setActivityLoading(false);
     }
   };
 
@@ -114,6 +130,16 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
     });
   };
 
+  const formatActivityTime = (timestamp: number) => {
+    const date = new Date(timestamp * 1000);
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  };
+
   const wonBets = bets.filter((b) => b.status === "won");
   const pendingBets = bets.filter((b) => b.status === "pending");
   const totalPnL = bets.reduce((acc, bet) => {
@@ -126,15 +152,12 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
   const claimablePositions = positions.filter(p => p.status === "claimable");
   const totalClaimable = claimablePositions.reduce((sum, p) => sum + p.size, 0);
   
-  // History: resolved positions (already claimed) or from bets if available
-  const historyPositions = positions.filter(p => p.status === "resolved" || p.status === "redeemed" || p.status === "lost");
-  const hasHistory = bets.length > 0 || historyPositions.length > 0;
-  
   // Determine default tab based on what has content
   const getDefaultTab = () => {
     if (claimablePositions.length > 0) return "claimable";
     if (openPositions.length > 0) return "open";
-    return "history";
+    if (activity.length > 0) return "history";
+    return "claimable"; // Default to claimable even if empty
   };
 
   if (isLoading) {
@@ -377,9 +400,9 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
                 data-testid="tab-history"
               >
                 History
-                {(bets.length > 0 || historyPositions.length > 0) && (
+                {activity.length > 0 && (
                   <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-zinc-700 text-zinc-300">
-                    {bets.length + historyPositions.length}
+                    {activity.length}
                   </span>
                 )}
               </TabsTrigger>
@@ -469,77 +492,61 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
               </div>
             </TabsContent>
 
-            {/* History Tab */}
+            {/* History Tab - from Polymarket Activity API */}
             <TabsContent value="history" className="mt-0">
               <div className="divide-y divide-zinc-800/50">
-                {!hasHistory ? (
+                {activityLoading ? (
+                  <div className="p-4 text-center">
+                    <RefreshCw className="w-6 h-6 text-zinc-600 mx-auto mb-2 animate-spin" />
+                    <p className="text-xs text-zinc-500">Loading history...</p>
+                  </div>
+                ) : activity.length === 0 ? (
                   <div className="p-4 text-center">
                     <History className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
                     <p className="text-xs text-zinc-500">No history yet</p>
                   </div>
                 ) : (
-                  <>
-                    {/* Show history positions first */}
-                    {historyPositions.map((pos, i) => (
-                      <div key={`hist-${pos.tokenId}-${i}`} className="p-3 flex justify-between items-center gap-2" data-testid={`history-pos-${i}`}>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className={cn(
-                              "px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0",
-                              pos.status === "lost" ? "bg-wild-brand/20 text-wild-brand" : "bg-zinc-700 text-zinc-400"
-                            )}>
-                              {pos.status === "lost" ? "LOST" : "RESOLVED"}
-                            </span>
-                            <div className="text-xs text-white truncate">{pos.marketQuestion || "Resolved Position"}</div>
-                          </div>
-                          <div className="text-[10px] font-mono text-zinc-500 mt-1">{pos.outcomeLabel || pos.side}</div>
-                        </div>
-                        <div className="text-right shrink-0 ml-2">
-                          <div className={cn(
-                            "text-sm font-mono font-bold",
-                            pos.status === "lost" ? "text-wild-brand" : "text-zinc-400"
+                  activity.slice(0, 20).map((act, i) => (
+                    <div 
+                      key={`${act.transactionHash}-${i}`} 
+                      className="p-3 flex justify-between items-center gap-2" 
+                      data-testid={`activity-${i}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            "px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0",
+                            act.type === "REDEEM" 
+                              ? "bg-wild-scout/20 text-wild-scout"
+                              : act.side === "SELL"
+                              ? "bg-wild-gold/20 text-wild-gold"
+                              : "bg-wild-trade/20 text-wild-trade"
                           )}>
-                            {pos.status === "lost" ? "-" : ""}${pos.size.toFixed(2)}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {/* Then show bets */}
-                    {bets.slice(0, 10).map((bet) => (
-                      <div
-                        key={bet.id}
-                        className="flex justify-between items-center p-3 gap-2"
-                        data-testid={`bet-${bet.id}`}
-                      >
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <span
-                            className={cn(
-                              "px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0",
-                              bet.status === "won"
-                                ? "bg-wild-scout/20 text-wild-scout"
-                                : bet.status === "lost"
-                                ? "bg-wild-brand/20 text-wild-brand"
-                                : "bg-wild-gold/20 text-wild-gold"
-                            )}
-                          >
-                            {bet.status.toUpperCase()}
+                            {act.type === "REDEEM" ? "CLAIMED" : act.side === "SELL" ? "SOLD" : "BOUGHT"}
                           </span>
-                          <span className="text-xs text-white truncate">@{bet.odds.toFixed(2)}</span>
+                          <div className="text-xs text-white truncate">{act.title}</div>
                         </div>
-                        <div className="text-right font-mono shrink-0 ml-2">
-                          <div className={cn(
-                            "text-xs font-bold",
-                            bet.status === "won" ? "text-wild-scout" : bet.status === "lost" ? "text-wild-brand" : "text-white"
-                          )}>
-                            {bet.status === "won" ? "+" : bet.status === "lost" ? "-" : ""}${bet.amount.toFixed(2)}
-                          </div>
-                          <div className="text-[10px] text-zinc-500">
-                            {formatTime(bet.placedAt)}
-                          </div>
+                        <div className="text-[10px] font-mono text-zinc-500 mt-1">
+                          {act.outcome} {act.price ? `@ ${(act.price).toFixed(2)}` : ""}
                         </div>
                       </div>
-                    ))}
-                  </>
+                      <div className="text-right shrink-0 ml-2">
+                        <div className={cn(
+                          "text-sm font-mono font-bold",
+                          act.type === "REDEEM" 
+                            ? "text-wild-scout" 
+                            : act.side === "SELL" 
+                            ? "text-wild-gold" 
+                            : "text-white"
+                        )}>
+                          {act.type === "REDEEM" ? "+" : act.side === "SELL" ? "+" : "-"}${act.usdcSize.toFixed(2)}
+                        </div>
+                        <div className="text-[10px] text-zinc-500">
+                          {formatActivityTime(act.timestamp)}
+                        </div>
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
             </TabsContent>

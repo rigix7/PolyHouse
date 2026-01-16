@@ -129,3 +129,40 @@ export async function withdrawUSDC(walletAddress: string, amount: number, toAddr
     };
   }
 }
+
+export interface PolymarketActivity {
+  type: "TRADE" | "REDEEM" | "SPLIT" | "MERGE" | "REWARD" | "CONVERSION";
+  timestamp: number;
+  conditionId: string;
+  transactionHash: string;
+  title: string;
+  slug: string;
+  icon?: string;
+  outcome: string;
+  side?: "BUY" | "SELL";
+  size: number;
+  usdcSize: number;
+  price?: number;
+}
+
+export async function fetchActivity(walletAddress: string): Promise<PolymarketActivity[]> {
+  if (!walletAddress) return [];
+  
+  try {
+    const url = `https://data-api.polymarket.com/activity?user=${walletAddress}&type=TRADE,REDEEM&sortBy=TIMESTAMP&sortDirection=DESC`;
+    console.log("[Activity] Fetching from:", url);
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.error("[Activity] Failed to fetch:", response.status);
+      return [];
+    }
+    
+    const data = await response.json();
+    console.log("[Activity] Found", data.length, "records");
+    return data;
+  } catch (error) {
+    console.error("[Activity] Error:", error);
+    return [];
+  }
+}

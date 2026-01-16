@@ -24,6 +24,7 @@ export function useLivePrices(): UseLivePricesResult {
   useEffect(() => {
     const handlers: WebSocketHandlers = {
       onPriceChange: async (events: PriceChangeEvent[]) => {
+        console.log("[LivePrices] Received price updates:", events.length, "events");
         setPrices((prev) => {
           const next = new Map(prev);
           for (const event of events) {

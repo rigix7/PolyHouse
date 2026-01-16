@@ -17,8 +17,8 @@ const tabs: { id: TabType; label: string; icon: typeof TrendingUp; color: string
 
 export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   return (
-    <nav className="h-16 shrink-0 bg-zinc-900 border-t border-zinc-800 z-30">
-      <div className="grid grid-cols-4 h-full">
+    <nav className="shrink-0 bg-zinc-900 border-t border-zinc-800 z-30 bottom-nav-safe">
+      <div className="grid grid-cols-4 h-16">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
           const Icon = tab.icon;

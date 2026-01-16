@@ -290,3 +290,17 @@
 .animate-fade-in {
   animation: fade-in 0.3s ease-out;
 }
+
+/* Safe area utilities for mobile browsers */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* Ensure bottom nav is always accessible on mobile */
+.bottom-nav-safe {
+  padding-bottom: max(env(safe-area-inset-bottom, 0), 0.5rem);
+}

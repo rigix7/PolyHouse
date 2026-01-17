@@ -1425,10 +1425,9 @@ export function PredictView({
     let outcomeLabel = soccerOutcomeLabel || market.groupItemTitle;
     if (!soccerOutcomeLabel) {
       if (marketType === "spreads") {
-        // For spreads, just use the team abbreviation/label as the outcome
-        // The bet slip will show the full question (e.g., "Spread: Kings (-6.5)") for clarity
-        const selectedAbbr = outcome.abbrev || outcome.label.slice(0, 3).toUpperCase();
-        outcomeLabel = selectedAbbr;
+        // For spreads, use the full team name for clarity
+        // The bet slip will also show the full question (e.g., "Spread: Kings (-6.5)")
+        outcomeLabel = outcome.label;
       } else if (marketType === "totals") {
         const line = Math.abs(market.line ?? parseLineFromTitle(market.groupItemTitle) ?? 0);
         outcomeLabel = direction === "over" ? `O ${line}` : `U ${line}`;

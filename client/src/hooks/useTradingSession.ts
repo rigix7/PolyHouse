@@ -174,14 +174,14 @@ export default function useTradingSession() {
         await deploySafe(initializedRelayClient);
       }
 
-      // Step 5: Get User API Credentials (derive or create) for the Safe address
-      // IMPORTANT: Credentials must be derived for the Safe proxy address (not EOA)
-      // because orders are signed with signatureType=2 where the Safe is the maker
+      // Step 5: Get User API Credentials (derive or create)
+      // Per official Polymarket pattern: credentials are derived with EOA-only client
+      // signatureType=2 is only used in the trading ClobClient for order placement
       let apiCreds = tradingSession?.apiCredentials;
 
       // Check if credentials need re-derivation:
       // - No credentials stored
-      // - Credentials were derived for wrong address (migration from EOA to Safe)
+      // - Credentials were derived for wrong address (EOA changed)
       const needsCredentials =
         !tradingSession?.hasApiCredentials ||
         !apiCreds ||
@@ -190,15 +190,13 @@ export default function useTradingSession() {
         !apiCreds.passphrase ||
         (tradingSession?.credentialsDerivedFor &&
           tradingSession.credentialsDerivedFor.toLowerCase() !==
-            safeAddress.toLowerCase()) ||
+            eoaAddress.toLowerCase()) ||
         !tradingSession?.credentialsDerivedFor; // Force re-derive if field is missing (old session)
 
       if (needsCredentials) {
         setCurrentStep("credentials");
-        console.log(
-          `[TradingSession] Deriving credentials for Safe address: ${safeAddress}`
-        );
-        apiCreds = await createOrDeriveUserApiCredentials(safeAddress);
+        console.log("[TradingSession] Deriving User API credentials (EOA-based, per official Polymarket pattern)");
+        apiCreds = await createOrDeriveUserApiCredentials();
       }
 
       // Step 6: Set all required token approvals for trading
@@ -220,7 +218,7 @@ export default function useTradingSession() {
         hasApiCredentials: true,
         hasApprovals,
         apiCredentials: apiCreds,
-        credentialsDerivedFor: safeAddress, // Track that credentials are for Safe address
+        credentialsDerivedFor: eoaAddress, // Track EOA (credentials derived with EOA-only client)
         sessionVersion: TRADING_SESSION_VERSION, // Track version for future migrations
         lastChecked: Date.now(),
       };

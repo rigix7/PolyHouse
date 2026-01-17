@@ -1,6 +1,7 @@
 // Bump this version to force all users to re-initialize their trading sessions
-// v2: Fixed credential derivation to use Safe context (signatureType=2) instead of EOA-only
-export const TRADING_SESSION_VERSION = 2;
+// v3: Reverted to EOA-only credential derivation (matching official Polymarket pattern)
+// signatureType=2 is only used in trading ClobClient, not for credential derivation
+export const TRADING_SESSION_VERSION = 3;
 
 export interface TradingSession {
   eoaAddress: string;
@@ -13,8 +14,9 @@ export interface TradingSession {
     secret: string;
     passphrase: string;
   };
-  // Track which address credentials were derived for
-  // If undefined or mismatched with safeAddress, credentials need re-derivation
+  // Track which EOA address credentials were derived for
+  // Per official Polymarket pattern, credentials are derived with EOA-only client
+  // If undefined or mismatched with eoaAddress, credentials need re-derivation
   credentialsDerivedFor?: string;
   // Session version for forced migrations
   sessionVersion?: number;

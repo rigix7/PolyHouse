@@ -9,32 +9,27 @@ export interface UserApiCredentials {
   passphrase: string;
 }
 
-// This hook's sole purpose is to derive or create
-// the User API Credentials with a temporary ClobClient
-// When a safeAddress is provided, credentials are derived for the Safe proxy
-// using signatureType=2 (EOA signing on behalf of Safe)
+// This hook derives or creates User API Credentials using a temporary ClobClient
+// IMPORTANT: Per official Polymarket pattern (privy-safe-builder-example),
+// credential derivation uses EOA-only client. signatureType=2 is only used
+// in the trading ClobClient for order placement, not for credential derivation.
 
 export default function useUserApiCredentials() {
   const { eoaAddress, ethersSigner } = useWallet();
 
-  // Creates temporary clobClient with ethers signer
-  // If safeAddress is provided, uses signatureType=2 to derive credentials for the Safe
-  const createOrDeriveUserApiCredentials = useCallback(
-    async (safeAddress?: string): Promise<UserApiCredentials> => {
+  // Creates temporary EOA-only clobClient for credential derivation
+  // This matches the official Polymarket pattern where credentials are
+  // derived with EOA signer, and signatureType=2 is used only for trading
+  const createOrDeriveUserApiCredentials =
+    useCallback(async (): Promise<UserApiCredentials> => {
       if (!eoaAddress || !ethersSigner) throw new Error("Wallet not connected");
 
-      // When safeAddress is provided, create client with signatureType=2
-      // This derives credentials for the Safe proxy address (not the EOA)
-      const tempClient = safeAddress
-        ? new ClobClient(
-            CLOB_API_URL,
-            POLYGON_CHAIN_ID,
-            ethersSigner,
-            undefined, // no credentials yet
-            2, // signatureType = 2 for EOA signing on behalf of Safe proxy
-            safeAddress // the Safe proxy address that will "own" these credentials
-          )
-        : new ClobClient(CLOB_API_URL, POLYGON_CHAIN_ID, ethersSigner);
+      // EOA-only client for credential derivation (per official Polymarket pattern)
+      const tempClient = new ClobClient(
+        CLOB_API_URL,
+        POLYGON_CHAIN_ID,
+        ethersSigner
+      );
 
       try {
         // Try to derive existing credentials first
@@ -45,28 +40,20 @@ export default function useUserApiCredentials() {
           derivedCreds?.secret &&
           derivedCreds?.passphrase
         ) {
-          console.log(
-            `Successfully derived existing User API Credentials for ${safeAddress || eoaAddress}`
-          );
+          console.log("Successfully derived existing User API Credentials");
           return derivedCreds;
         }
 
         // Derive failed or returned invalid data - create new credentials
-        console.log(
-          `Creating new User API Credentials for ${safeAddress || eoaAddress}...`
-        );
+        console.log("Creating new User API Credentials...");
         const newCreds = await tempClient.createApiKey();
-        console.log(
-          `Successfully created new User API Credentials for ${safeAddress || eoaAddress}`
-        );
+        console.log("Successfully created new User API Credentials");
         return newCreds;
       } catch (err) {
         console.error("Failed to get credentials:", err);
         throw err;
       }
-    },
-    [eoaAddress, ethersSigner]
-  );
+    }, [eoaAddress, ethersSigner]);
 
   return { createOrDeriveUserApiCredentials };
 }

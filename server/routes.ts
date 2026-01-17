@@ -1223,10 +1223,18 @@ export async function registerRoutes(
         }
       }
       
-      // Extract tags from Futures (stored in the tags field)
+      // Extract tags from Futures (filtered by sports keywords)
       for (const future of futures) {
         if (future.tags && Array.isArray(future.tags)) {
-          for (const tag of future.tags as Array<{ id: string; label: string; slug: string }>) {
+          const futureTags = future.tags as Array<{ id: string; label: string; slug: string }>;
+          // Only include sports-related tags from futures
+          const sportsTags = futureTags.filter(tag =>
+            SPORTS_KEYWORDS.some(keyword =>
+              tag.slug?.toLowerCase().includes(keyword) ||
+              tag.label?.toLowerCase().includes(keyword)
+            )
+          );
+          for (const tag of sportsTags) {
             if (tag.id && tag.slug) {
               const existing = tagMap.get(tag.id);
               tagMap.set(tag.id, {
@@ -1240,11 +1248,14 @@ export async function registerRoutes(
         }
       }
       
-      // Get existing tags to preserve enabled state
+      // Get existing tags to preserve enabled state (before clearing)
       const existingTags = await storage.getPolymarketTags();
       const existingMap = new Map(existingTags.map(t => [t.id, t]));
       
-      // Upsert extracted tags
+      // Clear all existing tags before inserting fresh sports-only set
+      await storage.clearAllPolymarketTags();
+      
+      // Insert extracted sports tags
       const upsertedTags = [];
       let sortOrder = 0;
       for (const tag of Array.from(tagMap.values())) {

@@ -98,6 +98,7 @@ export interface IStorage {
   getEnabledPolymarketTags(): Promise<PolymarketTagRecord[]>;
   upsertPolymarketTag(tag: InsertPolymarketTag): Promise<PolymarketTagRecord>;
   setTagEnabled(id: string, enabled: boolean): Promise<PolymarketTagRecord | undefined>;
+  clearAllPolymarketTags(): Promise<void>;
   updateFuturesTags(id: string, tags: Array<{ id: string; label: string; slug: string }>): Promise<Futures | undefined>;
 
   seedInitialData(): Promise<void>;
@@ -668,6 +669,10 @@ export class DatabaseStorage implements IStorage {
       .where(eq(polymarketTags.id, id))
       .returning();
     return updated || undefined;
+  }
+
+  async clearAllPolymarketTags(): Promise<void> {
+    await db.delete(polymarketTags);
   }
 
   async updateFuturesTags(id: string, tags: Array<{ id: string; label: string; slug: string }>): Promise<Futures | undefined> {

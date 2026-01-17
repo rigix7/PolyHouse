@@ -646,13 +646,6 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
         const result = await response.wait();
 
         console.log("[PolymarketClient] Withdrawal result:", result);
-        
-        // Invalidate credentials after successful wallet operation
-        // This forces fresh credential derivation on next order
-        clientRef.current = null;
-        credsRef.current = null;
-        console.log("[PolymarketClient] Credentials invalidated after withdrawal");
-        
         return { success: true, txHash: result?.transactionHash };
       } catch (err) {
         console.error("[PolymarketClient] Withdrawal error:", err);
@@ -746,13 +739,6 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
         const result = await response.wait();
 
         console.log("[PolymarketClient] Redeem result:", result);
-        
-        // Invalidate credentials after successful wallet operation
-        // This forces fresh credential derivation on next order
-        clientRef.current = null;
-        credsRef.current = null;
-        console.log("[PolymarketClient] Credentials invalidated after redemption");
-        
         return { success: true, txHash: result?.transactionHash };
       } catch (err) {
         console.error("[PolymarketClient] Redeem error:", err);
@@ -770,106 +756,6 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
         }
         if (errorMessage.includes("condition not resolved")) {
           return { success: false, error: "Market has not been resolved yet" };
-        }
-        if (errorMessage.includes("safe not deployed")) {
-          return {
-            success: false,
-            error: "Safe wallet not deployed. Please deploy your Safe first.",
-          };
-        }
-        return { success: false, error: errorMessage };
-      } finally {
-        setIsRelayerLoading(false);
-      }
-    },
-    [initializeRelayClient],
-  );
-
-  // Batch redeem multiple positions in a single transaction (one signature for all)
-  const batchRedeemPositions = useCallback(
-    async (
-      conditionIds: string[],
-      indexSets: number[] = [1, 2],
-    ): Promise<TransactionResult> => {
-      setIsRelayerLoading(true);
-      setError(null);
-
-      try {
-        if (!conditionIds || conditionIds.length === 0) {
-          return { success: false, error: "No positions to redeem" };
-        }
-
-        // Validate all conditionIds
-        for (const conditionId of conditionIds) {
-          if (!conditionId || !/^0x[a-fA-F0-9]{64}$/.test(conditionId)) {
-            return { success: false, error: `Invalid condition ID format: ${conditionId}` };
-          }
-        }
-
-        const relayClient = await initializeRelayClient();
-        if (!relayClient) {
-          return {
-            success: false,
-            error: "Failed to initialize RelayClient. Please ensure your wallet is connected.",
-          };
-        }
-
-        console.log(
-          "[PolymarketClient] Batch redeeming positions from Safe wallet...",
-          { conditionIds, count: conditionIds.length },
-        );
-
-        const parentCollectionId =
-          "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`;
-
-        // Build an array of redeem transactions - one for each conditionId
-        const redeemTxs = conditionIds.map((conditionId) => {
-          const redeemData = encodeFunctionData({
-            abi: CTF_ABI,
-            functionName: "redeemPositions",
-            args: [
-              USDC_ADDRESS,
-              parentCollectionId,
-              conditionId as `0x${string}`,
-              indexSets.map(BigInt),
-            ],
-          });
-
-          return {
-            to: CTF_ADDRESS,
-            value: "0",
-            data: redeemData,
-          };
-        });
-
-        // Execute ALL transactions in one batch - requires only ONE signature!
-        const response = await relayClient.execute(
-          redeemTxs,
-          `Redeem ${conditionIds.length} winning positions`,
-        );
-        const result = await response.wait();
-
-        console.log("[PolymarketClient] Batch redeem result:", result);
-        
-        // Invalidate credentials after successful wallet operation
-        // This forces fresh credential derivation on next order
-        clientRef.current = null;
-        credsRef.current = null;
-        console.log("[PolymarketClient] Credentials invalidated after batch redemption");
-        
-        return { success: true, txHash: result?.transactionHash };
-      } catch (err) {
-        console.error("[PolymarketClient] Batch redeem error:", err);
-        const errorMessage =
-          err instanceof Error ? err.message : "Batch redeem failed";
-        if (
-          errorMessage.includes("payout is zero") ||
-          errorMessage.includes("nothing to redeem")
-        ) {
-          return {
-            success: false,
-            error: "No winning positions to redeem",
-          };
         }
         if (errorMessage.includes("safe not deployed")) {
           return {
@@ -971,12 +857,6 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
     setError(null);
   }, []);
 
-  const invalidateCredentials = useCallback(() => {
-    console.log("[PolymarketClient] Invalidating cached credentials - will re-derive on next order");
-    clientRef.current = null;
-    credsRef.current = null;
-  }, []);
-
   // Get the user's Safe address for deposits
   // USDC is deposited by sending directly to this address on Polygon
   const getSafeAddress = useCallback(async (): Promise<string | null> => {
@@ -1007,9 +887,7 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
     approveUSDC,
     withdrawUSDC,
     redeemPositions,
-    batchRedeemPositions,
     resetClient,
-    invalidateCredentials,
     isInitializing,
     isSubmitting,
     isRelayerLoading,

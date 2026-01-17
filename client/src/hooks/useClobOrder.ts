@@ -109,23 +109,8 @@ export default function useClobOrder(
           throw new Error("Order submission failed");
         }
       } catch (err: unknown) {
-        let error: Error;
-        if (err instanceof Error) {
-          // Check for wallet/signer initialization errors
-          const errMsg = err.message.toLowerCase();
-          if (
-            errMsg.includes("first argument must be one of type string") ||
-            errMsg.includes("received type undefined") ||
-            errMsg.includes("wallet proxy not initialized") ||
-            errMsg.includes("cannot read properties of undefined")
-          ) {
-            error = new Error("Wallet not ready. Please try logging out and back in, or activate your wallet again.");
-          } else {
-            error = err;
-          }
-        } else {
-          error = new Error("Failed to submit order");
-        }
+        const error =
+          err instanceof Error ? err : new Error("Failed to submit order");
         setError(error);
         throw error;
       } finally {

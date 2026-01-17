@@ -66,8 +66,6 @@ export const walletRecords = pgTable("wallet_records", {
   address: varchar("address", { length: 42 }).primaryKey(),
   wildPoints: real("wild_points").notNull().default(0),
   totalBetAmount: real("total_bet_amount").notNull().default(0),
-  safeAddress: varchar("safe_address", { length: 42 }),
-  isSafeDeployed: boolean("is_safe_deployed").notNull().default(false),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -259,8 +257,6 @@ export const walletRecordSchema = z.object({
   address: z.string(),
   wildPoints: z.number(),
   totalBetAmount: z.number(),
-  safeAddress: z.string().nullable().optional(),
-  isSafeDeployed: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

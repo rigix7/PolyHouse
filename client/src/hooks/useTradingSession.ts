@@ -4,7 +4,6 @@ import { useWallet } from "@/providers/WalletContext";
 import useTokenApprovals from "@/hooks/useTokenApprovals";
 import useSafeDeployment from "@/hooks/useSafeDeployment";
 import useUserApiCredentials from "@/hooks/useUserApiCredentials";
-import { apiRequest } from "@/lib/queryClient";
 import {
   loadSession,
   saveSession,
@@ -12,32 +11,6 @@ import {
   TradingSession,
   SessionStep,
 } from "@/utils/session";
-
-// Save Safe deployment status to database
-async function saveSafeStatusToDb(eoaAddress: string, safeAddress: string): Promise<void> {
-  try {
-    await apiRequest("POST", `/api/wallet/${eoaAddress}/safe`, {
-      safeAddress,
-      isSafeDeployed: true,
-    });
-    console.log("[TradingSession] Saved Safe status to database");
-  } catch (err) {
-    console.error("[TradingSession] Failed to save Safe status:", err);
-  }
-}
-
-// Fetch wallet record to check if Safe is already deployed
-async function fetchWalletRecord(eoaAddress: string): Promise<{ safeAddress?: string; isSafeDeployed?: boolean } | null> {
-  try {
-    const response = await fetch(`/api/wallet/${eoaAddress}`);
-    if (response.ok) {
-      return await response.json();
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 // This is the coordination hook that manages the user's trading session
 // It orchestrates the steps for initializing both the clob and relay clients
@@ -61,7 +34,6 @@ export default function useTradingSession() {
 
   // Always check for an existing trading session after wallet is connected by checking
   // session object from localStorage to track the status of the user's trading session
-  // Also check database for Safe deployment status to auto-restore sessions
   useEffect(() => {
     if (!eoaAddress) {
       setTradingSession(null);
@@ -86,31 +58,13 @@ export default function useTradingSession() {
       return;
     }
 
-    // If we have a valid stored session, use it
-    if (stored) {
-      setTradingSession(stored);
+    setTradingSession(stored);
+
+    if (!stored) {
+      setCurrentStep("idle");
+      setSessionError(null);
       return;
     }
-    
-    // No local session - check database for existing Safe deployment
-    // If Safe was previously deployed, we can auto-trigger initialization
-    let cancelled = false;
-    fetchWalletRecord(eoaAddress).then((record) => {
-      if (cancelled) return; // Guard against stale callback if eoaAddress changed
-      if (record?.safeAddress && record?.isSafeDeployed) {
-        console.log("[TradingSession] Found deployed Safe in database, auto-restoring session...");
-        // Signal that we should auto-initialize (user won't need to click Activate)
-        setCurrentStep("auto_restore");
-        setSessionError(null);
-      } else {
-        setCurrentStep("idle");
-      }
-    });
-    
-    // Cleanup function to handle eoaAddress changes
-    return () => {
-      cancelled = true;
-    };
   }, [eoaAddress]);
 
   // Restores the relay client when session exists
@@ -212,9 +166,6 @@ export default function useTradingSession() {
 
       setTradingSession(newSession);
       saveSession(eoaAddress, newSession);
-      
-      // Step 8: Persist Safe status to database for cross-session restoration
-      await saveSafeStatusToDb(eoaAddress, safeAddress);
 
       setCurrentStep("complete");
     } catch (err) {
@@ -237,20 +188,6 @@ export default function useTradingSession() {
     checkAllTokenApprovals,
     setAllTokenApprovals,
   ]);
-
-  // Auto-restore session when database shows Safe was previously deployed
-  // Guard: immediately set to checking to prevent repeated triggers
-  useEffect(() => {
-    if (currentStep === "auto_restore" && eoaAddress && walletClient) {
-      console.log("[TradingSession] Auto-restoring session for existing Safe deployment");
-      // Immediately transition to "checking" to prevent re-entry
-      setCurrentStep("checking");
-      initializeTradingSession().catch((err) => {
-        console.error("Failed to auto-restore session:", err);
-        setCurrentStep("idle");
-      });
-    }
-  }, [currentStep, eoaAddress, walletClient, initializeTradingSession]);
 
   // This function clears the trading session and resets the state
   const endTradingSession = useCallback(() => {

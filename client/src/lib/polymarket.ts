@@ -23,6 +23,27 @@ export interface SportWithMarketTypes {
   marketTypes: MarketTypeOption[];
 }
 
+// Legacy type for backwards compatibility
+export interface CategorizedTag {
+  id: string;
+  slug: string;
+  label: string;
+  sport: string;
+  marketType: string;
+  seriesId?: string;
+  tagIds?: string;
+}
+
+export interface PolymarketSport {
+  id: string;
+  slug: string;
+  label: string;
+  tags?: string;
+  series?: string;
+  image?: string;
+  resolutionSource?: string;
+}
+
 export interface GammaOutcome {
   price: string;
   outcome: string;
@@ -50,8 +71,6 @@ export interface GammaMarket {
   clobTokenIds?: string;
   line?: number;
   orderMinSize?: number;
-  // Official team abbreviation from Polymarket (e.g., "LAL", "MCI")
-  teamAbbrev?: string;
 }
 
 export interface GammaEvent {
@@ -105,6 +124,132 @@ function humanizeSportSlug(slug: string): string {
   return labels[slug.toLowerCase()] || slug.toUpperCase();
 }
 
+// NFL team name to abbreviation mapping
+export const NFL_TEAM_ABBREVIATIONS: Record<string, string> = {
+  "49ers": "SF",
+  "Bears": "CHI",
+  "Bengals": "CIN",
+  "Bills": "BUF",
+  "Broncos": "DEN",
+  "Browns": "CLE",
+  "Buccaneers": "TB",
+  "Cardinals": "ARI",
+  "Chargers": "LAC",
+  "Chiefs": "KC",
+  "Colts": "IND",
+  "Commanders": "WAS",
+  "Cowboys": "DAL",
+  "Dolphins": "MIA",
+  "Eagles": "PHI",
+  "Falcons": "ATL",
+  "Giants": "NYG",
+  "Jaguars": "JAX",
+  "Jets": "NYJ",
+  "Lions": "DET",
+  "Packers": "GB",
+  "Panthers": "CAR",
+  "Patriots": "NE",
+  "Raiders": "LV",
+  "Rams": "LAR",
+  "Ravens": "BAL",
+  "Saints": "NO",
+  "Seahawks": "SEA",
+  "Steelers": "PIT",
+  "Texans": "HOU",
+  "Titans": "TEN",
+  "Vikings": "MIN",
+};
+
+// NBA team name to abbreviation mapping
+export const NBA_TEAM_ABBREVIATIONS: Record<string, string> = {
+  "76ers": "PHI",
+  "Bucks": "MIL",
+  "Bulls": "CHI",
+  "Cavaliers": "CLE",
+  "Celtics": "BOS",
+  "Clippers": "LAC",
+  "Grizzlies": "MEM",
+  "Hawks": "ATL",
+  "Heat": "MIA",
+  "Hornets": "CHA",
+  "Jazz": "UTA",
+  "Kings": "SAC",
+  "Knicks": "NYK",
+  "Lakers": "LAL",
+  "Magic": "ORL",
+  "Mavericks": "DAL",
+  "Nets": "BKN",
+  "Nuggets": "DEN",
+  "Pacers": "IND",
+  "Pelicans": "NOP",
+  "Pistons": "DET",
+  "Raptors": "TOR",
+  "Rockets": "HOU",
+  "Spurs": "SAS",
+  "Suns": "PHX",
+  "Thunder": "OKC",
+  "Timberwolves": "MIN",
+  "Trail Blazers": "POR",
+  "Warriors": "GSW",
+  "Wizards": "WAS",
+};
+
+// Get team abbreviation from team name
+export function getTeamAbbreviation(teamName: string): string {
+  // Check NFL teams
+  if (NFL_TEAM_ABBREVIATIONS[teamName]) {
+    return NFL_TEAM_ABBREVIATIONS[teamName];
+  }
+  // Check NBA teams
+  if (NBA_TEAM_ABBREVIATIONS[teamName]) {
+    return NBA_TEAM_ABBREVIATIONS[teamName];
+  }
+  // Fallback: try partial match or first 3 chars
+  for (const [name, abbr] of Object.entries({ ...NFL_TEAM_ABBREVIATIONS, ...NBA_TEAM_ABBREVIATIONS })) {
+    if (teamName.toLowerCase().includes(name.toLowerCase())) {
+      return abbr;
+    }
+  }
+  // Last resort: first 3 characters uppercase
+  return teamName.slice(0, 3).toUpperCase();
+}
+
+// Raw Polymarket sports API response type
+interface RawPolymarketSport {
+  id: number;
+  sport: string;
+  image?: string;
+  resolution?: string;
+  ordering?: string;
+  tags?: string;
+  series?: string;
+  createdAt?: string;
+}
+
+// Fetch sports directly from Polymarket /sports endpoint
+export async function fetchPolymarketSports(): Promise<PolymarketSport[]> {
+  try {
+    const response = await fetch("/api/polymarket/sports");
+    if (!response.ok) {
+      throw new Error(`Failed to fetch sports: ${response.status}`);
+    }
+    const rawSports: RawPolymarketSport[] = await response.json();
+    
+    return rawSports.map(raw => ({
+      id: raw.id.toString(),
+      slug: raw.sport,
+      label: humanizeSportSlug(raw.sport),
+      tags: raw.tags,
+      series: raw.series,
+      image: raw.image,
+      resolutionSource: raw.resolution,
+    }));
+  } catch (error) {
+    console.error("Error fetching Polymarket sports:", error);
+    return [];
+  }
+}
+
 // Fetch sports with hierarchical market types
 // Returns sports with nested market type options (moneyline, spreads, totals)
 export async function fetchSportsWithMarketTypes(): Promise<SportWithMarketTypes[]> {
@@ -120,7 +265,8 @@ export async function fetchSportsWithMarketTypes(): Promise<SportWithMarketTypes
   }
 }
 
-// Alias for backwards compatibility  
+// Legacy alias for backwards compatibility  
+export const fetchCategorizedTags = fetchSportsWithMarketTypes;
 export const fetchGammaTags = fetchSportsWithMarketTypes;
 
 // Parse tag ID to extract series and market type
@@ -321,12 +467,9 @@ export interface ParsedMarket {
     price: number;           // Mid/last trade price (for display)
     executionPrice: number;  // Best ask price for this outcome (for order submission)
     tokenId?: string;
-    abbrev?: string;         // Official abbreviation from Polymarket slug (e.g., "SABALEN")
   }>;
   clobTokenIds?: string[];
   orderMinSize?: number;
-  // Official team abbreviation from Polymarket (e.g., "LAL", "MCI")
-  teamAbbrev?: string;
 }
 
 // Grouped markets by type within an event
@@ -363,97 +506,8 @@ function getMarketTypeLabel(type: string): string {
   return labels[type] || type.charAt(0).toUpperCase() + type.slice(1);
 }
 
-// Parse team abbreviations from event slug
-// Format: {league}-{homeAbbrev}-{awayAbbrev}-{date} (e.g., "sea-udi-int-2026-01-18")
-// Returns { homeAbbrev, awayAbbrev } or null if not parseable
-function parseTeamAbbrevsFromEventSlug(slug: string): { homeAbbrev: string; awayAbbrev: string } | null {
-  if (!slug) return null;
-  
-  const parts = slug.split("-");
-  // Need at least: league + home + away + year + month + day = 6 parts minimum
-  if (parts.length < 6) return null;
-  
-  // Find the date portion (4-digit year followed by 2-digit month and day)
-  // The team abbreviations come BEFORE the date
-  let dateStartIdx = -1;
-  for (let i = 1; i < parts.length - 2; i++) {
-    // Check if this looks like a year (4 digits, starts with 20)
-    if (/^20\d{2}$/.test(parts[i])) {
-      dateStartIdx = i;
-      break;
-    }
-  }
-  
-  if (dateStartIdx < 3) return null; // Need at least league + 2 teams before date
-  
-  // Extract team abbreviations (parts 1 and 2 after league at index 0)
-  // Format: league-home-away-date... or league-team1-team2-date...
-  const homeAbbrev = parts[1].toUpperCase();
-  const awayAbbrev = parts[2].toUpperCase();
-  
-  // Validate abbreviations are reasonable (1-7 chars, letters/numbers only)
-  if (!homeAbbrev || !awayAbbrev) return null;
-  if (!/^[A-Z0-9]{1,7}$/i.test(homeAbbrev) || !/^[A-Z0-9]{1,7}$/i.test(awayAbbrev)) return null;
-  
-  return { homeAbbrev, awayAbbrev };
-}
-
-// Match a market to its team abbreviation based on market slug or groupItemTitle
-function getMarketTeamAbbrev(
-  market: GammaMarket,
-  eventSlug: string,
-  teamAbbrevs: { homeAbbrev: string; awayAbbrev: string } | null
-): string | undefined {
-  if (!teamAbbrevs) return undefined;
-  
-  const marketSlug = market.slug?.toLowerCase() || "";
-  const groupTitle = market.groupItemTitle?.toLowerCase() || "";
-  
-  // Check if groupItemTitle contains "draw" - no team abbreviation for draws
-  if (groupTitle.includes("draw") || groupTitle.includes("tie")) {
-    return undefined;
-  }
-  
-  // Check if market slug ends with a team abbreviation (e.g., "sea-udi-int-2026-01-18-udi")
-  const slugParts = marketSlug.split("-");
-  if (slugParts.length > 0) {
-    const lastPart = slugParts[slugParts.length - 1].toUpperCase();
-    if (lastPart === teamAbbrevs.homeAbbrev) return teamAbbrevs.homeAbbrev;
-    if (lastPart === teamAbbrevs.awayAbbrev) return teamAbbrevs.awayAbbrev;
-  }
-  
-  // Fuzzy match: check if groupItemTitle contains/starts with the abbreviation
-  // This handles cases like "Aryna Sabalenka" matching "SABALEN" from slug
-  const homeAbbrevLower = teamAbbrevs.homeAbbrev.toLowerCase();
-  const awayAbbrevLower = teamAbbrevs.awayAbbrev.toLowerCase();
-  
-  // Remove spaces and check if any word in groupTitle starts with abbreviation
-  const titleWords = groupTitle.replace(/[^a-z\s]/g, "").split(/\s+/);
-  for (const word of titleWords) {
-    if (word.startsWith(homeAbbrevLower) || homeAbbrevLower.startsWith(word.slice(0, 4))) {
-      return teamAbbrevs.homeAbbrev;
-    }
-    if (word.startsWith(awayAbbrevLower) || awayAbbrevLower.startsWith(word.slice(0, 4))) {
-      return teamAbbrevs.awayAbbrev;
-    }
-  }
-  
-  // Last resort: check if any slug segment (before date) matches
-  const eventSlugParts = eventSlug.split("-");
-  for (let i = slugParts.length - 1; i >= 0; i--) {
-    const part = slugParts[i].toUpperCase();
-    if (part === teamAbbrevs.homeAbbrev) return teamAbbrevs.homeAbbrev;
-    if (part === teamAbbrevs.awayAbbrev) return teamAbbrevs.awayAbbrev;
-  }
-  
-  return undefined;
-}
-
 export function gammaEventToDisplayEvent(event: GammaEvent): DisplayEvent | null {
   if (!event.markets?.length) return null;
-  
-  // Parse team abbreviations from event slug (e.g., "sea-udi-int-2026-01-18" -> {homeAbbrev: "UDI", awayAbbrev: "INT"})
-  const teamAbbrevs = parseTeamAbbrevsFromEventSlug(event.slug);
   
   // Parse all markets and group by sportsMarketType
   const marketsByType = new Map<string, ParsedMarket[]>();
@@ -519,32 +573,11 @@ export function gammaEventToDisplayEvent(event: GammaEvent): DisplayEvent | null
           }
         }
         
-        // Determine abbreviation for this outcome
-        // For 2-way markets, match outcome labels with slug abbreviations
-        let abbrev: string | undefined;
-        if (teamAbbrevs && outcomeLabels.length === 2) {
-          // Check if this outcome label matches home or away abbreviation
-          const labelLower = label.toLowerCase().replace(/[^a-z]/g, "");
-          const homeAbbrevLower = teamAbbrevs.homeAbbrev.toLowerCase();
-          const awayAbbrevLower = teamAbbrevs.awayAbbrev.toLowerCase();
-          
-          // Check if label contains/starts with abbreviation
-          if (labelLower.includes(homeAbbrevLower) || homeAbbrevLower.includes(labelLower.slice(0, 4))) {
-            abbrev = teamAbbrevs.homeAbbrev;
-          } else if (labelLower.includes(awayAbbrevLower) || awayAbbrevLower.includes(labelLower.slice(0, 4))) {
-            abbrev = teamAbbrevs.awayAbbrev;
-          } else {
-            // Fallback: first outcome = home, second = away
-            abbrev = i === 0 ? teamAbbrevs.homeAbbrev : teamAbbrevs.awayAbbrev;
-          }
-        }
-        
         return {
           label,
           price: midPrice,
           executionPrice,
           tokenId: clobTokenIds[i],
-          abbrev,
         };
       });
     } catch {
@@ -567,8 +600,6 @@ export function gammaEventToDisplayEvent(event: GammaEvent): DisplayEvent | null
       outcomes,
       clobTokenIds: clobTokenIds.length > 0 ? clobTokenIds : undefined,
       orderMinSize: market.orderMinSize,
-      // Get team abbreviation from market slug parsing (falls back to undefined)
-      teamAbbrev: getMarketTeamAbbrev(market, event.slug, teamAbbrevs),
     };
     
     if (!marketsByType.has(marketType)) {

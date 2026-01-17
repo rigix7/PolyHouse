@@ -17,7 +17,6 @@ export interface TradingSession {
 
 export type SessionStep =
   | "idle"
-  | "auto_restore"
   | "checking"
   | "deploying"
   | "credentials"

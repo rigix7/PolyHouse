@@ -270,32 +270,6 @@ export async function registerRoutes(
     }
   });
 
-  // Update Safe deployment status for wallet
-  app.post("/api/wallet/:address/safe", async (req, res) => {
-    try {
-      const { address } = req.params;
-      const { safeAddress, isSafeDeployed } = req.body;
-      
-      // Validate inputs
-      if (!address || typeof address !== "string" || !address.startsWith("0x")) {
-        return res.status(400).json({ error: "Valid EOA address required" });
-      }
-      if (!safeAddress || typeof safeAddress !== "string" || !safeAddress.startsWith("0x")) {
-        return res.status(400).json({ error: "Valid Safe address required" });
-      }
-      
-      const normalizedAddress = address.toLowerCase();
-      const normalizedSafeAddress = safeAddress.toLowerCase();
-      const deployed = typeof isSafeDeployed === "boolean" ? isSafeDeployed : true;
-      
-      const record = await storage.updateWalletSafeStatus(normalizedAddress, normalizedSafeAddress, deployed);
-      res.json(record);
-    } catch (error) {
-      console.error("Failed to update Safe status:", error);
-      res.status(500).json({ error: "Failed to update Safe status" });
-    }
-  });
-
   // Polymarket relayer proxy - server handles all credential management
   // Client sends request details, server makes authenticated call to Polymarket
   app.post("/api/polymarket/relay", async (req, res) => {
@@ -1306,54 +1280,20 @@ export async function registerRoutes(
       const rawPositions = Array.isArray(data) ? data : (data.positions || []);
       console.log(`[Positions] Found ${rawPositions.length} positions for ${address}`);
       
-      // Log raw position data for debugging
-      for (const p of rawPositions.slice(0, 5)) {
-        console.log(`[Positions] Raw: title="${p.title?.substring(0, 40)}", curPrice=${p.curPrice}, redeemable=${p.redeemable}, size=${p.size}`);
-      }
-      
       // Transform API response to match client-expected format
-      // Win/loss detection:
-      // - redeemable=true indicates market is resolved (applies to ALL resolved positions)
-      // - Must ALSO check curPrice to determine win vs loss:
-      //   - curPrice=1 means user's outcome won → claimable
-      //   - curPrice=0 means user's outcome lost → not claimable
-      const positions = rawPositions.map((p: any) => {
-        const size = parseFloat(p.size) || 0;
-        const curPrice = parseFloat(p.curPrice) || 0;
-        const redeemable = p.redeemable === true;
-        
-        // Determine status based on BOTH redeemable flag AND current price
-        let status = "open";
-        if (size === 0) {
-          status = "closed"; // No position
-        } else if (redeemable && curPrice >= 0.99) {
-          // Market resolved AND user's outcome won → can claim winnings
-          status = "claimable";
-        } else if (redeemable && curPrice <= 0.01) {
-          // Market resolved BUT user's outcome lost → no claim available
-          status = "lost";
-        } else if (curPrice <= 0.01) {
-          // Edge case: market resolved to NO but redeemable not set
-          status = "lost";
-        } else if (curPrice >= 0.99) {
-          // Edge case: market resolved to YES but redeemable not set
-          status = "claimable";
-        }
-        // Otherwise: market is unresolved (price between 0.01-0.99)
-        
-        return {
-          tokenId: p.asset || p.tokenId,
-          conditionId: p.conditionId,
-          marketQuestion: p.title || p.marketQuestion,
-          outcomeLabel: p.outcome || p.outcomeLabel,
-          side: p.side || "BUY",
-          size,
-          avgPrice: parseFloat(p.avgPrice) || 0,
-          currentPrice: curPrice,
-          unrealizedPnl: parseFloat(p.cashPnl) || parseFloat(p.unrealizedPnl) || 0,
-          status,
-        };
-      });
+      const positions = rawPositions.map((p: any) => ({
+        tokenId: p.asset || p.tokenId,
+        conditionId: p.conditionId,
+        marketQuestion: p.title || p.marketQuestion,
+        outcomeLabel: p.outcome || p.outcomeLabel,
+        side: p.side || "BUY",
+        size: parseFloat(p.size) || 0,
+        avgPrice: parseFloat(p.avgPrice) || 0,
+        currentPrice: parseFloat(p.curPrice) || parseFloat(p.currentPrice) || 0,
+        unrealizedPnl: parseFloat(p.cashPnl) || parseFloat(p.unrealizedPnl) || 0,
+        // If position exists and has size > 0, consider it "open"
+        status: parseFloat(p.size) > 0 ? "open" : (p.redeemable ? "claimable" : "closed"),
+      }));
       
       res.json(positions);
     } catch (error) {

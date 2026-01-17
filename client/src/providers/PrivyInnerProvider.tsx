@@ -88,7 +88,6 @@ export default function PrivyInnerProvider({ children, appId, WalletContext }: P
       config={{
         defaultChain: polygon,
         supportedChains: [polygon],
-        loginMethods: ['email', 'wallet', 'google', 'apple', 'twitter'],
         appearance: {
           theme: "dark",
           accentColor: "#f43f5e",

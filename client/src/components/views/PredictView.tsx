@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, createContext, useContext, useMemo } from "react";
+import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Shield, Lock, Loader2, TrendingUp, Calendar, Radio, Clock, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from "lucide-react";
 import { SubTabs } from "@/components/terminal/SubTabs";
@@ -9,24 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Market, Futures, AdminSettings, SportMarketConfig } from "@shared/schema";
 import type { DisplayEvent, ParsedMarket, MarketGroup } from "@/lib/polymarket";
-import type { UseLivePricesResult } from "@/hooks/useLivePrices";
-
-// Type for live prices map
-type LivePricesMap = Map<string, { bestAsk: number; bestBid: number }>;
-
-// Helper to get live price for a token, or fall back to static price
-function getLivePrice(
-  tokenId: string | undefined, 
-  staticPrice: number, 
-  livePrices?: LivePricesMap
-): number {
-  if (!livePrices || !tokenId) return staticPrice;
-  const liveData = livePrices.get(tokenId);
-  if (liveData && liveData.bestAsk > 0) {
-    return liveData.bestAsk;
-  }
-  return staticPrice;
-}
+import { getTeamAbbreviation } from "@/lib/polymarket";
 
 // Context for sport market configs
 const SportConfigContext = createContext<Map<string, SportMarketConfig>>(new Map());
@@ -62,7 +45,6 @@ interface PredictViewProps {
   selectedBet?: { marketId: string; outcomeId: string; direction?: string };
   adminSettings?: AdminSettings;
   userPositions?: { tokenId: string; size: number; avgPrice: number; outcomeLabel?: string; marketQuestion?: string; unrealizedPnl?: number }[];
-  livePrices?: UseLivePricesResult;
 }
 
 function formatVolume(vol: number): string {
@@ -154,116 +136,57 @@ function parseSoccerOutcomeName(question: string | undefined, fallback?: string)
   return question;
 }
 
-// Price ticker showing all events with moneyline odds
-// Format: {category} {event}: {team1Abbr} {price} | {team2Abbr} {price}
+// Price ticker using DisplayEvents with CSS infinite marquee animation
 function PriceTicker({ events }: { events: DisplayEvent[] }) {
   if (events.length === 0) return null;
   
-  // Show all events (not just 5 days) that aren't ended
-  const filteredEvents = events.filter(e => e.status !== "ended");
+  // Filter to only events within 5 days (same as Match Day view)
+  const filteredEvents = events.filter(e => isWithin5Days(e.gameStartTime) && e.status !== "ended");
   
   if (filteredEvents.length === 0) return null;
   
-  // Build ticker items - one per event showing all moneyline options
-  const tickerItems: { 
-    league: string; 
-    eventTitle: string; 
-    outcomes: { abbrev: string; price: number }[];
-  }[] = [];
+  // Extract ticker items from all events' moneyline markets
+  const tickerItems: { title: string; price: number }[] = [];
   
-  for (const event of filteredEvents) {
+  for (const event of filteredEvents.slice(0, 8)) {
     const moneylineGroup = event.marketGroups.find(g => g.type === "moneyline");
-    if (!moneylineGroup || moneylineGroup.markets.length === 0) continue;
+    if (!moneylineGroup) continue;
     
-    // Collect outcomes with abbreviations and prices
-    const outcomes: { abbrev: string; price: number }[] = [];
-    
-    // For 2-way markets (tennis, etc), use the outcome labels directly
-    // For 3-way markets (soccer), use individual market groupItemTitle
-    const isTwoWayEvent = moneylineGroup.markets.length === 1 && 
-                          moneylineGroup.markets[0].outcomes.length === 2;
-    
-    if (isTwoWayEvent) {
-      // 2-way: single market with 2 outcomes (e.g., Player A vs Player B)
-      const market = moneylineGroup.markets[0];
-      for (let i = 0; i < market.outcomes.length; i++) {
-        const outcome = market.outcomes[i];
-        const price = outcome.price || 0;
-        // Use outcome-level abbrev (from slug parsing), or fall back to outcome label
-        const abbrev = outcome.abbrev || outcome.label.slice(0, 7).toUpperCase();
-        outcomes.push({
-          abbrev,
-          price: Math.round(price * 100),
-        });
-      }
-    } else {
-      // 3-way: multiple markets (each for a team/draw)
-      for (const market of moneylineGroup.markets.slice(0, 3)) {
-        const yesPrice = market.bestAsk || market.outcomes[0]?.price || 0;
-        // Check if it's a draw
-        const fullName = market.groupItemTitle || market.question || "";
-        const isDraw = fullName.toLowerCase().includes("draw") || fullName.toLowerCase().includes("tie");
-        // Use official teamAbbrev from Polymarket slug (can be up to 7 chars)
-        const abbrev = isDraw 
-          ? "Draw" 
-          : market.teamAbbrev || fullName.slice(0, 3).toUpperCase();
-        
-        outcomes.push({
-          abbrev,
-          price: Math.round(yesPrice * 100),
-        });
-      }
-    }
-    
-    if (outcomes.length > 0) {
+    for (const market of moneylineGroup.markets.slice(0, 3)) {
+      const yesPrice = market.bestAsk || market.outcomes[0]?.price || 0;
       tickerItems.push({
-        league: event.league,
-        eventTitle: event.title,
-        outcomes,
+        title: `${event.league}: ${market.groupItemTitle}`,
+        price: Math.round(yesPrice * 100),
       });
     }
   }
   
   if (tickerItems.length === 0) return null;
   
-  // Animation speed based on number of events (~4s per event)
-  const animationDuration = Math.max(30, tickerItems.length * 4);
+  // Calculate animation duration based on number of items (faster animation)
+  const animationDuration = Math.max(10, tickerItems.length * 2);
   
   return (
     <div className="bg-zinc-900/80 border-b border-zinc-800 overflow-hidden">
       <style>
         {`
-          @keyframes ticker-scroll {
+          @keyframes marquee {
             0% { transform: translateX(0); }
             100% { transform: translateX(-50%); }
           }
-          .ticker-track {
-            display: flex;
-            width: fit-content;
-            animation: ticker-scroll ${animationDuration}s linear infinite;
+          .ticker-content {
+            animation: marquee ${animationDuration}s linear infinite;
           }
-          .ticker-track:hover {
+          .ticker-content:hover {
             animation-play-state: paused;
           }
         `}
       </style>
-      <div className="ticker-track whitespace-nowrap py-2 px-3">
-        {/* Duplicate the content for seamless loop */}
+      <div className="ticker-content flex whitespace-nowrap py-2 px-3 gap-8">
         {[...tickerItems, ...tickerItems].map((item, idx) => (
-          <div key={idx} className="inline-flex items-center gap-2 text-xs mr-8">
-            <span className="text-zinc-500 text-[10px] font-medium">{item.league}</span>
-            <span className="text-zinc-400">{item.eventTitle}:</span>
-            <span className="inline-flex items-center gap-1">
-              {item.outcomes.map((o, i) => (
-                <span key={i} className="inline-flex items-center">
-                  <span className="text-zinc-300">{o.abbrev}</span>
-                  <span className="text-wild-gold font-mono font-bold ml-1">{o.price}¢</span>
-                  {i < item.outcomes.length - 1 && (
-                    <span className="text-zinc-600 mx-1">|</span>
-                  )}
-                </span>
-              ))}
-            </span>
+          <div key={idx} className="flex items-center gap-2 text-xs shrink-0">
+            <span className="text-zinc-400">{item.title}</span>
+            <span className="text-wild-gold font-mono font-bold">{item.price}¢</span>
           </div>
         ))}
       </div>
@@ -388,14 +311,12 @@ function SpreadMarketDisplay({
   market,
   eventTitle,
   onSelect,
-  selectedDirection,
-  livePrices
+  selectedDirection
 }: {
   market: ParsedMarket;
   eventTitle: string;
   onSelect: (market: ParsedMarket, direction: "home" | "away") => void;
   selectedDirection?: "home" | "away" | null;
-  livePrices?: LivePricesMap;
 }) {
   // Parse the question to extract home team: "Spread: Eagles (-4.5)" -> Eagles is home with -4.5
   // The outcomes array: [homeTeam, awayTeam] - index 0 is home (gets the negative line)
@@ -406,19 +327,16 @@ function SpreadMarketDisplay({
   const line = market.line ?? parseLineFromTitle(market.groupItemTitle) ?? 0;
   const homeTeam = outcomes[0].label;
   const awayTeam = outcomes[1].label;
-  // For spreads, outcome labels are team names - use first 3 chars as abbreviation
-  const homeAbbr = homeTeam.slice(0, 3).toUpperCase();
-  const awayAbbr = awayTeam.slice(0, 3).toUpperCase();
+  const homeAbbr = getTeamAbbreviation(homeTeam);
+  const awayAbbr = getTeamAbbreviation(awayTeam);
   
   // Home team gets negative line (e.g., -4.5), away team gets positive (+4.5)
   const homeLine = line; // Already negative from API
   const awayLine = -line; // Flip sign for away team
   
-  // Prices: use live prices from WebSocket if available, fall back to Gamma API
-  const homeStaticPrice = outcomes[0].price ?? market.bestAsk ?? 0.5;
-  const awayStaticPrice = outcomes[1].price ?? (1 - market.bestAsk) ?? 0.5;
-  const homePrice = Math.round(getLivePrice(outcomes[0].tokenId, homeStaticPrice, livePrices) * 100);
-  const awayPrice = Math.round(getLivePrice(outcomes[1].tokenId, awayStaticPrice, livePrices) * 100);
+  // Prices: use static prices from Gamma API (live prices shown in BetSlip)
+  const homePrice = Math.round((outcomes[0].price ?? market.bestAsk) * 100);
+  const awayPrice = Math.round((outcomes[1].price ?? (1 - market.bestAsk)) * 100);
   
   const isHomeSelected = selectedDirection === "home";
   const isAwaySelected = selectedDirection === "away";
@@ -461,13 +379,11 @@ function SpreadMarketDisplay({
 function TotalsMarketDisplay({
   market,
   onSelect,
-  selectedDirection,
-  livePrices
+  selectedDirection
 }: {
   market: ParsedMarket;
   onSelect: (market: ParsedMarket, direction: "over" | "under") => void;
   selectedDirection?: "over" | "under" | null;
-  livePrices?: LivePricesMap;
 }) {
   const outcomes = market.outcomes;
   if (outcomes.length < 2) return null;
@@ -475,11 +391,9 @@ function TotalsMarketDisplay({
   // Use market.line if available, otherwise try to parse from groupItemTitle
   const line = market.line ?? parseLineFromTitle(market.groupItemTitle) ?? 0;
   
-  // Outcomes: ["Over", "Under"] with live prices from WebSocket if available
-  const overStaticPrice = outcomes[0].price ?? market.bestAsk ?? 0.5;
-  const underStaticPrice = outcomes[1].price ?? (1 - market.bestAsk) ?? 0.5;
-  const overPrice = Math.round(getLivePrice(outcomes[0].tokenId, overStaticPrice, livePrices) * 100);
-  const underPrice = Math.round(getLivePrice(outcomes[1].tokenId, underStaticPrice, livePrices) * 100);
+  // Outcomes: ["Over", "Under"] with static prices from Gamma API (live prices shown in BetSlip)
+  const overPrice = Math.round((outcomes[0].price ?? market.bestAsk) * 100);
+  const underPrice = Math.round((outcomes[1].price ?? (1 - market.bestAsk)) * 100);
   
   const isOverSelected = selectedDirection === "over";
   const isUnderSelected = selectedDirection === "under";
@@ -521,15 +435,13 @@ function SoccerMoneylineDisplay({
   eventTitle,
   onSelect,
   selectedMarketId,
-  selectedDirection,
-  livePrices
+  selectedDirection
 }: {
   markets: ParsedMarket[];
   eventTitle: string;
   onSelect: (market: ParsedMarket, direction: "yes" | "no", outcomeLabel: string) => void;
   selectedMarketId?: string;
   selectedDirection?: string | null;
-  livePrices?: LivePricesMap;
 }) {
   // Soccer markets come as separate markets for Home Win, Draw, Away Win
   // Each market has a question like "Will Genoa win?" or "Will the match be a draw?"
@@ -563,11 +475,8 @@ function SoccerMoneylineDisplay({
     }
   }
   
-  // Calculate prices using live data when available and find favorite using normalized probabilities
-  const prices = sortedMarkets.map(m => {
-    const staticPrice = m.outcomes[0]?.price ?? m.bestAsk ?? 0;
-    return getLivePrice(m.outcomes[0]?.tokenId, staticPrice, livePrices);
-  });
+  // Calculate prices and find favorite using normalized probabilities
+  const prices = sortedMarkets.map(m => m.outcomes[0]?.price ?? m.bestAsk ?? 0);
   const totalProb = prices.reduce((sum, p) => sum + p, 0);
   const normalizedProbs = prices.map(p => totalProb > 0 ? p / totalProb : 0.33);
   const maxNormalizedProb = Math.max(...normalizedProbs);
@@ -581,7 +490,7 @@ function SoccerMoneylineDisplay({
     <div className="space-y-2">
       <div className="flex gap-2">
         {sortedMarkets.map((market, idx) => {
-          // Use live price from WebSocket if available
+          // Use static price from Gamma API (live prices shown in BetSlip)
           const priceInCents = Math.round(prices[idx] * 100);
           
           // Use groupItemTitle directly - it contains the team name (e.g., "Sevilla FC", "Draw", "RC Celta")
@@ -590,8 +499,8 @@ function SoccerMoneylineDisplay({
           const lowerLabel = fullLabel.toLowerCase();
           const isDraw = lowerLabel.includes("draw") || lowerLabel.includes("tie");
           
-          // Use official teamAbbrev from Polymarket slug (can be up to 7 chars)
-          const displayLabel = isDraw ? "DRAW" : (market.teamAbbrev || fullLabel.slice(0, 3).toUpperCase());
+          // Use 3-letter abbreviation for teams, "DRAW" for draw
+          const displayLabel = isDraw ? "DRAW" : getTeamAbbreviation(fullLabel);
           
           const isSelected = selectedMarketId === market.id;
           const isYesSelected = isSelected && selectedDirection === "yes";
@@ -660,22 +569,17 @@ function MoneylineMarketDisplay({
   market,
   eventTitle,
   onSelect,
-  selectedOutcomeIndex,
-  livePrices
+  selectedOutcomeIndex
 }: {
   market: ParsedMarket;
   eventTitle: string;
   onSelect: (market: ParsedMarket, outcomeIndex: number) => void;
   selectedOutcomeIndex?: number | null;
-  livePrices?: LivePricesMap;
 }) {
   const outcomes = market.outcomes;
   
-  // Calculate prices using live data when available, find favorite
-  const prices = outcomes.map((o, idx) => {
-    const staticPrice = o.price ?? (idx === 0 ? market.bestAsk : market.bestBid) ?? 0.5;
-    return getLivePrice(o.tokenId, staticPrice, livePrices);
-  });
+  // Calculate prices and find favorite
+  const prices = outcomes.map((o, idx) => o.price ?? (idx === 0 ? market.bestAsk : market.bestBid) ?? 0.5);
   const maxPrice = Math.max(...prices);
   const favoriteIndex = prices.indexOf(maxPrice);
   const isFavoriteStrong = maxPrice >= 0.70; // Show FAV badge if 70%+ implied probability
@@ -690,8 +594,7 @@ function MoneylineMarketDisplay({
       <div className="flex gap-2">
         {outcomes.map((outcome, idx) => {
           const priceInCents = Math.round(prices[idx] * 100);
-          // Use outcome-level abbrev first (for 2-way markets), then market-level, then fallback
-          const abbr = outcome.abbrev || market.teamAbbrev || outcome.label.slice(0, 7).toUpperCase();
+          const abbr = getTeamAbbreviation(outcome.label);
           const isSelected = selectedOutcomeIndex === idx;
           const isFavorite = idx === favoriteIndex && isFavoriteStrong;
           
@@ -782,13 +685,11 @@ function SimplifiedMarketRow({
   onSelect,
   selectedMarketId,
   selectedOutcomeIndex,
-  livePrices,
 }: {
   market: ParsedMarket;
   onSelect: (market: ParsedMarket, outcomeIndex: number, outcomeLabel: string) => void;
   selectedMarketId?: string;
   selectedOutcomeIndex?: number;
-  livePrices?: LivePricesMap;
 }) {
   const isThisMarket = selectedMarketId === market.id;
   
@@ -797,9 +698,8 @@ function SimplifiedMarketRow({
       <div className="text-sm text-zinc-300">{market.question}</div>
       <div className="flex gap-2">
         {market.outcomes.map((outcome, idx) => {
-          // Use live price from WebSocket if available, fall back to Gamma API
-          const staticPrice = outcome.price ?? (idx === 0 ? market.bestAsk : market.bestBid) ?? 0;
-          const price = getLivePrice(outcome.tokenId, staticPrice, livePrices);
+          // Use static price from Gamma API (live prices shown in BetSlip)
+          const price = outcome.price ?? (idx === 0 ? market.bestAsk : market.bestBid) ?? 0;
           const priceInCents = Math.round(price * 100);
           const isSelected = isThisMarket && selectedOutcomeIndex === idx;
           
@@ -833,14 +733,12 @@ function AdditionalMarketsSection({
   onSelectMarket,
   selectedMarketId,
   selectedOutcomeIndex,
-  livePrices,
 }: {
   marketGroups: MarketGroup[];
   eventTitle: string;
   onSelectMarket: (market: ParsedMarket, eventTitle: string, marketType: string, outcomeIndex: number, outcomeLabel: string) => void;
   selectedMarketId?: string;
   selectedOutcomeIndex?: number;
-  livePrices?: LivePricesMap;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   
@@ -890,7 +788,6 @@ function AdditionalMarketsSection({
                     onSelect={handleSelect}
                     selectedMarketId={selectedMarketId}
                     selectedOutcomeIndex={selectedOutcomeIndex}
-                    livePrices={livePrices}
                   />
                 ))}
               </div>
@@ -910,8 +807,7 @@ function MarketGroupDisplay({
   leagueSlug,
   onSelectMarket,
   selectedMarketId,
-  selectedDirection,
-  livePrices
+  selectedDirection
 }: {
   group: MarketGroup;
   eventTitle: string;
@@ -920,7 +816,6 @@ function MarketGroupDisplay({
   onSelectMarket: (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string, outcomeLabel?: string) => void;
   selectedMarketId?: string;
   selectedDirection?: string;
-  livePrices?: LivePricesMap;
 }) {
   // Check if this is a soccer moneyline (3-way: Home/Draw/Away)
   const isSoccerMoneyline = league && isSoccerLeague(league, leagueSlug) && group.type === "moneyline" && group.markets.length >= 3;
@@ -991,7 +886,6 @@ function MarketGroupDisplay({
             eventTitle={eventTitle}
             onSelect={handleSpreadSelect}
             selectedDirection={spreadDirection}
-            livePrices={livePrices}
           />
           <LineSelector lines={lines} selectedLine={selectedLine} onSelect={setSelectedLine} />
         </>
@@ -1003,7 +897,6 @@ function MarketGroupDisplay({
             market={activeMarket}
             onSelect={handleTotalsSelect}
             selectedDirection={totalsDirection}
-            livePrices={livePrices}
           />
           <LineSelector lines={lines} selectedLine={selectedLine} onSelect={setSelectedLine} />
         </>
@@ -1016,7 +909,6 @@ function MarketGroupDisplay({
           onSelect={handleSoccerMoneylineSelect}
           selectedMarketId={selectedMarketId}
           selectedDirection={selectedDirection}
-          livePrices={livePrices}
         />
       )}
       
@@ -1026,7 +918,6 @@ function MarketGroupDisplay({
           eventTitle={eventTitle}
           onSelect={handleMoneylineSelect}
           selectedOutcomeIndex={moneylineOutcomeIndex}
-          livePrices={livePrices}
         />
       )}
       
@@ -1036,7 +927,6 @@ function MarketGroupDisplay({
           eventTitle={eventTitle}
           onSelect={handleMoneylineSelect}
           selectedOutcomeIndex={moneylineOutcomeIndex}
-          livePrices={livePrices}
         />
       )}
     </div>
@@ -1061,7 +951,6 @@ function EventCard({
   selectedDirection,
   selectedOutcomeIndex,
   userPositions = [],
-  livePrices,
 }: { 
   event: DisplayEvent;
   onSelectMarket: (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string, outcomeLabel?: string) => void;
@@ -1070,7 +959,6 @@ function EventCard({
   selectedDirection?: string;
   selectedOutcomeIndex?: number;
   userPositions?: UserPosition[];
-  livePrices?: Map<string, { bestAsk: number; bestBid: number }>;
 }) {
   const countdown = getCountdown(event.gameStartTime);
   
@@ -1166,7 +1054,6 @@ function EventCard({
           onSelectMarket={onSelectMarket}
           selectedMarketId={selectedMarketId}
           selectedDirection={selectedDirection}
-          livePrices={livePrices}
         />
       ))}
       
@@ -1178,7 +1065,6 @@ function EventCard({
           onSelectMarket={onSelectAdditionalMarket}
           selectedMarketId={selectedMarketId}
           selectedOutcomeIndex={selectedOutcomeIndex}
-          livePrices={livePrices}
         />
       )}
     </Card>
@@ -1321,7 +1207,6 @@ export function PredictView({
   selectedBet, 
   adminSettings,
   userPositions = [],
-  livePrices,
 }: PredictViewProps) {
   const [activeSubTab, setActiveSubTab] = useState<PredictSubTab>("matchday");
   const [selectedLeagues, setSelectedLeagues] = useState<Set<string>>(new Set());
@@ -1333,41 +1218,6 @@ export function PredictView({
   });
   
   const configMap = buildConfigMap(sportConfigs);
-  
-  // Extract all token IDs from visible events for WebSocket subscription
-  const allTokenIds = useMemo(() => {
-    const tokenIds: string[] = [];
-    for (const event of displayEvents) {
-      for (const group of event.marketGroups) {
-        for (const market of group.markets) {
-          if (market.clobTokenIds) {
-            tokenIds.push(...market.clobTokenIds);
-          }
-          for (const outcome of market.outcomes) {
-            if (outcome.tokenId) {
-              tokenIds.push(outcome.tokenId);
-            }
-          }
-        }
-      }
-    }
-    // Remove duplicates
-    return [...new Set(tokenIds)];
-  }, [displayEvents]);
-  
-  // Subscribe to live prices for visible markets
-  // Note: subscribe/unsubscribe are stable callbacks from useLivePrices hook
-  const { subscribe, unsubscribe } = livePrices || {};
-  useEffect(() => {
-    if (subscribe && allTokenIds.length > 0) {
-      subscribe(allTokenIds);
-    }
-    return () => {
-      if (unsubscribe && allTokenIds.length > 0) {
-        unsubscribe(allTokenIds);
-      }
-    };
-  }, [subscribe, unsubscribe, allTokenIds]);
 
   // Filter and categorize events
   const filteredEvents = displayEvents.filter(event => {
@@ -1433,15 +1283,14 @@ export function PredictView({
       if (marketType === "spreads" && market.line !== undefined) {
         const line = market.line;
         if (direction === "home") {
-          outcomeLabel = `${market.outcomes[0].label.slice(0, 3).toUpperCase()} ${line > 0 ? "+" : ""}${line}`;
+          outcomeLabel = `${getTeamAbbreviation(market.outcomes[0].label)} ${line > 0 ? "+" : ""}${line}`;
         } else {
-          outcomeLabel = `${market.outcomes[1].label.slice(0, 3).toUpperCase()} ${-line > 0 ? "+" : ""}${-line}`;
+          outcomeLabel = `${getTeamAbbreviation(market.outcomes[1].label)} ${-line > 0 ? "+" : ""}${-line}`;
         }
       } else if (marketType === "totals" && market.line !== undefined) {
         outcomeLabel = direction === "over" ? `O ${market.line}` : `U ${market.line}`;
       } else if (outcome) {
-        // Use official teamAbbrev from Polymarket slug (can be up to 7 chars)
-        outcomeLabel = market.teamAbbrev || outcome.label.slice(0, 3).toUpperCase();
+        outcomeLabel = getTeamAbbreviation(outcome.label);
       }
     }
     
@@ -1543,7 +1392,6 @@ export function PredictView({
                         selectedMarketId={selectedBet?.marketId}
                         selectedDirection={selectedBet?.direction}
                         userPositions={userPositions}
-                        livePrices={livePrices?.prices}
                       />
                     ))}
                   </div>
@@ -1564,7 +1412,6 @@ export function PredictView({
                         selectedMarketId={selectedBet?.marketId}
                         selectedDirection={selectedBet?.direction}
                         userPositions={userPositions}
-                        livePrices={livePrices?.prices}
                       />
                     ))}
                   </div>
@@ -1617,32 +1464,6 @@ export function PredictView({
             description="Coming Q3 2026"
           />
         )}
-        </div>
-        
-        {/* Powered by Polymarket attribution */}
-        <div className="shrink-0 py-3 px-4 border-t border-zinc-800 bg-zinc-950 flex justify-center" data-testid="container-polymarket-attribution">
-          <Button
-            variant="ghost"
-            size="sm"
-            asChild
-          >
-            <a 
-              href="https://polymarket.com" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 text-zinc-500"
-              data-testid="link-polymarket-attribution"
-            >
-              <span className="text-xs font-medium">Powered by</span>
-              <img 
-                src="https://polymarket.com/images/brand/icon-white.png" 
-                alt="Polymarket" 
-                className="h-4 w-4 opacity-60"
-                data-testid="img-polymarket-logo"
-              />
-              <span className="text-xs font-bold tracking-wide">POLYMARKET</span>
-            </a>
-          </Button>
         </div>
       </div>
     </SportConfigContext.Provider>

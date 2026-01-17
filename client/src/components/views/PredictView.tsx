@@ -384,64 +384,162 @@ function parseLineFromTitle(title: string): number | null {
   return null;
 }
 
-// Spread market display component - shows two buttons with team name + price
-// The line selector below determines which spread line is being shown
-// Bet slip shows the full question for clarity on which side to back
-// Ordering matches moneyline: outcomes[0] on left (teal), outcomes[1] on right (amber)
+// Parse spread line from question text - returns team name and signed line
+// Question format: "Spread: Clippers (-2.5)" or "1H Spread: 76ers (-0.5)"
+// Returns: { team: "Clippers", line: -2.5, lineStr: "-2.5" } or null
+function parseSpreadFromQuestion(question: string): { team: string; line: number; lineStr: string } | null {
+  // Match pattern: "Team Name (±X.X)" where the line is in parentheses
+  const match = question.match(/:\s*([^(]+?)\s*\(([+-]?\d+\.?\d*)\)/);
+  if (match) {
+    const team = match[1].trim();
+    const line = parseFloat(match[2]);
+    const lineStr = line >= 0 ? `+${line}` : `${line}`;
+    return { team, line, lineStr };
+  }
+  return null;
+}
+
+// Get spread line labels for each outcome based on the question
+// Returns array of display labels like ["Clippers -2.5", "Raptors +2.5"]
+function getSpreadLabelsForOutcomes(
+  outcomes: Array<{ label: string; abbrev?: string }>,
+  question: string
+): { label: string; lineStr: string }[] {
+  const parsed = parseSpreadFromQuestion(question);
+  if (!parsed) {
+    // Fallback: just return team names without lines
+    return outcomes.map(o => ({ label: o.label, lineStr: "" }));
+  }
+  
+  const { team: questionTeam, line } = parsed;
+  const questionTeamLower = questionTeam.toLowerCase();
+  
+  // Find which outcome matches the team in the question (they have the negative/stated line)
+  // The other team has the opposite line
+  return outcomes.map(outcome => {
+    const outcomeLower = outcome.label.toLowerCase();
+    const isQuestionTeam = outcomeLower.includes(questionTeamLower) || questionTeamLower.includes(outcomeLower);
+    
+    if (isQuestionTeam) {
+      // This team has the line stated in the question
+      const lineStr = line >= 0 ? `+${line}` : `${line}`;
+      return { label: outcome.label, lineStr };
+    } else {
+      // Other team has the opposite line
+      const oppositeLineStr = (-line) >= 0 ? `+${-line}` : `${-line}`;
+      return { label: outcome.label, lineStr: oppositeLineStr };
+    }
+  });
+}
+
+// Normalize team name for matching (lowercase, remove common words)
+function normalizeTeamName(name: string): string {
+  return name.toLowerCase().trim();
+}
+
+// Reorder spread outcomes to match moneyline order
+// Returns reordered outcomes with their original indices preserved
+function reorderSpreadToMatchMoneyline(
+  spreadOutcomes: Array<{ label: string; abbrev?: string; [key: string]: any }>,
+  moneylineOrder: string[] // [team0Name, team1Name] from moneyline
+): { outcomes: typeof spreadOutcomes; swapped: boolean } {
+  if (spreadOutcomes.length < 2 || moneylineOrder.length < 2) {
+    return { outcomes: spreadOutcomes, swapped: false };
+  }
+  
+  const ml0 = normalizeTeamName(moneylineOrder[0]);
+  const ml1 = normalizeTeamName(moneylineOrder[1]);
+  const spread0 = normalizeTeamName(spreadOutcomes[0].label);
+  const spread1 = normalizeTeamName(spreadOutcomes[1].label);
+  
+  // Check if spread[0] matches moneyline[0] (correct order) or moneyline[1] (needs swap)
+  const spread0MatchesMl0 = spread0.includes(ml0) || ml0.includes(spread0);
+  const spread0MatchesMl1 = spread0.includes(ml1) || ml1.includes(spread0);
+  
+  // If spread[0] matches moneyline[1], we need to swap
+  if (spread0MatchesMl1 && !spread0MatchesMl0) {
+    return { outcomes: [spreadOutcomes[1], spreadOutcomes[0]], swapped: true };
+  }
+  
+  // Otherwise keep original order
+  return { outcomes: spreadOutcomes, swapped: false };
+}
+
+// Spread market display component - shows two buttons with team name + spread line + price
+// Example: "Clippers -2.5  50¢" and "Raptors +2.5  50¢"
+// Ordering matches moneyline order for consistency
 function SpreadMarketDisplay({
   market,
   onSelect,
   selectedDirection,
-  livePrices
+  livePrices,
+  moneylineOrder
 }: {
   market: ParsedMarket;
-  onSelect: (market: ParsedMarket, direction: "home" | "away") => void;
+  onSelect: (market: ParsedMarket, direction: "home" | "away", displayLabel: string) => void;
   selectedDirection?: "home" | "away" | null;
   livePrices?: LivePricesMap;
+  moneylineOrder?: string[]; // [leftTeamName, rightTeamName] from moneyline
 }) {
-  const outcomes = market.outcomes;
-  if (outcomes.length < 2) return null;
+  const rawOutcomes = market.outcomes;
+  if (rawOutcomes.length < 2) return null;
   
-  // Use full team name (outcome.label) for clarity
-  const outcome0Label = outcomes[0].label;
-  const outcome1Label = outcomes[1].label;
+  // Reorder outcomes to match moneyline order if available
+  const { outcomes, swapped } = moneylineOrder 
+    ? reorderSpreadToMatchMoneyline(rawOutcomes, moneylineOrder)
+    : { outcomes: rawOutcomes, swapped: false };
+  
+  // Get spread labels with signed lines from the question
+  const spreadLabels = getSpreadLabelsForOutcomes(outcomes, market.question || "");
+  
+  // Build display labels: "Team -2.5" or "Team +2.5"
+  const leftDisplayLabel = spreadLabels[0].lineStr 
+    ? `${spreadLabels[0].label} ${spreadLabels[0].lineStr}` 
+    : spreadLabels[0].label;
+  const rightDisplayLabel = spreadLabels[1].lineStr 
+    ? `${spreadLabels[1].label} ${spreadLabels[1].lineStr}` 
+    : spreadLabels[1].label;
   
   // Prices: use live prices from WebSocket if available, fall back to Gamma API
-  const outcome0StaticPrice = outcomes[0].price ?? market.bestAsk ?? 0.5;
-  const outcome1StaticPrice = outcomes[1].price ?? (1 - market.bestAsk) ?? 0.5;
-  const outcome0Price = Math.round(getLivePrice(outcomes[0].tokenId, outcome0StaticPrice, livePrices) * 100);
-  const outcome1Price = Math.round(getLivePrice(outcomes[1].tokenId, outcome1StaticPrice, livePrices) * 100);
+  const leftStaticPrice = outcomes[0].price ?? market.bestAsk ?? 0.5;
+  const rightStaticPrice = outcomes[1].price ?? (1 - market.bestAsk) ?? 0.5;
+  const leftPrice = Math.round(getLivePrice(outcomes[0].tokenId, leftStaticPrice, livePrices) * 100);
+  const rightPrice = Math.round(getLivePrice(outcomes[1].tokenId, rightStaticPrice, livePrices) * 100);
   
-  // "home" = outcomes[0], "away" = outcomes[1] for betting direction
-  const isOutcome0Selected = selectedDirection === "home";
-  const isOutcome1Selected = selectedDirection === "away";
+  // Map display positions to betting directions
+  // If swapped, left button = "away" (original index 1), right button = "home" (original index 0)
+  // If not swapped, left button = "home" (original index 0), right button = "away" (original index 1)
+  const leftDirection: "home" | "away" = swapped ? "away" : "home";
+  const rightDirection: "home" | "away" = swapped ? "home" : "away";
   
-  // Match moneyline order: outcome[0] on LEFT (teal), outcome[1] on RIGHT (amber)
+  const isLeftSelected = selectedDirection === leftDirection;
+  const isRightSelected = selectedDirection === rightDirection;
+  
   return (
     <div className="flex gap-2">
       <button
-        onClick={() => onSelect(market, "home")}
+        onClick={() => onSelect(market, leftDirection, leftDisplayLabel)}
         className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-all ${
-          isOutcome0Selected 
+          isLeftSelected 
             ? "bg-teal-600 border border-teal-500 text-white" 
             : "bg-teal-900/40 border border-teal-800/50 hover:bg-teal-800/50 text-zinc-100"
         }`}
-        data-testid={`spread-outcome0-${market.id}`}
+        data-testid={`spread-left-${market.id}`}
       >
-        <span className="font-bold truncate">{outcome0Label}</span>
-        <span className="font-mono font-bold text-white shrink-0">{outcome0Price}¢</span>
+        <span className="font-bold truncate">{leftDisplayLabel}</span>
+        <span className="font-mono font-bold text-white shrink-0">{leftPrice}¢</span>
       </button>
       <button
-        onClick={() => onSelect(market, "away")}
+        onClick={() => onSelect(market, rightDirection, rightDisplayLabel)}
         className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-all ${
-          isOutcome1Selected 
+          isRightSelected 
             ? "bg-amber-600 border border-amber-500 text-white" 
             : "bg-amber-900/40 border border-amber-800/50 hover:bg-amber-800/50 text-zinc-100"
         }`}
-        data-testid={`spread-outcome1-${market.id}`}
+        data-testid={`spread-right-${market.id}`}
       >
-        <span className="font-bold truncate">{outcome1Label}</span>
-        <span className="font-mono font-bold text-white shrink-0">{outcome1Price}¢</span>
+        <span className="font-bold truncate">{rightDisplayLabel}</span>
+        <span className="font-mono font-bold text-white shrink-0">{rightPrice}¢</span>
       </button>
     </div>
   );
@@ -901,7 +999,8 @@ function MarketGroupDisplay({
   onSelectMarket,
   selectedMarketId,
   selectedDirection,
-  livePrices
+  livePrices,
+  moneylineOrder
 }: {
   group: MarketGroup;
   eventTitle: string;
@@ -911,6 +1010,7 @@ function MarketGroupDisplay({
   selectedMarketId?: string;
   selectedDirection?: string;
   livePrices?: LivePricesMap;
+  moneylineOrder?: string[]; // [leftTeamName, rightTeamName] for consistent ordering
 }) {
   // Check if this is a soccer moneyline (3-way: Home/Draw/Away)
   const isSoccerMoneyline = league && isSoccerLeague(league, leagueSlug) && group.type === "moneyline" && group.markets.length >= 3;
@@ -927,9 +1027,9 @@ function MarketGroupDisplay({
   // Determine if this market is selected and what direction
   const isThisMarketSelected = selectedMarketId === activeMarket.id;
   
-  // Handle selection for spreads (home/away direction)
-  const handleSpreadSelect = (market: ParsedMarket, direction: "home" | "away") => {
-    onSelectMarket(market, eventTitle, group.type, direction);
+  // Handle selection for spreads (home/away direction + display label for bet slip)
+  const handleSpreadSelect = (market: ParsedMarket, direction: "home" | "away", displayLabel: string) => {
+    onSelectMarket(market, eventTitle, group.type, direction, displayLabel);
   };
   
   // Handle selection for totals (over/under direction)  
@@ -981,6 +1081,7 @@ function MarketGroupDisplay({
             onSelect={handleSpreadSelect}
             selectedDirection={spreadDirection}
             livePrices={livePrices}
+            moneylineOrder={moneylineOrder}
           />
           <LineSelector lines={lines} selectedLine={selectedLine} onSelect={setSelectedLine} />
         </>
@@ -1066,6 +1167,17 @@ function EventCard({
   // Separate core markets (polished UI) from additional markets (simplified view)
   const coreMarketGroups = event.marketGroups.filter(g => CORE_MARKET_TYPES.includes(g.type));
   const additionalMarketGroups = event.marketGroups.filter(g => !CORE_MARKET_TYPES.includes(g.type));
+  
+  // Extract moneyline order for consistent spread ordering
+  // Find the 2-way moneyline market and get the team order from its outcomes
+  const moneylineGroup = coreMarketGroups.find(g => g.type === "moneyline");
+  const moneylineOrder: string[] = [];
+  if (moneylineGroup && moneylineGroup.markets.length > 0) {
+    const mlMarket = moneylineGroup.markets[0];
+    if (mlMarket.outcomes.length >= 2) {
+      moneylineOrder.push(mlMarket.outcomes[0].label, mlMarket.outcomes[1].label);
+    }
+  }
   
   // Find positions that match any market in this event
   const eventPositions: UserPosition[] = [];
@@ -1156,6 +1268,7 @@ function EventCard({
           selectedMarketId={selectedMarketId}
           selectedDirection={selectedDirection}
           livePrices={livePrices}
+          moneylineOrder={moneylineOrder.length >= 2 ? moneylineOrder : undefined}
         />
       ))}
       
@@ -1397,7 +1510,7 @@ export function PredictView({
     });
   };
 
-  const handleSelectMarket = (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string, soccerOutcomeLabel?: string) => {
+  const handleSelectMarket = (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string, passedOutcomeLabel?: string) => {
     // Determine which outcome based on direction
     // For spreads: "home" = index 0, "away" = index 1
     // For totals: "over" = index 0, "under" = index 1
@@ -1421,14 +1534,13 @@ export function PredictView({
     const noPrice = market.outcomes[1]?.executionPrice || market.outcomes[1]?.price || 0.5;
     
     // Create a descriptive outcome label
-    // For soccer 3-way, use the parsed team name passed from SoccerMoneylineDisplay
-    let outcomeLabel = soccerOutcomeLabel || market.groupItemTitle;
-    if (!soccerOutcomeLabel) {
-      if (marketType === "spreads") {
-        // For spreads, use the full team name for clarity
-        // The bet slip will also show the full question (e.g., "Spread: Kings (-6.5)")
-        outcomeLabel = outcome.label;
-      } else if (marketType === "totals") {
+    // For spreads, use the display label passed from SpreadMarketDisplay (e.g., "Clippers -2.5")
+    // For soccer 3-way, use the team name passed from SoccerMoneylineDisplay
+    let outcomeLabel = passedOutcomeLabel || market.groupItemTitle;
+    
+    // If no label was passed, generate one based on market type
+    if (!passedOutcomeLabel) {
+      if (marketType === "totals") {
         const line = Math.abs(market.line ?? parseLineFromTitle(market.groupItemTitle) ?? 0);
         outcomeLabel = direction === "over" ? `O ${line}` : `U ${line}`;
       } else if (outcome) {
@@ -1441,7 +1553,9 @@ export function PredictView({
     const betDirection: "yes" | "no" = outcomeIndex === 0 ? "yes" : "no";
     
     // Determine if this is a soccer 3-way market (has Yes/No toggle in BetSlip)
-    const isSoccer3Way = !!soccerOutcomeLabel;
+    // Soccer 3-way markets pass outcome labels like "Home Win", "Draw", "Away Win"
+    const isSoccer3Way = marketType === "moneyline" && !!passedOutcomeLabel && 
+      (passedOutcomeLabel.toLowerCase().includes("win") || passedOutcomeLabel.toLowerCase() === "draw");
     
     // Pass to parent with all info for bet slip
     onPlaceBet(

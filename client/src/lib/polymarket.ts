@@ -320,6 +320,49 @@ function mergeChildEvents(events: GammaEvent[]): GammaEvent[] {
   return mergedEvents;
 }
 
+// Fetch events by tag slugs (e.g., ["nba", "nfl", "soccer"])
+// Uses enabled tags from polymarketTags table
+export async function fetchEventsByTagSlugs(tagSlugs: string[]): Promise<GammaEvent[]> {
+  if (!tagSlugs.length) return [];
+  
+  try {
+    const allEvents: GammaEvent[] = [];
+    
+    for (const slug of tagSlugs) {
+      const url = `/api/polymarket/events?tag=${slug}`;
+      const response = await fetch(url);
+      
+      if (response.ok) {
+        const events: GammaEvent[] = await response.json();
+        
+        const validEvents = events.filter(event => {
+          if (!event.markets?.length) return false;
+          const market = event.markets[0];
+          try {
+            const prices = JSON.parse(market.outcomePrices || "[]");
+            return prices.length > 0;
+          } catch {
+            return false;
+          }
+        });
+        
+        allEvents.push(...validEvents);
+      }
+    }
+    
+    const uniqueEvents = allEvents.filter((event, index, self) =>
+      index === self.findIndex(e => e.id === event.id)
+    );
+    
+    const mergedEvents = mergeChildEvents(uniqueEvents);
+    
+    return mergedEvents;
+  } catch (error) {
+    console.error("Error fetching events by tag slugs:", error);
+    return [];
+  }
+}
+
 // Fetch events via server proxy (bypasses CORS)
 // Supports new format (seriesId_marketType) and legacy format (series_seriesId)
 export async function fetchGammaEvents(tagIds: string[]): Promise<GammaEvent[]> {

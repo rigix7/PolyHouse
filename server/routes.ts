@@ -590,9 +590,10 @@ export async function registerRoutes(
     try {
       const tagId = req.query.tag_id as string;
       const seriesId = req.query.series_id as string;
+      const tagSlug = req.query.tag as string;
       
-      if (!tagId && !seriesId) {
-        return res.status(400).json({ error: "tag_id or series_id required" });
+      if (!tagId && !seriesId && !tagSlug) {
+        return res.status(400).json({ error: "tag_id, series_id, or tag required" });
       }
       
       // Prefer series_id for more specific results (actual game matches)
@@ -600,6 +601,8 @@ export async function registerRoutes(
       let url = `${GAMMA_API_BASE}/events?active=true&closed=false&limit=50`;
       if (seriesId) {
         url += `&series_id=${seriesId}`;
+      } else if (tagSlug) {
+        url += `&tag=${tagSlug}`;
       } else if (tagId) {
         url += `&tag_id=${tagId}`;
       }

@@ -10,7 +10,7 @@ import { ScoutView } from "@/components/views/ScoutView";
 import { TradeView } from "@/components/views/TradeView";
 import { DashboardView } from "@/components/views/DashboardView";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { fetchGammaEvents, gammaEventToMarket, gammaEventToDisplayEvent, type DisplayEvent } from "@/lib/polymarket";
+import { fetchGammaEvents, fetchEventsByTagSlugs, gammaEventToMarket, gammaEventToDisplayEvent, type DisplayEvent } from "@/lib/polymarket";
 import { fetchPositions, type PolymarketPosition } from "@/lib/polymarketOrder";
 import { getUSDCBalance } from "@/lib/polygon";
 import { useWallet } from "@/providers/WalletContext";
@@ -18,7 +18,7 @@ import useTradingSession from "@/hooks/useTradingSession";
 import useClobClient from "@/hooks/useClobClient";
 import useClobOrder from "@/hooks/useClobOrder";
 import { useLivePrices } from "@/hooks/useLivePrices";
-import type { Market, Player, Trade, Bet, Wallet, AdminSettings, WalletRecord, Futures } from "@shared/schema";
+import type { Market, Player, Trade, Bet, Wallet, AdminSettings, WalletRecord, Futures, PolymarketTagRecord } from "@shared/schema";
 
 export default function HomePage() {
   const { authenticated: isConnected, eoaAddress: address, login, logout, isReady } = useWallet();
@@ -80,6 +80,10 @@ export default function HomePage() {
 
   const { data: adminSettings } = useQuery<AdminSettings>({
     queryKey: ["/api/admin/settings"],
+  });
+
+  const { data: enabledTags = [] } = useQuery<PolymarketTagRecord[]>({
+    queryKey: ["/api/admin/tags/enabled"],
   });
 
   const { data: walletRecord } = useQuery<WalletRecord>({
@@ -162,8 +166,8 @@ export default function HomePage() {
 
   useEffect(() => {
     const loadLiveMarkets = async () => {
-      const activeTagIds = adminSettings?.activeTagIds || [];
-      if (activeTagIds.length === 0) {
+      const tagSlugs = enabledTags.map(t => t.slug);
+      if (tagSlugs.length === 0) {
         setLiveMarkets([]);
         setDisplayEvents([]);
         return;
@@ -171,7 +175,7 @@ export default function HomePage() {
 
       setLiveMarketsLoading(true);
       try {
-        const events = await fetchGammaEvents(activeTagIds);
+        const events = await fetchEventsByTagSlugs(tagSlugs);
         
         // Convert to DisplayEvents for new event-based UI
         const displayEvts = events
@@ -207,9 +211,9 @@ export default function HomePage() {
     };
 
     loadLiveMarkets();
-  }, [adminSettings?.activeTagIds]);
+  }, [enabledTags]);
 
-  const hasLiveMarkets = (adminSettings?.activeTagIds?.length || 0) > 0;
+  const hasLiveMarkets = enabledTags.length > 0;
   const markets = hasLiveMarkets ? liveMarkets : demoMarkets;
   const marketsLoading = hasLiveMarkets ? liveMarketsLoading : demoMarketsLoading;
 

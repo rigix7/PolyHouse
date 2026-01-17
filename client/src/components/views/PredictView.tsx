@@ -359,7 +359,7 @@ function LineSelector({
             }`}
             data-testid={`line-${line}`}
           >
-            {Math.abs(line)}
+            {line}
           </button>
         ))}
       </div>
@@ -412,63 +412,22 @@ function doesTeamMatchOutcome(
   return labelLower.includes(teamLower) || teamLower.includes(labelLower);
 }
 
-// Spread market display component - shows two buttons like [SF +4.5 48¢] [PHI -4.5 53¢]
+// Spread market display component - shows two buttons with team abbreviation + price
+// The line selector below determines which spread line is being shown
+// Bet slip shows the full question for clarity on which side to back
 function SpreadMarketDisplay({
   market,
-  eventTitle,
   onSelect,
   selectedDirection,
   livePrices
 }: {
   market: ParsedMarket;
-  eventTitle: string;
   onSelect: (market: ParsedMarket, direction: "home" | "away") => void;
   selectedDirection?: "home" | "away" | null;
   livePrices?: LivePricesMap;
 }) {
   const outcomes = market.outcomes;
   if (outcomes.length < 2) return null;
-  
-  // Parse from question text - this is the authoritative source of truth
-  // Question format: "Spread: 76ers (-3.5)" tells us exactly which team has which line
-  const parsed = parseSpreadFromQuestion(market.question || "");
-  
-  // Determine which outcome gets which line based on parsed question
-  let outcome0Line: number;
-  let outcome1Line: number;
-  
-  if (parsed) {
-    // Outcome labels are the team names (e.g., "Lakers", "Rockets", "Knicks")
-    // Match the parsed team name directly against outcome labels
-    const parsedTeamLower = parsed.team.toLowerCase();
-    const outcome0Label = outcomes[0].label.toLowerCase();
-    const outcome1Label = outcomes[1].label.toLowerCase();
-    
-    // Direct label matching - this is reliable since both are team names
-    const outcome0IsParsedTeam = outcome0Label.includes(parsedTeamLower) || 
-                                  parsedTeamLower.includes(outcome0Label);
-    const outcome1IsParsedTeam = outcome1Label.includes(parsedTeamLower) || 
-                                  parsedTeamLower.includes(outcome1Label);
-    
-    if (outcome0IsParsedTeam && !outcome1IsParsedTeam) {
-      // outcomes[0] is the team mentioned in question with the parsed line
-      outcome0Line = parsed.line;
-      outcome1Line = -parsed.line;
-    } else if (outcome1IsParsedTeam && !outcome0IsParsedTeam) {
-      // outcomes[1] is the team mentioned in question
-      outcome1Line = parsed.line;
-      outcome0Line = -parsed.line;
-    } else {
-      // Fallback: assign based on outcome order (shouldn't happen with good data)
-      outcome0Line = parsed.line;
-      outcome1Line = -parsed.line;
-    }
-  } else {
-    // Fallback: use market.line directly on outcomes[0], negated on outcomes[1]
-    const fallbackLine = market.line ?? parseLineFromTitle(market.groupItemTitle) ?? 0;
-    outcome0Line = fallbackLine;
-    outcome1Line = -fallbackLine;
-  }
   
   // Use official abbreviations from Polymarket slug if available
   const outcome0Abbr = outcomes[0].abbrev || outcomes[0].label.slice(0, 3).toUpperCase();
@@ -495,9 +454,7 @@ function SpreadMarketDisplay({
         }`}
         data-testid={`spread-outcome1-${market.id}`}
       >
-        <span className="font-bold">
-          {outcome1Abbr} {outcome1Line > 0 ? "+" : ""}{outcome1Line}
-        </span>
+        <span className="font-bold">{outcome1Abbr}</span>
         <span className="font-mono font-bold text-white">{outcome1Price}¢</span>
       </button>
       <button
@@ -509,9 +466,7 @@ function SpreadMarketDisplay({
         }`}
         data-testid={`spread-outcome0-${market.id}`}
       >
-        <span className="font-bold">
-          {outcome0Abbr} {outcome0Line > 0 ? "+" : ""}{outcome0Line}
-        </span>
+        <span className="font-bold">{outcome0Abbr}</span>
         <span className="font-mono font-bold text-white">{outcome0Price}¢</span>
       </button>
     </div>
@@ -986,12 +941,12 @@ function MarketGroupDisplay({
   // Check if this is a soccer moneyline (3-way: Home/Draw/Away)
   const isSoccerMoneyline = league && isSoccerLeague(league, leagueSlug) && group.type === "moneyline" && group.markets.length >= 3;
   
-  // Extract unique lines from markets and sort them
-  const lines = Array.from(new Set(group.markets.map(m => Math.abs(m.line || 0)))).sort((a, b) => a - b);
+  // Extract unique lines from markets and sort them (keep actual values including negatives)
+  const lines = Array.from(new Set(group.markets.map(m => m.line || 0))).sort((a, b) => a - b);
   const [selectedLine, setSelectedLine] = useState(lines.length > 0 ? lines[0] : 0);
   
   // Find market matching selected line (or first market if no lines)
-  const activeMarket = group.markets.find(m => Math.abs(m.line || 0) === selectedLine) || group.markets[0];
+  const activeMarket = group.markets.find(m => (m.line || 0) === selectedLine) || group.markets[0];
   
   if (!activeMarket) return null;
   
@@ -1049,7 +1004,6 @@ function MarketGroupDisplay({
         <>
           <SpreadMarketDisplay
             market={activeMarket}
-            eventTitle={eventTitle}
             onSelect={handleSpreadSelect}
             selectedDirection={spreadDirection}
             livePrices={livePrices}

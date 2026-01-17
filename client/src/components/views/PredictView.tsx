@@ -398,8 +398,15 @@ function parseSpreadFromQuestion(question: string): { team: string; line: number
   return null;
 }
 
+// Fallback mapping for team aliases not always in Gamma API
+// These are common nicknames/aliases that may not map directly
+const FALLBACK_TEAM_ALIASES: Record<string, string> = {
+  "76ers": "phi", "sixers": "phi", "blazers": "por", "trail blazers": "por",
+  "49ers": "sf", "niners": "sf",
+};
+
 // Check if a parsed team name matches an outcome
-// Uses Gamma API team lookup for accurate name → abbreviation matching
+// Uses Gamma API team lookup with fallback mappings for robustness
 // Returns true if the team name corresponds to the outcome's label/abbrev
 function doesTeamMatchOutcome(
   parsedTeam: string, 
@@ -428,6 +435,32 @@ function doesTeamMatchOutcome(
     // Also check if label starts with the mapped abbrev
     if (labelLower.startsWith(gammaAbbrev) || gammaAbbrev.startsWith(labelLower)) {
       return true;
+    }
+  }
+  
+  // Fallback: check hardcoded aliases for uncommon team nicknames
+  const fallbackAbbrev = FALLBACK_TEAM_ALIASES[teamLower];
+  if (fallbackAbbrev) {
+    if (labelLower === fallbackAbbrev || abbrevLower === fallbackAbbrev) {
+      return true;
+    }
+  }
+  
+  // Last resort: event title position heuristic
+  // If team name appears in event title, check relative position to "vs"
+  if (eventTitle) {
+    const titleLower = eventTitle.toLowerCase();
+    const teamInTitle = titleLower.includes(teamLower);
+    if (teamInTitle) {
+      const teamIdx = titleLower.indexOf(teamLower);
+      const vsIdx = titleLower.indexOf(" vs");
+      if (vsIdx !== -1) {
+        // Team before "vs" = first team (home), after = second team (away)
+        const teamIsFirst = teamIdx < vsIdx;
+        // Check if outcome position in array correlates
+        // This is a weak heuristic but helps when nothing else matches
+        return teamIsFirst;
+      }
     }
   }
   

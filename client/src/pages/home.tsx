@@ -59,6 +59,8 @@ export default function HomePage() {
     yesPrice?: number;
     noPrice?: number;
     orderMinSize?: number;
+    question?: string;
+    isSoccer3Way?: boolean;
   } | undefined>();
   const [showBetSlip, setShowBetSlip] = useState(false);
   const [liveMarkets, setLiveMarkets] = useState<Market[]>([]);
@@ -309,7 +311,9 @@ export default function HomePage() {
     noTokenId?: string,
     yesPrice?: number,
     noPrice?: number,
-    orderMinSize?: number
+    orderMinSize?: number,
+    question?: string,
+    isSoccer3Way?: boolean
   ) => {
     if (!isConnected) {
       showToast("Connect wallet to place bets", "info");
@@ -346,6 +350,8 @@ export default function HomePage() {
         yesPrice,
         noPrice,
         orderMinSize,
+        question,
+        isSoccer3Way,
       });
       setShowBetSlip(true);
       return;
@@ -375,6 +381,8 @@ export default function HomePage() {
       yesPrice,
       noPrice,
       orderMinSize,
+      question,
+      isSoccer3Way,
     });
     setShowBetSlip(true);
   };
@@ -554,6 +562,8 @@ export default function HomePage() {
           yesTokenId={selectedBet.yesTokenId}
           noTokenId={selectedBet.noTokenId}
           onSuccess={handleBetSuccess}
+          question={selectedBet.question}
+          isSoccer3Way={selectedBet.isSoccer3Way}
           getOrderBook={clobClient ? async (tokenId: string) => {
             try {
               console.log("[OrderBook] Fetching for token:", tokenId);

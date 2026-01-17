@@ -58,7 +58,7 @@ interface PredictViewProps {
   futures: Futures[];
   isLoading: boolean;
   futuresLoading: boolean;
-  onPlaceBet: (marketId: string, outcomeId: string, odds: number, marketTitle?: string, outcomeLabel?: string, marketType?: string, direction?: "yes" | "no", yesTokenId?: string, noTokenId?: string, yesPrice?: number, noPrice?: number, orderMinSize?: number) => void;
+  onPlaceBet: (marketId: string, outcomeId: string, odds: number, marketTitle?: string, outcomeLabel?: string, marketType?: string, direction?: "yes" | "no", yesTokenId?: string, noTokenId?: string, yesPrice?: number, noPrice?: number, orderMinSize?: number, question?: string, isSoccer3Way?: boolean) => void;
   selectedBet?: { marketId: string; outcomeId: string; direction?: string };
   adminSettings?: AdminSettings;
   userPositions?: { tokenId: string; size: number; avgPrice: number; outcomeLabel?: string; marketQuestion?: string; unrealizedPnl?: number }[];
@@ -383,6 +383,20 @@ function parseLineFromTitle(title: string): number | null {
   return null;
 }
 
+// Parse spread line from question text - this is the source of truth
+// Question format: "Spread: 76ers (-3.5)" or "1H Spread: 76ers (-0.5)"
+// Returns: { team: "76ers", line: -3.5 } or null if parsing fails
+function parseSpreadFromQuestion(question: string): { team: string; line: number } | null {
+  // Match pattern: "Team Name (±X.X)" where the line is in parentheses
+  const match = question.match(/:\s*([^(]+?)\s*\(([+-]?\d+\.?\d*)\)/);
+  if (match) {
+    const team = match[1].trim();
+    const line = parseFloat(match[2]);
+    return { team, line };
+  }
+  return null;
+}
+
 // Spread market display component - shows two buttons like [SF +4.5 48¢] [PHI -4.5 53¢]
 function SpreadMarketDisplay({
   market,
@@ -397,64 +411,82 @@ function SpreadMarketDisplay({
   selectedDirection?: "home" | "away" | null;
   livePrices?: LivePricesMap;
 }) {
-  // Polymarket spread data structure:
-  // - outcomes[0] = favorite (team with negative spread in API)
-  // - outcomes[1] = underdog (team with positive spread)
-  // - line is always negative from API (favorite's handicap)
   const outcomes = market.outcomes;
   if (outcomes.length < 2) return null;
   
-  // Use market.line if available, otherwise try to parse from groupItemTitle
-  const line = market.line ?? parseLineFromTitle(market.groupItemTitle) ?? 0;
-  const favoriteTeam = outcomes[0].label;
-  const underdogTeam = outcomes[1].label;
-  // Use official abbreviations from Polymarket slug if available, fallback to first 3 chars
-  const favoriteAbbr = outcomes[0].abbrev || favoriteTeam.slice(0, 3).toUpperCase();
-  const underdogAbbr = outcomes[1].abbrev || underdogTeam.slice(0, 3).toUpperCase();
+  // Parse from question text - this is the authoritative source of truth
+  // Question format: "Spread: 76ers (-3.5)" tells us exactly which team has which line
+  const parsed = parseSpreadFromQuestion(market.question || "");
   
-  // Favorite gets negative line (e.g., -4.5), underdog gets positive (+4.5)
-  const favoriteLine = line; // Already negative from API
-  const underdogLine = -line; // Flip sign for underdog
+  // Determine which outcome gets which line based on parsed question
+  let outcome0Line: number;
+  let outcome1Line: number;
+  
+  if (parsed) {
+    // Match parsed team to outcomes to assign correct lines
+    const parsedTeamLower = parsed.team.toLowerCase();
+    const outcome0Match = outcomes[0].label.toLowerCase().includes(parsedTeamLower) || 
+                          parsedTeamLower.includes(outcomes[0].label.toLowerCase());
+    
+    if (outcome0Match) {
+      // outcomes[0] is the team mentioned in question with the parsed line
+      outcome0Line = parsed.line;
+      outcome1Line = -parsed.line;
+    } else {
+      // outcomes[1] is the team mentioned in question
+      outcome1Line = parsed.line;
+      outcome0Line = -parsed.line;
+    }
+  } else {
+    // Fallback: use market.line directly on outcomes[0], negated on outcomes[1]
+    const fallbackLine = market.line ?? parseLineFromTitle(market.groupItemTitle) ?? 0;
+    outcome0Line = fallbackLine;
+    outcome1Line = -fallbackLine;
+  }
+  
+  // Use official abbreviations from Polymarket slug if available
+  const outcome0Abbr = outcomes[0].abbrev || outcomes[0].label.slice(0, 3).toUpperCase();
+  const outcome1Abbr = outcomes[1].abbrev || outcomes[1].label.slice(0, 3).toUpperCase();
   
   // Prices: use live prices from WebSocket if available, fall back to Gamma API
-  const favoriteStaticPrice = outcomes[0].price ?? market.bestAsk ?? 0.5;
-  const underdogStaticPrice = outcomes[1].price ?? (1 - market.bestAsk) ?? 0.5;
-  const favoritePrice = Math.round(getLivePrice(outcomes[0].tokenId, favoriteStaticPrice, livePrices) * 100);
-  const underdogPrice = Math.round(getLivePrice(outcomes[1].tokenId, underdogStaticPrice, livePrices) * 100);
+  const outcome0StaticPrice = outcomes[0].price ?? market.bestAsk ?? 0.5;
+  const outcome1StaticPrice = outcomes[1].price ?? (1 - market.bestAsk) ?? 0.5;
+  const outcome0Price = Math.round(getLivePrice(outcomes[0].tokenId, outcome0StaticPrice, livePrices) * 100);
+  const outcome1Price = Math.round(getLivePrice(outcomes[1].tokenId, outcome1StaticPrice, livePrices) * 100);
   
-  // "home" = favorite (outcomes[0]), "away" = underdog (outcomes[1]) for betting direction
-  const isFavoriteSelected = selectedDirection === "home";
-  const isUnderdogSelected = selectedDirection === "away";
+  // "home" = outcomes[0], "away" = outcomes[1] for betting direction
+  const isOutcome0Selected = selectedDirection === "home";
+  const isOutcome1Selected = selectedDirection === "away";
   
   return (
     <div className="flex gap-2">
       <button
         onClick={() => onSelect(market, "away")}
         className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-all ${
-          isUnderdogSelected 
+          isOutcome1Selected 
             ? "bg-red-600 border border-red-500 text-white" 
             : "bg-red-900/40 border border-red-800/50 hover:bg-red-800/50 text-zinc-100"
         }`}
-        data-testid={`spread-underdog-${market.id}`}
+        data-testid={`spread-outcome1-${market.id}`}
       >
         <span className="font-bold">
-          {underdogAbbr} {underdogLine > 0 ? "+" : ""}{underdogLine}
+          {outcome1Abbr} {outcome1Line > 0 ? "+" : ""}{outcome1Line}
         </span>
-        <span className="font-mono font-bold text-white">{underdogPrice}¢</span>
+        <span className="font-mono font-bold text-white">{outcome1Price}¢</span>
       </button>
       <button
         onClick={() => onSelect(market, "home")}
         className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-all ${
-          isFavoriteSelected 
+          isOutcome0Selected 
             ? "bg-teal-600 border border-teal-500 text-white" 
             : "bg-teal-900/40 border border-teal-800/50 hover:bg-teal-800/50 text-zinc-100"
         }`}
-        data-testid={`spread-favorite-${market.id}`}
+        data-testid={`spread-outcome0-${market.id}`}
       >
         <span className="font-bold">
-          {favoriteAbbr} {favoriteLine > 0 ? "+" : ""}{favoriteLine}
+          {outcome0Abbr} {outcome0Line > 0 ? "+" : ""}{outcome0Line}
         </span>
-        <span className="font-mono font-bold text-white">{favoritePrice}¢</span>
+        <span className="font-mono font-bold text-white">{outcome0Price}¢</span>
       </button>
     </div>
   );
@@ -1433,18 +1465,35 @@ export function PredictView({
     // For soccer 3-way, use the parsed team name passed from SoccerMoneylineDisplay
     let outcomeLabel = soccerOutcomeLabel || market.groupItemTitle;
     if (!soccerOutcomeLabel) {
-      if (marketType === "spreads" && market.line !== undefined) {
-        const line = market.line;
-        // direction="home" = favorite (outcomes[0]), direction="away" = underdog (outcomes[1])
-        if (direction === "home") {
-          const favoriteAbbr = market.outcomes[0].abbrev || market.outcomes[0].label.slice(0, 3).toUpperCase();
-          outcomeLabel = `${favoriteAbbr} ${line > 0 ? "+" : ""}${line}`;
+      if (marketType === "spreads") {
+        // Parse from question text - authoritative source of truth
+        const parsed = parseSpreadFromQuestion(market.question || "");
+        if (parsed) {
+          const parsedTeamLower = parsed.team.toLowerCase();
+          const outcome0Match = market.outcomes[0].label.toLowerCase().includes(parsedTeamLower) || 
+                                parsedTeamLower.includes(market.outcomes[0].label.toLowerCase());
+          
+          // Determine line for selected outcome
+          let selectedLine: number;
+          let selectedAbbr: string;
+          if (direction === "home") {
+            selectedAbbr = market.outcomes[0].abbrev || market.outcomes[0].label.slice(0, 3).toUpperCase();
+            selectedLine = outcome0Match ? parsed.line : -parsed.line;
+          } else {
+            selectedAbbr = market.outcomes[1].abbrev || market.outcomes[1].label.slice(0, 3).toUpperCase();
+            selectedLine = outcome0Match ? -parsed.line : parsed.line;
+          }
+          outcomeLabel = `${selectedAbbr} ${selectedLine > 0 ? "+" : ""}${selectedLine}`;
         } else {
-          const underdogAbbr = market.outcomes[1].abbrev || market.outcomes[1].label.slice(0, 3).toUpperCase();
-          outcomeLabel = `${underdogAbbr} ${-line > 0 ? "+" : ""}${-line}`;
+          // Fallback to old logic
+          const fallbackLine = market.line ?? 0;
+          const selectedAbbr = outcome.abbrev || outcome.label.slice(0, 3).toUpperCase();
+          const selectedLine = outcomeIndex === 0 ? fallbackLine : -fallbackLine;
+          outcomeLabel = `${selectedAbbr} ${selectedLine > 0 ? "+" : ""}${selectedLine}`;
         }
-      } else if (marketType === "totals" && market.line !== undefined) {
-        outcomeLabel = direction === "over" ? `O ${market.line}` : `U ${market.line}`;
+      } else if (marketType === "totals") {
+        const line = Math.abs(market.line ?? parseLineFromTitle(market.groupItemTitle) ?? 0);
+        outcomeLabel = direction === "over" ? `O ${line}` : `U ${line}`;
       } else if (outcome) {
         // Use official teamAbbrev from Polymarket slug (can be up to 7 chars)
         outcomeLabel = market.teamAbbrev || outcome.label.slice(0, 3).toUpperCase();
@@ -1453,6 +1502,9 @@ export function PredictView({
     
     // Map direction to "yes" | "no" for BetSlip
     const betDirection: "yes" | "no" = outcomeIndex === 0 ? "yes" : "no";
+    
+    // Determine if this is a soccer 3-way market (has Yes/No toggle in BetSlip)
+    const isSoccer3Way = !!soccerOutcomeLabel;
     
     // Pass to parent with all info for bet slip
     onPlaceBet(
@@ -1467,7 +1519,9 @@ export function PredictView({
       noTokenId,
       yesPrice,
       noPrice,
-      market.orderMinSize
+      market.orderMinSize,
+      market.question,
+      isSoccer3Way
     );
   };
   
@@ -1493,6 +1547,7 @@ export function PredictView({
     const betDirection: "yes" | "no" = outcomeIndex === 0 ? "yes" : "no";
     
     // Use the question as market title and outcome label directly
+    // Additional markets are not soccer 3-way, so no toggle needed
     onPlaceBet(
       market.id, 
       outcomeId, 
@@ -1505,7 +1560,9 @@ export function PredictView({
       otherTokenId,
       yesPrice,
       noPrice,
-      market.orderMinSize
+      market.orderMinSize,
+      market.question,
+      false
     );
   };
 

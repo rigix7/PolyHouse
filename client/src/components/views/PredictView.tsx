@@ -1425,6 +1425,7 @@ export function PredictView({
   adminSettings,
   userPositions = [],
   livePrices,
+  enabledTags = [],
 }: PredictViewProps) {
   const [activeSubTab, setActiveSubTab] = useState<PredictSubTab>("matchday");
   const [selectedLeagues, setSelectedLeagues] = useState<Set<string>>(new Set());
@@ -1478,12 +1479,20 @@ export function PredictView({
     };
   }, [subscribe, unsubscribe, allTokenIds]);
 
-  // Filter and categorize events
+  // Helper to normalize text for tag matching (lowercase, trim)
+  const normalizeForMatch = (text: string) => text.toLowerCase().trim();
+  
+  // Filter and categorize events - match event.league against selected tag labels
   const filteredEvents = displayEvents.filter(event => {
     if (!isWithin5Days(event.gameStartTime)) return false;
     if (event.status === "ended") return false;
     if (selectedLeagues.size === 0) return true;
-    return selectedLeagues.has(event.league);
+    // Match event league against selected tag labels (case-insensitive)
+    const eventLeagueLower = normalizeForMatch(event.league);
+    return Array.from(selectedLeagues).some(tag => 
+      normalizeForMatch(tag) === eventLeagueLower || 
+      eventLeagueLower.includes(normalizeForMatch(tag))
+    );
   });
   
   const liveEvents = filteredEvents.filter(e => e.status === "live");
@@ -1491,9 +1500,10 @@ export function PredictView({
     .filter(e => e.status === "upcoming")
     .sort((a, b) => new Date(a.gameStartTime).getTime() - new Date(b.gameStartTime).getTime());
   
-  const availableLeagues = Array.from(
-    new Set(displayEvents.map(e => e.league))
-  ).sort();
+  // Use enabled tags from Tag Management for filter pills (both Match Day and Futures)
+  const availableTagLabels = useMemo(() => {
+    return enabledTags.map(tag => tag.label).sort();
+  }, [enabledTags]);
   
   const handleLeagueToggle = (league: string) => {
     if (league === "ALL") {
@@ -1512,27 +1522,18 @@ export function PredictView({
     });
   };
 
-  // Extract available tags from futures for filtering
-  const availableFuturesTags = useMemo(() => {
-    const tagLabels = new Set<string>();
-    for (const future of futures) {
-      if (future.tags && Array.isArray(future.tags)) {
-        for (const tag of future.tags) {
-          if (tag.label) {
-            tagLabels.add(tag.label);
-          }
-        }
-      }
-    }
-    return Array.from(tagLabels).sort();
-  }, [futures]);
-
-  // Filter futures by selected tags
+  // Filter futures by selected tags - match future.tags against selected enabled tag labels
   const filteredFutures = useMemo(() => {
     if (selectedFuturesTags.size === 0) return futures;
     return futures.filter(future => {
       if (!future.tags || !Array.isArray(future.tags)) return false;
-      return future.tags.some(tag => selectedFuturesTags.has(tag.label));
+      // Match any of the future's tags against selected enabled tag labels
+      return future.tags.some(futureTag => 
+        Array.from(selectedFuturesTags).some(selectedTag => 
+          normalizeForMatch(futureTag.label) === normalizeForMatch(selectedTag) ||
+          normalizeForMatch(futureTag.slug || '') === normalizeForMatch(selectedTag)
+        )
+      );
     });
   }, [futures, selectedFuturesTags]);
 
@@ -1670,7 +1671,7 @@ export function PredictView({
         {activeSubTab === "matchday" && (
           <div className="space-y-3">
             <LeagueFilters 
-              leagues={availableLeagues}
+              leagues={availableTagLabels}
               selectedLeagues={selectedLeagues}
               onToggle={handleLeagueToggle}
             />
@@ -1742,7 +1743,7 @@ export function PredictView({
         {activeSubTab === "futures" && (
           <div className="space-y-3">
             <LeagueFilters 
-              leagues={availableFuturesTags}
+              leagues={availableTagLabels}
               selectedLeagues={selectedFuturesTags}
               onToggle={handleFuturesTagToggle}
             />

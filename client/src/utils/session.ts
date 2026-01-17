@@ -1,3 +1,7 @@
+// Bump this version to force all users to re-initialize their trading sessions
+// v2: Fixed credential derivation to use Safe context (signatureType=2) instead of EOA-only
+export const TRADING_SESSION_VERSION = 2;
+
 export interface TradingSession {
   eoaAddress: string;
   safeAddress: string;
@@ -12,6 +16,8 @@ export interface TradingSession {
   // Track which address credentials were derived for
   // If undefined or mismatched with safeAddress, credentials need re-derivation
   credentialsDerivedFor?: string;
+  // Session version for forced migrations
+  sessionVersion?: number;
   lastChecked: number;
 }
 

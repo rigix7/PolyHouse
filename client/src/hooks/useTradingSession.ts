@@ -11,6 +11,7 @@ import {
   clearSession as clearStoredSession,
   TradingSession,
   SessionStep,
+  TRADING_SESSION_VERSION,
 } from "@/utils/session";
 
 // Save Safe deployment status to database
@@ -71,6 +72,19 @@ export default function useTradingSession() {
     }
 
     const stored = loadSession(eoaAddress);
+
+    // CRITICAL: Check session version and clear outdated sessions
+    // v2: Fixed credential derivation to use Safe context (signatureType=2) instead of EOA-only
+    if (stored && (!stored.sessionVersion || stored.sessionVersion < TRADING_SESSION_VERSION)) {
+      console.log(
+        `[TradingSession] Detected outdated session (v${stored.sessionVersion || 1} < v${TRADING_SESSION_VERSION}) - clearing to force re-initialization`
+      );
+      clearStoredSession(eoaAddress);
+      setTradingSession(null);
+      setCurrentStep("idle");
+      setSessionError(null);
+      return;
+    }
 
     // CRITICAL: Detect stale sessions that have credentials derived for EOA (or no tracking field)
     // These sessions MUST be cleared to force re-derivation with Safe-based credentials
@@ -207,6 +221,7 @@ export default function useTradingSession() {
         hasApprovals,
         apiCredentials: apiCreds,
         credentialsDerivedFor: safeAddress, // Track that credentials are for Safe address
+        sessionVersion: TRADING_SESSION_VERSION, // Track version for future migrations
         lastChecked: Date.now(),
       };
 

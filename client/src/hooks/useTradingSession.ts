@@ -4,17 +4,40 @@ import { useWallet } from "@/providers/WalletContext";
 import useTokenApprovals from "@/hooks/useTokenApprovals";
 import useSafeDeployment from "@/hooks/useSafeDeployment";
 import useUserApiCredentials from "@/hooks/useUserApiCredentials";
+import { apiRequest } from "@/lib/queryClient";
 import {
   loadSession,
   saveSession,
   clearSession as clearStoredSession,
-  forceSessionClearIfNeeded,
   TradingSession,
   SessionStep,
 } from "@/utils/session";
 
-// Run force session clear once on module load (one-time migration)
-forceSessionClearIfNeeded();
+// Save Safe deployment status to database
+async function saveSafeStatusToDb(eoaAddress: string, safeAddress: string): Promise<void> {
+  try {
+    await apiRequest("POST", `/api/wallet/${eoaAddress}/safe`, {
+      safeAddress,
+      isSafeDeployed: true,
+    });
+    console.log("[TradingSession] Saved Safe status to database");
+  } catch (err) {
+    console.error("[TradingSession] Failed to save Safe status:", err);
+  }
+}
+
+// Fetch wallet record to check if Safe is already deployed
+async function fetchWalletRecord(eoaAddress: string): Promise<{ safeAddress?: string; isSafeDeployed?: boolean } | null> {
+  try {
+    const response = await fetch(`/api/wallet/${eoaAddress}`);
+    if (response.ok) {
+      return await response.json();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 // This is the coordination hook that manages the user's trading session
 // It orchestrates the steps for initializing both the clob and relay clients
@@ -36,8 +59,9 @@ export default function useTradingSession() {
   const { relayClient, initializeRelayClient, clearRelayClient } =
     useRelayClient();
 
-  // Check for existing trading session in localStorage when wallet is connected
-  // Note: We no longer auto-restore from database to guarantee fresh credential derivation
+  // Always check for an existing trading session after wallet is connected by checking
+  // session object from localStorage to track the status of the user's trading session
+  // Also check database for Safe deployment status to auto-restore sessions
   useEffect(() => {
     if (!eoaAddress) {
       setTradingSession(null);
@@ -48,30 +72,45 @@ export default function useTradingSession() {
 
     const stored = loadSession(eoaAddress);
 
-    // Validate that stored session has valid credentials for current EOA
-    if (stored && stored.hasApiCredentials) {
-      // Check if credentials were derived for this EOA
-      if (!stored.credentialsDerivedFor || 
-          stored.credentialsDerivedFor.toLowerCase() !== eoaAddress.toLowerCase()) {
-        console.log(
-          "[TradingSession] Session credentials mismatch - clearing to force re-initialization"
-        );
-        clearStoredSession(eoaAddress);
-        setTradingSession(null);
-        setCurrentStep("idle");
-        return;
-      }
-      // Valid session with matching credentials
-      setTradingSession(stored);
+    // CRITICAL: Detect stale sessions that have credentials derived for EOA (or no tracking field)
+    // These sessions MUST be cleared to force re-derivation with Safe-based credentials
+    // This is a one-time migration for users who had sessions before the Safe credential fix
+    if (stored && stored.hasApiCredentials && !stored.credentialsDerivedFor) {
+      console.log(
+        "[TradingSession] Detected stale session with EOA credentials - clearing to force re-initialization"
+      );
+      clearStoredSession(eoaAddress);
+      setTradingSession(null);
+      setCurrentStep("idle");
+      setSessionError(null);
       return;
     }
 
-    // No valid stored session - user will need to click Activate
+    // If we have a valid stored session, use it
     if (stored) {
       setTradingSession(stored);
-    } else {
-      setCurrentStep("idle");
+      return;
     }
+    
+    // No local session - check database for existing Safe deployment
+    // If Safe was previously deployed, we can auto-trigger initialization
+    let cancelled = false;
+    fetchWalletRecord(eoaAddress).then((record) => {
+      if (cancelled) return; // Guard against stale callback if eoaAddress changed
+      if (record?.safeAddress && record?.isSafeDeployed) {
+        console.log("[TradingSession] Found deployed Safe in database, auto-restoring session...");
+        // Signal that we should auto-initialize (user won't need to click Activate)
+        setCurrentStep("auto_restore");
+        setSessionError(null);
+      } else {
+        setCurrentStep("idle");
+      }
+    });
+    
+    // Cleanup function to handle eoaAddress changes
+    return () => {
+      cancelled = true;
+    };
   }, [eoaAddress]);
 
   // Restores the relay client when session exists
@@ -121,15 +160,14 @@ export default function useTradingSession() {
         await deploySafe(initializedRelayClient);
       }
 
-      // Step 5: Get User API Credentials (derive or create)
-      // NOTE: Per official Polymarket example, credentials are derived with EOA-only client
-      // The ClobClient with signatureType=2 handles Safe association for order building
+      // Step 5: Get User API Credentials (derive or create) for the Safe address
+      // IMPORTANT: Credentials must be derived for the Safe proxy address (not EOA)
+      // because orders are signed with signatureType=2 where the Safe is the maker
       let apiCreds = tradingSession?.apiCredentials;
 
       // Check if credentials need re-derivation:
       // - No credentials stored
-      // - Credentials were derived for wrong address
-      // NOTE: Credentials are derived with EOA-only client, so credentialsDerivedFor should match EOA
+      // - Credentials were derived for wrong address (migration from EOA to Safe)
       const needsCredentials =
         !tradingSession?.hasApiCredentials ||
         !apiCreds ||
@@ -138,13 +176,13 @@ export default function useTradingSession() {
         !apiCreds.passphrase ||
         (tradingSession?.credentialsDerivedFor &&
           tradingSession.credentialsDerivedFor.toLowerCase() !==
-            eoaAddress.toLowerCase()) ||
+            safeAddress.toLowerCase()) ||
         !tradingSession?.credentialsDerivedFor; // Force re-derive if field is missing (old session)
 
       if (needsCredentials) {
         setCurrentStep("credentials");
         console.log(
-          `[TradingSession] Deriving credentials with EOA: ${eoaAddress} (Safe: ${safeAddress})`
+          `[TradingSession] Deriving credentials for Safe address: ${safeAddress}`
         );
         apiCreds = await createOrDeriveUserApiCredentials(safeAddress);
       }
@@ -168,12 +206,15 @@ export default function useTradingSession() {
         hasApiCredentials: true,
         hasApprovals,
         apiCredentials: apiCreds,
-        credentialsDerivedFor: eoaAddress, // Track EOA that derived credentials (EOA-only client)
+        credentialsDerivedFor: safeAddress, // Track that credentials are for Safe address
         lastChecked: Date.now(),
       };
 
       setTradingSession(newSession);
       saveSession(eoaAddress, newSession);
+      
+      // Step 8: Persist Safe status to database for cross-session restoration
+      await saveSafeStatusToDb(eoaAddress, safeAddress);
 
       setCurrentStep("complete");
     } catch (err) {
@@ -197,6 +238,19 @@ export default function useTradingSession() {
     setAllTokenApprovals,
   ]);
 
+  // Auto-restore session when database shows Safe was previously deployed
+  // Guard: immediately set to checking to prevent repeated triggers
+  useEffect(() => {
+    if (currentStep === "auto_restore" && eoaAddress && walletClient) {
+      console.log("[TradingSession] Auto-restoring session for existing Safe deployment");
+      // Immediately transition to "checking" to prevent re-entry
+      setCurrentStep("checking");
+      initializeTradingSession().catch((err) => {
+        console.error("Failed to auto-restore session:", err);
+        setCurrentStep("idle");
+      });
+    }
+  }, [currentStep, eoaAddress, walletClient, initializeTradingSession]);
 
   // This function clears the trading session and resets the state
   const endTradingSession = useCallback(() => {

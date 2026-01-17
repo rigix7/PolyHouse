@@ -18,7 +18,7 @@ import useTradingSession from "@/hooks/useTradingSession";
 import useClobClient from "@/hooks/useClobClient";
 import useClobOrder from "@/hooks/useClobOrder";
 import { useLivePrices } from "@/hooks/useLivePrices";
-import type { Market, Player, Trade, Bet, Wallet, AdminSettings, WalletRecord, Futures, PolymarketTagRecord, FuturesCategory } from "@shared/schema";
+import type { Market, Player, Trade, Bet, Wallet, AdminSettings, WalletRecord, Futures } from "@shared/schema";
 
 export default function HomePage() {
   const { authenticated: isConnected, eoaAddress: address, login, logout, isReady } = useWallet();
@@ -59,8 +59,6 @@ export default function HomePage() {
     yesPrice?: number;
     noPrice?: number;
     orderMinSize?: number;
-    question?: string;
-    isSoccer3Way?: boolean;
   } | undefined>();
   const [showBetSlip, setShowBetSlip] = useState(false);
   const [liveMarkets, setLiveMarkets] = useState<Market[]>([]);
@@ -80,14 +78,6 @@ export default function HomePage() {
 
   const { data: adminSettings } = useQuery<AdminSettings>({
     queryKey: ["/api/admin/settings"],
-  });
-
-  const { data: enabledTags = [] } = useQuery<PolymarketTagRecord[]>({
-    queryKey: ["/api/admin/tags/enabled"],
-  });
-
-  const { data: futuresCategories = [] } = useQuery<FuturesCategory[]>({
-    queryKey: ["/api/futures-categories"],
   });
 
   const { data: walletRecord } = useQuery<WalletRecord>({
@@ -168,28 +158,18 @@ export default function HomePage() {
     }
   }, [safeAddress, address]);
 
-  // Use admin settings activeTagIds to fetch Match Day events
-  const activeTagIds = useMemo(() => 
-    (adminSettings?.activeTagIds || []).sort().join(','), 
-    [adminSettings?.activeTagIds]
-  );
-  
   useEffect(() => {
     const loadLiveMarkets = async () => {
-      const tagIds = activeTagIds ? activeTagIds.split(',').filter(Boolean) : [];
-      
-      // Don't fetch if no leagues are selected in Match Day settings
-      if (tagIds.length === 0) {
-        setDisplayEvents([]);
+      const activeTagIds = adminSettings?.activeTagIds || [];
+      if (activeTagIds.length === 0) {
         setLiveMarkets([]);
-        setLiveMarketsLoading(false);
+        setDisplayEvents([]);
         return;
       }
-      
+
       setLiveMarketsLoading(true);
       try {
-        // Fetch events based on Match Day settings (series IDs)
-        const events = await fetchGammaEvents(tagIds);
+        const events = await fetchGammaEvents(activeTagIds);
         
         // Convert to DisplayEvents for new event-based UI
         const displayEvts = events
@@ -225,11 +205,11 @@ export default function HomePage() {
     };
 
     loadLiveMarkets();
-  }, [activeTagIds]);
+  }, [adminSettings?.activeTagIds]);
 
-  // Always use live markets from Polymarket (filtered by enabled tags or all if none enabled)
-  const markets = liveMarkets;
-  const marketsLoading = liveMarketsLoading;
+  const hasLiveMarkets = (adminSettings?.activeTagIds?.length || 0) > 0;
+  const markets = hasLiveMarkets ? liveMarkets : demoMarkets;
+  const marketsLoading = hasLiveMarkets ? liveMarketsLoading : demoMarketsLoading;
 
   // Build wallet object from real data
   const wildBalance = walletRecord?.wildPoints || 0;
@@ -329,9 +309,7 @@ export default function HomePage() {
     noTokenId?: string,
     yesPrice?: number,
     noPrice?: number,
-    orderMinSize?: number,
-    question?: string,
-    isSoccer3Way?: boolean
+    orderMinSize?: number
   ) => {
     if (!isConnected) {
       showToast("Connect wallet to place bets", "info");
@@ -368,8 +346,6 @@ export default function HomePage() {
         yesPrice,
         noPrice,
         orderMinSize,
-        question,
-        isSoccer3Way,
       });
       setShowBetSlip(true);
       return;
@@ -399,8 +375,6 @@ export default function HomePage() {
       yesPrice,
       noPrice,
       orderMinSize,
-      question,
-      isSoccer3Way,
     });
     setShowBetSlip(true);
   };
@@ -514,8 +488,6 @@ export default function HomePage() {
               adminSettings={adminSettings}
               userPositions={userPositions}
               livePrices={livePrices}
-              enabledTags={enabledTags}
-              futuresCategories={futuresCategories}
             />
           )}
           {activeTab === "scout" && (
@@ -582,8 +554,6 @@ export default function HomePage() {
           yesTokenId={selectedBet.yesTokenId}
           noTokenId={selectedBet.noTokenId}
           onSuccess={handleBetSuccess}
-          question={selectedBet.question}
-          isSoccer3Way={selectedBet.isSoccer3Way}
           getOrderBook={clobClient ? async (tokenId: string) => {
             try {
               console.log("[OrderBook] Fetching for token:", tokenId);

@@ -9,12 +9,10 @@ import {
   walletRecords,
   adminSettings,
   futures,
-  futuresCategories,
   sportFieldConfigs,
   sportMarketConfigs,
   polymarketPositions,
   polymarketOrders,
-  polymarketTags,
   type Market,
   type InsertMarket,
   type Player,
@@ -28,8 +26,6 @@ import {
   type WalletRecord,
   type Futures,
   type InsertFutures,
-  type FuturesCategory,
-  type InsertFuturesCategory,
   type SportFieldConfig,
   type InsertSportFieldConfig,
   type SportMarketConfig,
@@ -38,8 +34,6 @@ import {
   type InsertPolymarketPosition,
   type PolymarketOrder,
   type InsertPolymarketOrder,
-  type PolymarketTagRecord,
-  type InsertPolymarketTag,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -77,13 +71,6 @@ export interface IStorage {
   getFuturesById(id: string): Promise<Futures | undefined>;
   createFutures(future: InsertFutures): Promise<Futures>;
   deleteFutures(id: string): Promise<boolean>;
-  updateFuturesCategory(id: string, categoryId: number | null): Promise<Futures | undefined>;
-
-  getFuturesCategories(): Promise<FuturesCategory[]>;
-  getFuturesCategoryById(id: number): Promise<FuturesCategory | undefined>;
-  createFuturesCategory(category: InsertFuturesCategory): Promise<FuturesCategory>;
-  updateFuturesCategory2(id: number, updates: Partial<InsertFuturesCategory>): Promise<FuturesCategory | undefined>;
-  deleteFuturesCategory(id: number): Promise<boolean>;
 
   getSportFieldConfigs(): Promise<SportFieldConfig[]>;
   getSportFieldConfig(sportSlug: string): Promise<SportFieldConfig | undefined>;
@@ -103,13 +90,6 @@ export interface IStorage {
   getPolymarketPositions(walletAddress: string): Promise<PolymarketPosition[]>;
   createPolymarketPosition(position: InsertPolymarketPosition): Promise<PolymarketPosition>;
   updatePolymarketPosition(id: number, updates: Partial<PolymarketPosition>): Promise<PolymarketPosition | undefined>;
-
-  getPolymarketTags(): Promise<PolymarketTagRecord[]>;
-  getEnabledPolymarketTags(): Promise<PolymarketTagRecord[]>;
-  upsertPolymarketTag(tag: InsertPolymarketTag): Promise<PolymarketTagRecord>;
-  setTagEnabled(id: string, enabled: boolean): Promise<PolymarketTagRecord | undefined>;
-  clearAllPolymarketTags(): Promise<void>;
-  updateFuturesTags(id: string, tags: Array<{ id: string; label: string; slug: string }>): Promise<Futures | undefined>;
 
   seedInitialData(): Promise<void>;
 }
@@ -373,54 +353,6 @@ export class DatabaseStorage implements IStorage {
 
   async deleteFutures(id: string): Promise<boolean> {
     await db.delete(futures).where(eq(futures.id, id));
-    return true;
-  }
-
-  async updateFuturesCategory(id: string, categoryId: number | null): Promise<Futures | undefined> {
-    const [updated] = await db.update(futures)
-      .set({ categoryId })
-      .where(eq(futures.id, id))
-      .returning();
-    return updated || undefined;
-  }
-
-  async getFuturesCategories(): Promise<FuturesCategory[]> {
-    return await db.select().from(futuresCategories).orderBy(futuresCategories.sortOrder);
-  }
-
-  async getFuturesCategoryById(id: number): Promise<FuturesCategory | undefined> {
-    const [category] = await db.select().from(futuresCategories).where(eq(futuresCategories.id, id));
-    return category || undefined;
-  }
-
-  async createFuturesCategory(category: InsertFuturesCategory): Promise<FuturesCategory> {
-    const now = new Date().toISOString();
-    const [newCategory] = await db.insert(futuresCategories).values({
-      name: category.name,
-      slug: category.slug,
-      sortOrder: category.sortOrder ?? 0,
-      createdAt: now,
-      updatedAt: now,
-    }).returning();
-    return newCategory;
-  }
-
-  async updateFuturesCategory2(id: number, updates: Partial<InsertFuturesCategory>): Promise<FuturesCategory | undefined> {
-    const now = new Date().toISOString();
-    const [updated] = await db.update(futuresCategories)
-      .set({ ...updates, updatedAt: now })
-      .where(eq(futuresCategories.id, id))
-      .returning();
-    return updated || undefined;
-  }
-
-  async deleteFuturesCategory(id: number): Promise<boolean> {
-    // First, unassign any futures that have this category
-    await db.update(futures)
-      .set({ categoryId: null })
-      .where(eq(futures.categoryId, id));
-    // Then delete the category
-    await db.delete(futuresCategories).where(eq(futuresCategories.id, id));
     return true;
   }
 
@@ -691,52 +623,6 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db.update(polymarketPositions)
       .set({ ...updates, updatedAt: new Date().toISOString() })
       .where(eq(polymarketPositions.id, id))
-      .returning();
-    return updated || undefined;
-  }
-
-  async getPolymarketTags(): Promise<PolymarketTagRecord[]> {
-    return await db.select().from(polymarketTags);
-  }
-
-  async getEnabledPolymarketTags(): Promise<PolymarketTagRecord[]> {
-    return await db.select().from(polymarketTags).where(eq(polymarketTags.enabled, true));
-  }
-
-  async upsertPolymarketTag(tag: InsertPolymarketTag): Promise<PolymarketTagRecord> {
-    const now = new Date().toISOString();
-    const existing = await db.select().from(polymarketTags).where(eq(polymarketTags.id, tag.id));
-    
-    if (existing.length > 0) {
-      const [updated] = await db.update(polymarketTags)
-        .set({ ...tag, updatedAt: now })
-        .where(eq(polymarketTags.id, tag.id))
-        .returning();
-      return updated;
-    } else {
-      const [newTag] = await db.insert(polymarketTags)
-        .values({ ...tag, createdAt: now, updatedAt: now })
-        .returning();
-      return newTag;
-    }
-  }
-
-  async setTagEnabled(id: string, enabled: boolean): Promise<PolymarketTagRecord | undefined> {
-    const [updated] = await db.update(polymarketTags)
-      .set({ enabled, updatedAt: new Date().toISOString() })
-      .where(eq(polymarketTags.id, id))
-      .returning();
-    return updated || undefined;
-  }
-
-  async clearAllPolymarketTags(): Promise<void> {
-    await db.delete(polymarketTags);
-  }
-
-  async updateFuturesTags(id: string, tags: Array<{ id: string; label: string; slug: string }>): Promise<Futures | undefined> {
-    const [updated] = await db.update(futures)
-      .set({ tags })
-      .where(eq(futures.id, id))
       .returning();
     return updated || undefined;
   }

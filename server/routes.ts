@@ -421,27 +421,6 @@ export async function registerRoutes(
     }
   });
 
-  // Fetch teams from Gamma API for team name → abbreviation lookup
-  // Used to accurately match team names in questions to outcome labels
-  app.get("/api/polymarket/teams", async (req, res) => {
-    try {
-      const { league } = req.query;
-      let url = `${GAMMA_API_BASE}/teams?limit=500`;
-      if (league) {
-        url += `&league=${league}`;
-      }
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Gamma API error: ${response.status}`);
-      }
-      const teams = await response.json();
-      res.json(teams);
-    } catch (error) {
-      console.error("Error fetching Polymarket teams:", error);
-      res.status(500).json({ error: "Failed to fetch teams" });
-    }
-  });
-
   // Fetch sports with hierarchical market types for granular selection
   // Returns sports with nested market type options fetched dynamically from each league's events
   app.get("/api/polymarket/tags", async (req, res) => {
@@ -590,19 +569,15 @@ export async function registerRoutes(
     try {
       const tagId = req.query.tag_id as string;
       const seriesId = req.query.series_id as string;
-      const tagSlug = req.query.tag as string;
       
-      if (!tagId && !seriesId && !tagSlug) {
-        return res.status(400).json({ error: "tag_id, series_id, or tag required" });
+      if (!tagId && !seriesId) {
+        return res.status(400).json({ error: "tag_id or series_id required" });
       }
       
       // Prefer series_id for more specific results (actual game matches)
-      // Fetch 50 events to ensure we capture all games - Polymarket API returns events in non-chronological order
-      let url = `${GAMMA_API_BASE}/events?active=true&closed=false&limit=50`;
+      let url = `${GAMMA_API_BASE}/events?active=true&closed=false&limit=15`;
       if (seriesId) {
         url += `&series_id=${seriesId}`;
-      } else if (tagSlug) {
-        url += `&tag=${tagSlug}`;
       } else if (tagId) {
         url += `&tag_id=${tagId}`;
       }
@@ -1132,170 +1107,6 @@ export async function registerRoutes(
     }
   });
 
-  // ============================================================
-  // POLYMARKET TAG MANAGEMENT
-  // ============================================================
-
-  app.get("/api/admin/tags", async (req, res) => {
-    try {
-      const tags = await storage.getPolymarketTags();
-      res.json(tags);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch tags" });
-    }
-  });
-
-  app.get("/api/admin/tags/enabled", async (req, res) => {
-    try {
-      const tags = await storage.getEnabledPolymarketTags();
-      res.json(tags);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch enabled tags" });
-    }
-  });
-
-  app.post("/api/admin/tags/sync", async (req, res) => {
-    try {
-      const GAMMA_API = "https://gamma-api.polymarket.com";
-      
-      // Sports keywords - same list used by Match Day for consistency
-      const SPORTS_KEYWORDS = [
-        "nba", "nfl", "mlb", "nhl", "soccer", "football", "basketball", 
-        "tennis", "mma", "boxing", "golf", "esports", "epl", "ucl", 
-        "la-liga", "serie-a", "bundesliga", "ligue-1", "champions-league",
-        "atp", "wta", "f1", "nascar", "ufc", "pga", "hockey", "baseball",
-        "ncaa", "college-football", "college-basketball", "cfb", "cbb",
-        "premier-league", "world-cup", "fifa", "sports"
-      ];
-      
-      // Helper to check if an event has sports-related tags
-      const isSportsEvent = (tags: Array<{ slug?: string; label?: string }>) => {
-        if (!tags || !Array.isArray(tags)) return false;
-        return tags.some(tag => 
-          SPORTS_KEYWORDS.some(keyword => 
-            tag.slug?.toLowerCase().includes(keyword) || 
-            tag.label?.toLowerCase().includes(keyword)
-          )
-        );
-      };
-      
-      // Fetch Match Day events from Gamma API
-      const eventsResponse = await fetch(
-        `${GAMMA_API}/events?active=true&closed=false&limit=200`
-      );
-      if (!eventsResponse.ok) {
-        throw new Error(`Gamma API events error: ${eventsResponse.status}`);
-      }
-      const allEvents = await eventsResponse.json() as Array<{
-        id: string;
-        tags: Array<{ id: string; label: string; slug: string }>;
-      }>;
-      
-      // Filter to only sports events
-      const sportsEvents = allEvents.filter(event => isSportsEvent(event.tags));
-      
-      // Get Futures from database
-      const futures = await storage.getFutures();
-      
-      // Extract unique sports-related tags from Match Day events
-      const tagMap = new Map<string, { id: string; label: string; slug: string; eventCount: number }>();
-      
-      for (const event of sportsEvents) {
-        if (event.tags && Array.isArray(event.tags)) {
-          // Only include tags that match sports keywords
-          const sportsTags = event.tags.filter(tag =>
-            SPORTS_KEYWORDS.some(keyword =>
-              tag.slug?.toLowerCase().includes(keyword) ||
-              tag.label?.toLowerCase().includes(keyword)
-            )
-          );
-          for (const tag of sportsTags) {
-            if (tag.id && tag.slug) {
-              const existing = tagMap.get(tag.id);
-              tagMap.set(tag.id, {
-                id: tag.id,
-                label: tag.label || tag.slug,
-                slug: tag.slug,
-                eventCount: (existing?.eventCount || 0) + 1,
-              });
-            }
-          }
-        }
-      }
-      
-      // Extract tags from Futures (filtered by sports keywords)
-      for (const future of futures) {
-        if (future.tags && Array.isArray(future.tags)) {
-          const futureTags = future.tags as Array<{ id: string; label: string; slug: string }>;
-          // Only include sports-related tags from futures
-          const sportsTags = futureTags.filter(tag =>
-            SPORTS_KEYWORDS.some(keyword =>
-              tag.slug?.toLowerCase().includes(keyword) ||
-              tag.label?.toLowerCase().includes(keyword)
-            )
-          );
-          for (const tag of sportsTags) {
-            if (tag.id && tag.slug) {
-              const existing = tagMap.get(tag.id);
-              tagMap.set(tag.id, {
-                id: tag.id,
-                label: tag.label || tag.slug,
-                slug: tag.slug,
-                eventCount: (existing?.eventCount || 0) + 1,
-              });
-            }
-          }
-        }
-      }
-      
-      // Get existing tags to preserve enabled state (before clearing)
-      const existingTags = await storage.getPolymarketTags();
-      const existingMap = new Map(existingTags.map(t => [t.id, t]));
-      
-      // Clear all existing tags before inserting fresh sports-only set
-      await storage.clearAllPolymarketTags();
-      
-      // Insert extracted sports tags
-      const upsertedTags = [];
-      let sortOrder = 0;
-      for (const tag of Array.from(tagMap.values())) {
-        const existing = existingMap.get(tag.id);
-        const upserted = await storage.upsertPolymarketTag({
-          id: tag.id,
-          label: tag.label,
-          slug: tag.slug,
-          category: "league",
-          parentTagId: null,
-          eventCount: tag.eventCount,
-          enabled: existing?.enabled ?? false,
-          sortOrder: sortOrder++,
-        });
-        upsertedTags.push(upserted);
-      }
-      
-      res.json({ synced: upsertedTags.length, tags: upsertedTags });
-    } catch (error) {
-      console.error("Tag sync error:", error);
-      res.status(500).json({ error: "Failed to sync tags from Polymarket" });
-    }
-  });
-
-  app.patch("/api/admin/tags/:id/enabled", async (req, res) => {
-    try {
-      const { enabled } = req.body;
-      if (typeof enabled !== "boolean") {
-        return res.status(400).json({ error: "enabled must be a boolean" });
-      }
-      const updated = await storage.setTagEnabled(req.params.id, enabled);
-      if (!updated) {
-        return res.status(404).json({ error: "Tag not found" });
-      }
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to update tag" });
-    }
-  });
-
   // Futures CRUD endpoints
   app.get("/api/futures", async (req, res) => {
     try {
@@ -1328,85 +1139,6 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete futures" });
-    }
-  });
-
-  // Update futures category assignment
-  app.patch("/api/futures/:id/category", async (req, res) => {
-    try {
-      const { categoryId } = req.body;
-      const updated = await storage.updateFuturesCategory(req.params.id, categoryId);
-      if (!updated) {
-        return res.status(404).json({ error: "Futures not found" });
-      }
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to update futures category" });
-    }
-  });
-
-  // ============================================================
-  // FUTURES CATEGORIES CRUD
-  // ============================================================
-
-  app.get("/api/futures-categories", async (req, res) => {
-    try {
-      const categories = await storage.getFuturesCategories();
-      res.json(categories);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch futures categories" });
-    }
-  });
-
-  app.post("/api/futures-categories", async (req, res) => {
-    try {
-      const { name, slug, sortOrder } = req.body;
-      if (!name || !slug) {
-        return res.status(400).json({ error: "name and slug are required" });
-      }
-      const category = await storage.createFuturesCategory({ name, slug, sortOrder: sortOrder ?? 0 });
-      res.status(201).json(category);
-    } catch (error: any) {
-      if (error.code === "23505") {
-        return res.status(400).json({ error: "Category slug already exists" });
-      }
-      res.status(500).json({ error: "Failed to create futures category" });
-    }
-  });
-
-  app.patch("/api/futures-categories/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: "Invalid category ID" });
-      }
-      const updates = req.body;
-      const updated = await storage.updateFuturesCategory2(id, updates);
-      if (!updated) {
-        return res.status(404).json({ error: "Category not found" });
-      }
-      res.json(updated);
-    } catch (error: any) {
-      if (error.code === "23505") {
-        return res.status(400).json({ error: "Category slug already exists" });
-      }
-      res.status(500).json({ error: "Failed to update futures category" });
-    }
-  });
-
-  app.delete("/api/futures-categories/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: "Invalid category ID" });
-      }
-      const deleted = await storage.deleteFuturesCategory(id);
-      if (!deleted) {
-        return res.status(404).json({ error: "Category not found" });
-      }
-      res.status(204).send();
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete futures category" });
     }
   });
 

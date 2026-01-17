@@ -80,15 +80,6 @@ export const adminSettings = pgTable("admin_settings", {
   lastUpdated: text("last_updated").notNull(),
 });
 
-export const futuresCategories = pgTable("futures_categories", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  slug: text("slug").notNull().unique(),
-  sortOrder: integer("sort_order").notNull().default(0),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
-});
-
 export const futures = pgTable("futures", {
   id: varchar("id", { length: 36 }).primaryKey(),
   polymarketSlug: text("polymarket_slug").notNull(),
@@ -99,8 +90,6 @@ export const futures = pgTable("futures", {
   startDate: text("start_date"),
   endDate: text("end_date"),
   status: text("status").notNull().default("active"),
-  categoryId: integer("category_id"),
-  tags: jsonb("tags").$type<Array<{ id: string; label: string; slug: string }>>(),
   marketData: jsonb("market_data").$type<{
     question: string;
     outcomes: Array<{ label: string; probability: number; odds: number; marketId?: string; conditionId?: string }>;
@@ -109,19 +98,6 @@ export const futures = pgTable("futures", {
     conditionId: string;
   }>(),
   createdAt: text("created_at").notNull(),
-});
-
-export const polymarketTags = pgTable("polymarket_tags", {
-  id: varchar("id", { length: 36 }).primaryKey(),
-  label: text("label").notNull(),
-  slug: text("slug").notNull().unique(),
-  category: text("category"), // "sport", "league", "event_type"
-  parentTagId: varchar("parent_tag_id", { length: 36 }),
-  eventCount: integer("event_count").default(0),
-  enabled: boolean("enabled").notNull().default(false),
-  sortOrder: integer("sort_order").default(0),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
 });
 
 export const sportMarketConfigs = pgTable("sport_market_configs", {
@@ -186,17 +162,9 @@ export type Trade = typeof trades.$inferSelect;
 export type WalletRecord = typeof walletRecords.$inferSelect;
 export type AdminSettings = typeof adminSettings.$inferSelect;
 
-export const insertFuturesCategorySchema = createInsertSchema(futuresCategories).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertFuturesCategory = z.infer<typeof insertFuturesCategorySchema>;
-export type FuturesCategory = typeof futuresCategories.$inferSelect;
-
 export const insertFuturesSchema = createInsertSchema(futures).omit({ id: true, createdAt: true });
 export type InsertFutures = z.infer<typeof insertFuturesSchema>;
 export type Futures = typeof futures.$inferSelect;
-
-export const insertPolymarketTagSchema = createInsertSchema(polymarketTags).omit({ createdAt: true, updatedAt: true });
-export type InsertPolymarketTag = z.infer<typeof insertPolymarketTagSchema>;
-export type PolymarketTagRecord = typeof polymarketTags.$inferSelect;
 
 export const insertSportFieldConfigSchema = createInsertSchema(sportFieldConfigs).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertSportFieldConfig = z.infer<typeof insertSportFieldConfigSchema>;

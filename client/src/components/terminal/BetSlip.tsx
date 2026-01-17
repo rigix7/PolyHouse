@@ -131,8 +131,6 @@ interface BetSlipProps {
   noTokenId?: string;
   getOrderBook?: (tokenId: string) => Promise<OrderBookData | null>;
   onSuccess?: () => void;
-  question?: string;
-  isSoccer3Way?: boolean;
 }
 
 export function BetSlip({
@@ -153,8 +151,6 @@ export function BetSlip({
   noTokenId,
   getOrderBook,
   onSuccess,
-  question,
-  isSoccer3Way = false,
 }: BetSlipProps) {
   const [stake, setStake] = useState<string>("10");
   const [betDirection, setBetDirection] = useState<"yes" | "no">(initialDirection);
@@ -424,12 +420,9 @@ export function BetSlip({
           <div>
             <p className="text-xs text-zinc-500 uppercase tracking-wider">Bet Slip</p>
             <h3 className="font-bold text-white text-lg">
-              {outcomeLabel} {isSoccer3Way && <span className={betDirection === "yes" ? "text-wild-scout" : "text-wild-brand"}>({labels[betDirection]})</span>}
+              {outcomeLabel} <span className={betDirection === "yes" ? "text-wild-scout" : "text-wild-brand"}>({labels[betDirection]})</span>
             </h3>
             <p className="text-xs text-zinc-400 mt-0.5">{marketTitle}</p>
-            {question && (
-              <p className="text-xs text-zinc-500 mt-1 italic">{question}</p>
-            )}
           </div>
           <button
             onClick={onCancel}
@@ -442,35 +435,33 @@ export function BetSlip({
         </div>
 
         <div className="space-y-4">
-          {/* Direction Selection - Only show for soccer 3-way markets where Yes/No makes sense */}
-          {isSoccer3Way && (
-            <div className="flex gap-2">
-              <button
-                onClick={() => setBetDirection("yes")}
-                className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${
-                  betDirection === "yes"
-                    ? "bg-wild-scout text-white border-2 border-wild-scout"
-                    : "bg-zinc-800 text-zinc-400 border-2 border-zinc-700 hover:border-zinc-600"
-                }`}
-                disabled={isPending || isLoadingBook || submissionStatus === "pending"}
-                data-testid="button-direction-yes"
-              >
-                {labels.yes}
-              </button>
-              <button
-                onClick={() => setBetDirection("no")}
-                className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${
-                  betDirection === "no"
-                    ? "bg-wild-brand text-white border-2 border-wild-brand"
-                    : "bg-zinc-800 text-zinc-400 border-2 border-zinc-700 hover:border-zinc-600"
-                }`}
-                disabled={isPending || isLoadingBook || submissionStatus === "pending"}
-                data-testid="button-direction-no"
-              >
-                {labels.no}
-              </button>
-            </div>
-          )}
+          {/* Direction Selection - Yes/No or Over/Under */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setBetDirection("yes")}
+              className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${
+                betDirection === "yes"
+                  ? "bg-wild-scout text-white border-2 border-wild-scout"
+                  : "bg-zinc-800 text-zinc-400 border-2 border-zinc-700 hover:border-zinc-600"
+              }`}
+              disabled={isPending || isLoadingBook || submissionStatus === "pending"}
+              data-testid="button-direction-yes"
+            >
+              {labels.yes}
+            </button>
+            <button
+              onClick={() => setBetDirection("no")}
+              className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${
+                betDirection === "no"
+                  ? "bg-wild-brand text-white border-2 border-wild-brand"
+                  : "bg-zinc-800 text-zinc-400 border-2 border-zinc-700 hover:border-zinc-600"
+              }`}
+              disabled={isPending || isLoadingBook || submissionStatus === "pending"}
+              data-testid="button-direction-no"
+            >
+              {labels.no}
+            </button>
+          </div>
 
           {/* Order Book Status */}
           {isLoadingBook && (

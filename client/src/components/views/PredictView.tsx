@@ -7,9 +7,8 @@ import { EmptyState } from "@/components/terminal/EmptyState";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { Market, Futures, AdminSettings, SportMarketConfig, FuturesCategory } from "@shared/schema";
+import type { Market, Futures, AdminSettings, SportMarketConfig } from "@shared/schema";
 import type { DisplayEvent, ParsedMarket, MarketGroup } from "@/lib/polymarket";
-import { prefetchTeams } from "@/lib/polymarket";
 import type { UseLivePricesResult } from "@/hooks/useLivePrices";
 
 // Type for live prices map
@@ -59,13 +58,11 @@ interface PredictViewProps {
   futures: Futures[];
   isLoading: boolean;
   futuresLoading: boolean;
-  onPlaceBet: (marketId: string, outcomeId: string, odds: number, marketTitle?: string, outcomeLabel?: string, marketType?: string, direction?: "yes" | "no", yesTokenId?: string, noTokenId?: string, yesPrice?: number, noPrice?: number, orderMinSize?: number, question?: string, isSoccer3Way?: boolean) => void;
+  onPlaceBet: (marketId: string, outcomeId: string, odds: number, marketTitle?: string, outcomeLabel?: string, marketType?: string, direction?: "yes" | "no", yesTokenId?: string, noTokenId?: string, yesPrice?: number, noPrice?: number, orderMinSize?: number) => void;
   selectedBet?: { marketId: string; outcomeId: string; direction?: string };
   adminSettings?: AdminSettings;
   userPositions?: { tokenId: string; size: number; avgPrice: number; outcomeLabel?: string; marketQuestion?: string; unrealizedPnl?: number }[];
   livePrices?: UseLivePricesResult;
-  enabledTags?: { id: string; label: string; slug: string }[];
-  futuresCategories?: FuturesCategory[];
 }
 
 function formatVolume(vol: number): string {
@@ -361,7 +358,7 @@ function LineSelector({
             }`}
             data-testid={`line-${line}`}
           >
-            {line}
+            {Math.abs(line)}
           </button>
         ))}
       </div>
@@ -386,162 +383,75 @@ function parseLineFromTitle(title: string): number | null {
   return null;
 }
 
-// Parse spread line from question text - returns team name and signed line
-// Question format: "Spread: Clippers (-2.5)" or "1H Spread: 76ers (-0.5)"
-// Returns: { team: "Clippers", line: -2.5, lineStr: "-2.5" } or null
-function parseSpreadFromQuestion(question: string): { team: string; line: number; lineStr: string } | null {
-  // Match pattern: "Team Name (±X.X)" where the line is in parentheses
-  const match = question.match(/:\s*([^(]+?)\s*\(([+-]?\d+\.?\d*)\)/);
-  if (match) {
-    const team = match[1].trim();
-    const line = parseFloat(match[2]);
-    const lineStr = line >= 0 ? `+${line}` : `${line}`;
-    return { team, line, lineStr };
-  }
-  return null;
-}
-
-// Get spread line labels for each outcome based on the question
-// Returns array of display labels like ["Clippers -2.5", "Raptors +2.5"]
-function getSpreadLabelsForOutcomes(
-  outcomes: Array<{ label: string; abbrev?: string }>,
-  question: string
-): { label: string; lineStr: string }[] {
-  const parsed = parseSpreadFromQuestion(question);
-  if (!parsed) {
-    // Fallback: just return team names without lines
-    return outcomes.map(o => ({ label: o.label, lineStr: "" }));
-  }
-  
-  const { team: questionTeam, line } = parsed;
-  const questionTeamLower = questionTeam.toLowerCase();
-  
-  // Find which outcome matches the team in the question (they have the negative/stated line)
-  // The other team has the opposite line
-  return outcomes.map(outcome => {
-    const outcomeLower = outcome.label.toLowerCase();
-    const isQuestionTeam = outcomeLower.includes(questionTeamLower) || questionTeamLower.includes(outcomeLower);
-    
-    if (isQuestionTeam) {
-      // This team has the line stated in the question
-      const lineStr = line >= 0 ? `+${line}` : `${line}`;
-      return { label: outcome.label, lineStr };
-    } else {
-      // Other team has the opposite line
-      const oppositeLineStr = (-line) >= 0 ? `+${-line}` : `${-line}`;
-      return { label: outcome.label, lineStr: oppositeLineStr };
-    }
-  });
-}
-
-// Normalize team name for matching (lowercase, remove common words)
-function normalizeTeamName(name: string): string {
-  return name.toLowerCase().trim();
-}
-
-// Reorder spread outcomes to match moneyline order
-// Returns reordered outcomes with their original indices preserved
-function reorderSpreadToMatchMoneyline(
-  spreadOutcomes: Array<{ label: string; abbrev?: string; [key: string]: any }>,
-  moneylineOrder: string[] // [team0Name, team1Name] from moneyline
-): { outcomes: typeof spreadOutcomes; swapped: boolean } {
-  if (spreadOutcomes.length < 2 || moneylineOrder.length < 2) {
-    return { outcomes: spreadOutcomes, swapped: false };
-  }
-  
-  const ml0 = normalizeTeamName(moneylineOrder[0]);
-  const ml1 = normalizeTeamName(moneylineOrder[1]);
-  const spread0 = normalizeTeamName(spreadOutcomes[0].label);
-  const spread1 = normalizeTeamName(spreadOutcomes[1].label);
-  
-  // Check if spread[0] matches moneyline[0] (correct order) or moneyline[1] (needs swap)
-  const spread0MatchesMl0 = spread0.includes(ml0) || ml0.includes(spread0);
-  const spread0MatchesMl1 = spread0.includes(ml1) || ml1.includes(spread0);
-  
-  // If spread[0] matches moneyline[1], we need to swap
-  if (spread0MatchesMl1 && !spread0MatchesMl0) {
-    return { outcomes: [spreadOutcomes[1], spreadOutcomes[0]], swapped: true };
-  }
-  
-  // Otherwise keep original order
-  return { outcomes: spreadOutcomes, swapped: false };
-}
-
-// Spread market display component - shows two buttons with team name + spread line + price
-// Example: "Clippers -2.5  50¢" and "Raptors +2.5  50¢"
-// Ordering matches moneyline order for consistency
+// Spread market display component - shows two buttons like [SF +4.5 48¢] [PHI -4.5 53¢]
 function SpreadMarketDisplay({
   market,
+  eventTitle,
   onSelect,
   selectedDirection,
-  livePrices,
-  moneylineOrder
+  livePrices
 }: {
   market: ParsedMarket;
-  onSelect: (market: ParsedMarket, direction: "home" | "away", displayLabel: string) => void;
+  eventTitle: string;
+  onSelect: (market: ParsedMarket, direction: "home" | "away") => void;
   selectedDirection?: "home" | "away" | null;
   livePrices?: LivePricesMap;
-  moneylineOrder?: string[]; // [leftTeamName, rightTeamName] from moneyline
 }) {
-  const rawOutcomes = market.outcomes;
-  if (rawOutcomes.length < 2) return null;
+  // Parse the question to extract home team: "Spread: Eagles (-4.5)" -> Eagles is home with -4.5
+  // The outcomes array: [homeTeam, awayTeam] - index 0 is home (gets the negative line)
+  const outcomes = market.outcomes;
+  if (outcomes.length < 2) return null;
   
-  // Reorder outcomes to match moneyline order if available
-  const { outcomes, swapped } = moneylineOrder 
-    ? reorderSpreadToMatchMoneyline(rawOutcomes, moneylineOrder)
-    : { outcomes: rawOutcomes, swapped: false };
+  // Use market.line if available, otherwise try to parse from groupItemTitle
+  const line = market.line ?? parseLineFromTitle(market.groupItemTitle) ?? 0;
+  const homeTeam = outcomes[0].label;
+  const awayTeam = outcomes[1].label;
+  // For spreads, outcome labels are team names - use first 3 chars as abbreviation
+  const homeAbbr = homeTeam.slice(0, 3).toUpperCase();
+  const awayAbbr = awayTeam.slice(0, 3).toUpperCase();
   
-  // Get spread labels with signed lines from the question
-  const spreadLabels = getSpreadLabelsForOutcomes(outcomes, market.question || "");
-  
-  // Build display labels: "Team -2.5" or "Team +2.5"
-  const leftDisplayLabel = spreadLabels[0].lineStr 
-    ? `${spreadLabels[0].label} ${spreadLabels[0].lineStr}` 
-    : spreadLabels[0].label;
-  const rightDisplayLabel = spreadLabels[1].lineStr 
-    ? `${spreadLabels[1].label} ${spreadLabels[1].lineStr}` 
-    : spreadLabels[1].label;
+  // Home team gets negative line (e.g., -4.5), away team gets positive (+4.5)
+  const homeLine = line; // Already negative from API
+  const awayLine = -line; // Flip sign for away team
   
   // Prices: use live prices from WebSocket if available, fall back to Gamma API
-  const leftStaticPrice = outcomes[0].price ?? market.bestAsk ?? 0.5;
-  const rightStaticPrice = outcomes[1].price ?? (1 - market.bestAsk) ?? 0.5;
-  const leftPrice = Math.round(getLivePrice(outcomes[0].tokenId, leftStaticPrice, livePrices) * 100);
-  const rightPrice = Math.round(getLivePrice(outcomes[1].tokenId, rightStaticPrice, livePrices) * 100);
+  const homeStaticPrice = outcomes[0].price ?? market.bestAsk ?? 0.5;
+  const awayStaticPrice = outcomes[1].price ?? (1 - market.bestAsk) ?? 0.5;
+  const homePrice = Math.round(getLivePrice(outcomes[0].tokenId, homeStaticPrice, livePrices) * 100);
+  const awayPrice = Math.round(getLivePrice(outcomes[1].tokenId, awayStaticPrice, livePrices) * 100);
   
-  // Map display positions to betting directions
-  // If swapped, left button = "away" (original index 1), right button = "home" (original index 0)
-  // If not swapped, left button = "home" (original index 0), right button = "away" (original index 1)
-  const leftDirection: "home" | "away" = swapped ? "away" : "home";
-  const rightDirection: "home" | "away" = swapped ? "home" : "away";
-  
-  const isLeftSelected = selectedDirection === leftDirection;
-  const isRightSelected = selectedDirection === rightDirection;
+  const isHomeSelected = selectedDirection === "home";
+  const isAwaySelected = selectedDirection === "away";
   
   return (
     <div className="flex gap-2">
       <button
-        onClick={() => onSelect(market, leftDirection, leftDisplayLabel)}
+        onClick={() => onSelect(market, "away")}
         className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-all ${
-          isLeftSelected 
+          isAwaySelected 
+            ? "bg-red-600 border border-red-500 text-white" 
+            : "bg-red-900/40 border border-red-800/50 hover:bg-red-800/50 text-zinc-100"
+        }`}
+        data-testid={`spread-away-${market.id}`}
+      >
+        <span className="font-bold">
+          {awayAbbr} {awayLine > 0 ? "+" : ""}{awayLine}
+        </span>
+        <span className="font-mono font-bold text-white">{awayPrice}¢</span>
+      </button>
+      <button
+        onClick={() => onSelect(market, "home")}
+        className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-all ${
+          isHomeSelected 
             ? "bg-teal-600 border border-teal-500 text-white" 
             : "bg-teal-900/40 border border-teal-800/50 hover:bg-teal-800/50 text-zinc-100"
         }`}
-        data-testid={`spread-left-${market.id}`}
+        data-testid={`spread-home-${market.id}`}
       >
-        <span className="font-bold truncate">{leftDisplayLabel}</span>
-        <span className="font-mono font-bold text-white shrink-0">{leftPrice}¢</span>
-      </button>
-      <button
-        onClick={() => onSelect(market, rightDirection, rightDisplayLabel)}
-        className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-all ${
-          isRightSelected 
-            ? "bg-amber-600 border border-amber-500 text-white" 
-            : "bg-amber-900/40 border border-amber-800/50 hover:bg-amber-800/50 text-zinc-100"
-        }`}
-        data-testid={`spread-right-${market.id}`}
-      >
-        <span className="font-bold truncate">{rightDisplayLabel}</span>
-        <span className="font-mono font-bold text-white shrink-0">{rightPrice}¢</span>
+        <span className="font-bold">
+          {homeAbbr} {homeLine > 0 ? "+" : ""}{homeLine}
+        </span>
+        <span className="font-mono font-bold text-white">{homePrice}¢</span>
       </button>
     </div>
   );
@@ -1001,8 +911,7 @@ function MarketGroupDisplay({
   onSelectMarket,
   selectedMarketId,
   selectedDirection,
-  livePrices,
-  moneylineOrder
+  livePrices
 }: {
   group: MarketGroup;
   eventTitle: string;
@@ -1012,26 +921,25 @@ function MarketGroupDisplay({
   selectedMarketId?: string;
   selectedDirection?: string;
   livePrices?: LivePricesMap;
-  moneylineOrder?: string[]; // [leftTeamName, rightTeamName] for consistent ordering
 }) {
   // Check if this is a soccer moneyline (3-way: Home/Draw/Away)
   const isSoccerMoneyline = league && isSoccerLeague(league, leagueSlug) && group.type === "moneyline" && group.markets.length >= 3;
   
-  // Extract unique lines from markets and sort them (keep actual values including negatives)
-  const lines = Array.from(new Set(group.markets.map(m => m.line || 0))).sort((a, b) => a - b);
+  // Extract unique lines from markets and sort them
+  const lines = Array.from(new Set(group.markets.map(m => Math.abs(m.line || 0)))).sort((a, b) => a - b);
   const [selectedLine, setSelectedLine] = useState(lines.length > 0 ? lines[0] : 0);
   
   // Find market matching selected line (or first market if no lines)
-  const activeMarket = group.markets.find(m => (m.line || 0) === selectedLine) || group.markets[0];
+  const activeMarket = group.markets.find(m => Math.abs(m.line || 0) === selectedLine) || group.markets[0];
   
   if (!activeMarket) return null;
   
   // Determine if this market is selected and what direction
   const isThisMarketSelected = selectedMarketId === activeMarket.id;
   
-  // Handle selection for spreads (home/away direction + display label for bet slip)
-  const handleSpreadSelect = (market: ParsedMarket, direction: "home" | "away", displayLabel: string) => {
-    onSelectMarket(market, eventTitle, group.type, direction, displayLabel);
+  // Handle selection for spreads (home/away direction)
+  const handleSpreadSelect = (market: ParsedMarket, direction: "home" | "away") => {
+    onSelectMarket(market, eventTitle, group.type, direction);
   };
   
   // Handle selection for totals (over/under direction)  
@@ -1080,10 +988,10 @@ function MarketGroupDisplay({
         <>
           <SpreadMarketDisplay
             market={activeMarket}
+            eventTitle={eventTitle}
             onSelect={handleSpreadSelect}
             selectedDirection={spreadDirection}
             livePrices={livePrices}
-            moneylineOrder={moneylineOrder}
           />
           <LineSelector lines={lines} selectedLine={selectedLine} onSelect={setSelectedLine} />
         </>
@@ -1169,17 +1077,6 @@ function EventCard({
   // Separate core markets (polished UI) from additional markets (simplified view)
   const coreMarketGroups = event.marketGroups.filter(g => CORE_MARKET_TYPES.includes(g.type));
   const additionalMarketGroups = event.marketGroups.filter(g => !CORE_MARKET_TYPES.includes(g.type));
-  
-  // Extract moneyline order for consistent spread ordering
-  // Find the 2-way moneyline market and get the team order from its outcomes
-  const moneylineGroup = coreMarketGroups.find(g => g.type === "moneyline");
-  const moneylineOrder: string[] = [];
-  if (moneylineGroup && moneylineGroup.markets.length > 0) {
-    const mlMarket = moneylineGroup.markets[0];
-    if (mlMarket.outcomes.length >= 2) {
-      moneylineOrder.push(mlMarket.outcomes[0].label, mlMarket.outcomes[1].label);
-    }
-  }
   
   // Find positions that match any market in this event
   const eventPositions: UserPosition[] = [];
@@ -1270,7 +1167,6 @@ function EventCard({
           selectedMarketId={selectedMarketId}
           selectedDirection={selectedDirection}
           livePrices={livePrices}
-          moneylineOrder={moneylineOrder.length >= 2 ? moneylineOrder : undefined}
         />
       ))}
       
@@ -1426,12 +1322,9 @@ export function PredictView({
   adminSettings,
   userPositions = [],
   livePrices,
-  enabledTags = [],
-  futuresCategories = [],
 }: PredictViewProps) {
   const [activeSubTab, setActiveSubTab] = useState<PredictSubTab>("matchday");
   const [selectedLeagues, setSelectedLeagues] = useState<Set<string>>(new Set());
-  const [selectedFuturesCategory, setSelectedFuturesCategory] = useState<number | null>(null);
 
   // Load sport market configs for dynamic formatting
   const { data: sportConfigs = [] } = useQuery<SportMarketConfig[]>({
@@ -1440,11 +1333,6 @@ export function PredictView({
   });
   
   const configMap = buildConfigMap(sportConfigs);
-  
-  // Prefetch teams from Gamma API for team name → abbreviation lookup
-  useEffect(() => {
-    prefetchTeams();
-  }, []);
   
   // Extract all token IDs from visible events for WebSocket subscription
   const allTokenIds = useMemo(() => {
@@ -1481,15 +1369,11 @@ export function PredictView({
     };
   }, [subscribe, unsubscribe, allTokenIds]);
 
-  // Helper to normalize text for tag matching (lowercase, trim)
-  const normalizeForMatch = (text: string) => text.toLowerCase().trim();
-  
-  // Filter and categorize events - match event.league directly
+  // Filter and categorize events
   const filteredEvents = displayEvents.filter(event => {
     if (!isWithin5Days(event.gameStartTime)) return false;
     if (event.status === "ended") return false;
     if (selectedLeagues.size === 0) return true;
-    // Match event league directly against selected leagues
     return selectedLeagues.has(event.league);
   });
   
@@ -1498,23 +1382,9 @@ export function PredictView({
     .filter(e => e.status === "upcoming")
     .sort((a, b) => new Date(a.gameStartTime).getTime() - new Date(b.gameStartTime).getTime());
   
-  // Extract leagues from displayEvents for Match Day filter pills
-  const availableMatchDayLeagues = useMemo(() => {
-    const leagueSet = new Set<string>();
-    for (const event of displayEvents) {
-      if (event.league) {
-        leagueSet.add(event.league);
-      }
-    }
-    return Array.from(leagueSet).sort();
-  }, [displayEvents]);
-  
-  // Use futures categories for filter pills, sorted by sortOrder
-  const availableFuturesCategoryNames = useMemo(() => {
-    return [...futuresCategories]
-      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-      .map(cat => cat.name);
-  }, [futuresCategories]);
+  const availableLeagues = Array.from(
+    new Set(displayEvents.map(e => e.league))
+  ).sort();
   
   const handleLeagueToggle = (league: string) => {
     if (league === "ALL") {
@@ -1533,32 +1403,7 @@ export function PredictView({
     });
   };
 
-  // Filter futures by selected category
-  const filteredFutures = useMemo(() => {
-    if (selectedFuturesCategory === null) return futures;
-    if (selectedFuturesCategory === -1) {
-      // Show uncategorized futures
-      return futures.filter(future => !future.categoryId);
-    }
-    return futures.filter(future => future.categoryId === selectedFuturesCategory);
-  }, [futures, selectedFuturesCategory]);
-
-  const handleFuturesCategoryToggle = (categoryName: string) => {
-    if (categoryName === "ALL") {
-      setSelectedFuturesCategory(null);
-      return;
-    }
-    if (categoryName === "Uncategorized") {
-      setSelectedFuturesCategory(prev => prev === -1 ? null : -1);
-      return;
-    }
-    const category = futuresCategories.find(c => c.name === categoryName);
-    if (category) {
-      setSelectedFuturesCategory(prev => prev === category.id ? null : category.id);
-    }
-  };
-
-  const handleSelectMarket = (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string, passedOutcomeLabel?: string) => {
+  const handleSelectMarket = (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string, soccerOutcomeLabel?: string) => {
     // Determine which outcome based on direction
     // For spreads: "home" = index 0, "away" = index 1
     // For totals: "over" = index 0, "under" = index 1
@@ -1582,15 +1427,18 @@ export function PredictView({
     const noPrice = market.outcomes[1]?.executionPrice || market.outcomes[1]?.price || 0.5;
     
     // Create a descriptive outcome label
-    // For spreads, use the display label passed from SpreadMarketDisplay (e.g., "Clippers -2.5")
-    // For soccer 3-way, use the team name passed from SoccerMoneylineDisplay
-    let outcomeLabel = passedOutcomeLabel || market.groupItemTitle;
-    
-    // If no label was passed, generate one based on market type
-    if (!passedOutcomeLabel) {
-      if (marketType === "totals") {
-        const line = Math.abs(market.line ?? parseLineFromTitle(market.groupItemTitle) ?? 0);
-        outcomeLabel = direction === "over" ? `O ${line}` : `U ${line}`;
+    // For soccer 3-way, use the parsed team name passed from SoccerMoneylineDisplay
+    let outcomeLabel = soccerOutcomeLabel || market.groupItemTitle;
+    if (!soccerOutcomeLabel) {
+      if (marketType === "spreads" && market.line !== undefined) {
+        const line = market.line;
+        if (direction === "home") {
+          outcomeLabel = `${market.outcomes[0].label.slice(0, 3).toUpperCase()} ${line > 0 ? "+" : ""}${line}`;
+        } else {
+          outcomeLabel = `${market.outcomes[1].label.slice(0, 3).toUpperCase()} ${-line > 0 ? "+" : ""}${-line}`;
+        }
+      } else if (marketType === "totals" && market.line !== undefined) {
+        outcomeLabel = direction === "over" ? `O ${market.line}` : `U ${market.line}`;
       } else if (outcome) {
         // Use official teamAbbrev from Polymarket slug (can be up to 7 chars)
         outcomeLabel = market.teamAbbrev || outcome.label.slice(0, 3).toUpperCase();
@@ -1599,11 +1447,6 @@ export function PredictView({
     
     // Map direction to "yes" | "no" for BetSlip
     const betDirection: "yes" | "no" = outcomeIndex === 0 ? "yes" : "no";
-    
-    // Determine if this is a soccer 3-way market (has Yes/No toggle in BetSlip)
-    // Soccer 3-way markets pass outcome labels like "Home Win", "Draw", "Away Win"
-    const isSoccer3Way = marketType === "moneyline" && !!passedOutcomeLabel && 
-      (passedOutcomeLabel.toLowerCase().includes("win") || passedOutcomeLabel.toLowerCase() === "draw");
     
     // Pass to parent with all info for bet slip
     onPlaceBet(
@@ -1618,9 +1461,7 @@ export function PredictView({
       noTokenId,
       yesPrice,
       noPrice,
-      market.orderMinSize,
-      market.question,
-      isSoccer3Way
+      market.orderMinSize
     );
   };
   
@@ -1646,7 +1487,6 @@ export function PredictView({
     const betDirection: "yes" | "no" = outcomeIndex === 0 ? "yes" : "no";
     
     // Use the question as market title and outcome label directly
-    // Additional markets are not soccer 3-way, so no toggle needed
     onPlaceBet(
       market.id, 
       outcomeId, 
@@ -1659,9 +1499,7 @@ export function PredictView({
       otherTokenId,
       yesPrice,
       noPrice,
-      market.orderMinSize,
-      market.question,
-      false
+      market.orderMinSize
     );
   };
 
@@ -1675,7 +1513,7 @@ export function PredictView({
         {activeSubTab === "matchday" && (
           <div className="space-y-3">
             <LeagueFilters 
-              leagues={availableMatchDayLeagues}
+              leagues={availableLeagues}
               selectedLeagues={selectedLeagues}
               onToggle={handleLeagueToggle}
             />
@@ -1746,23 +1584,13 @@ export function PredictView({
 
         {activeSubTab === "futures" && (
           <div className="space-y-3">
-            <LeagueFilters 
-              leagues={[...availableFuturesCategoryNames, ...(futures.some(f => !f.categoryId) ? ["Uncategorized"] : [])]}
-              selectedLeagues={new Set(
-                selectedFuturesCategory === null ? [] : 
-                selectedFuturesCategory === -1 ? ["Uncategorized"] : 
-                [futuresCategories.find(c => c.id === selectedFuturesCategory)?.name || ""]
-              )}
-              onToggle={handleFuturesCategoryToggle}
-            />
-            
             {futuresLoading ? (
               <>
                 <MarketCardSkeleton />
                 <MarketCardSkeleton />
               </>
-            ) : filteredFutures.length > 0 ? (
-              filteredFutures.map((future) => (
+            ) : futures.length > 0 ? (
+              futures.map((future) => (
                 <FuturesCard
                   key={future.id}
                   future={future}
@@ -1772,12 +1600,6 @@ export function PredictView({
                   }
                 />
               ))
-            ) : futures.length > 0 ? (
-              <EmptyState
-                icon={Lock}
-                title="No Matching Futures"
-                description="No futures match the selected filter. Try selecting 'All' to see all futures."
-              />
             ) : (
               <EmptyState
                 icon={Lock}

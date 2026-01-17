@@ -20,7 +20,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { fetchSportsWithMarketTypes, type SportWithMarketTypes } from "@/lib/polymarket";
-import type { Market, Player, InsertMarket, InsertPlayer, AdminSettings, Futures, SportFieldConfig, SportMarketConfig, PolymarketTagRecord, FuturesCategory } from "@shared/schema";
+import type { Market, Player, InsertMarket, InsertPlayer, AdminSettings, Futures, SportFieldConfig, SportMarketConfig } from "@shared/schema";
 
 const playerFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -49,16 +49,13 @@ function extractSlugFromInput(input: string): string {
 
 export default function AdminPage() {
   const { toast } = useToast();
-  const [activeSection, setActiveSection] = useState<"tags" | "matchday" | "futures" | "players" | "sportconfig">("tags");
+  const [activeSection, setActiveSection] = useState<"matchday" | "futures" | "players" | "sportconfig">("matchday");
   const [sportsData, setSportsData] = useState<SportWithMarketTypes[]>([]);
   const [loadingLeagues, setLoadingLeagues] = useState(false);
   const [showPlayerForm, setShowPlayerForm] = useState(false);
   const [futuresSlug, setFuturesSlug] = useState("");
   const [fetchingEvent, setFetchingEvent] = useState(false);
   const [expandedSports, setExpandedSports] = useState<Set<string>>(new Set());
-  const [newCategoryName, setNewCategoryName] = useState("");
-  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
-  const [editingCategoryName, setEditingCategoryName] = useState("");
 
   const playerForm = useForm<PlayerFormData>({
     resolver: zodResolver(playerFormSchema),
@@ -87,38 +84,6 @@ export default function AdminPage() {
 
   const { data: adminSettings } = useQuery<AdminSettings>({
     queryKey: ["/api/admin/settings"],
-  });
-
-  const { data: polymarketTags = [], isLoading: tagsLoading } = useQuery<PolymarketTagRecord[]>({
-    queryKey: ["/api/admin/tags"],
-  });
-
-  const { data: futuresCategories = [], isLoading: categoriesLoading } = useQuery<FuturesCategory[]>({
-    queryKey: ["/api/futures-categories"],
-  });
-
-  const syncTagsMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest("POST", "/api/admin/tags/sync", {});
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/tags"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/tags/enabled"] });
-      toast({ title: "Tags extracted from current events" });
-    },
-    onError: () => {
-      toast({ title: "Failed to sync tags", variant: "destructive" });
-    },
-  });
-
-  const toggleTagMutation = useMutation({
-    mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
-      return apiRequest("PATCH", `/api/admin/tags/${id}/enabled`, { enabled });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/tags"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/tags/enabled"] });
-    },
   });
 
   const updateSettingsMutation = useMutation({
@@ -255,60 +220,6 @@ export default function AdminPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/futures"] });
       toast({ title: "Future event removed" });
-    },
-  });
-
-  const createCategoryMutation = useMutation({
-    mutationFn: async (name: string) => {
-      const slug = name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-      return apiRequest("POST", "/api/futures-categories", { name, slug, sortOrder: futuresCategories.length });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/futures-categories"] });
-      setNewCategoryName("");
-      toast({ title: "Category created" });
-    },
-    onError: () => {
-      toast({ title: "Failed to create category", variant: "destructive" });
-    },
-  });
-
-  const updateCategoryMutation = useMutation({
-    mutationFn: async ({ id, name }: { id: number; name: string }) => {
-      const slug = name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-      return apiRequest("PATCH", `/api/futures-categories/${id}`, { name, slug });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/futures-categories"] });
-      setEditingCategoryId(null);
-      setEditingCategoryName("");
-      toast({ title: "Category updated" });
-    },
-    onError: () => {
-      toast({ title: "Failed to update category", variant: "destructive" });
-    },
-  });
-
-  const deleteCategoryMutation = useMutation({
-    mutationFn: async (id: number) => {
-      return apiRequest("DELETE", `/api/futures-categories/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/futures-categories"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/futures"] });
-      toast({ title: "Category deleted" });
-    },
-    onError: () => {
-      toast({ title: "Failed to delete category", variant: "destructive" });
-    },
-  });
-
-  const updateFuturesCategoryMutation = useMutation({
-    mutationFn: async ({ futuresId, categoryId }: { futuresId: string; categoryId: number | null }) => {
-      return apiRequest("PATCH", `/api/futures/${futuresId}/category`, { categoryId });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/futures"] });
     },
   });
 
@@ -504,13 +415,6 @@ export default function AdminPage() {
 
         <div className="flex gap-2 mb-6 flex-wrap">
           <Button
-            variant={activeSection === "tags" ? "default" : "secondary"}
-            onClick={() => setActiveSection("tags")}
-            data-testid="button-section-tags"
-          >
-            Tags ({polymarketTags.filter(t => t.enabled).length})
-          </Button>
-          <Button
             variant={activeSection === "matchday" ? "default" : "secondary"}
             onClick={() => setActiveSection("matchday")}
             data-testid="button-section-matchday"
@@ -539,83 +443,6 @@ export default function AdminPage() {
             Sport Config
           </Button>
         </div>
-
-        {activeSection === "tags" && (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center gap-2 flex-wrap">
-              <div>
-                <h2 className="text-lg font-bold">Tag Management</h2>
-                <p className="text-sm text-zinc-500">
-                  Enable sports tags to show in both Match Day and Futures views
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => syncTagsMutation.mutate()}
-                disabled={syncTagsMutation.isPending}
-                data-testid="button-sync-tags"
-              >
-                <RefreshCw className={`w-4 h-4 mr-2 ${syncTagsMutation.isPending ? "animate-spin" : ""}`} />
-                Sync Tags from Events
-              </Button>
-            </div>
-
-            {tagsLoading ? (
-              <div className="text-zinc-500">Loading tags...</div>
-            ) : polymarketTags.length === 0 ? (
-              <Card className="p-8 text-center text-zinc-500">
-                No tags found. Click "Sync Tags from Events" to extract tags from your current events.
-              </Card>
-            ) : (
-              <div className="space-y-2">
-                {polymarketTags
-                  .filter(tag => tag.category === "league")
-                  .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
-                  .map((tag) => (
-                    <Card
-                      key={tag.id}
-                      className={`p-4 flex items-center justify-between cursor-pointer transition-colors ${
-                        tag.enabled ? "bg-wild-brand/10 border-wild-brand/30" : ""
-                      }`}
-                      onClick={() => toggleTagMutation.mutate({ id: tag.id, enabled: !tag.enabled })}
-                      data-testid={`tag-${tag.slug}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Checkbox
-                          checked={tag.enabled}
-                          onClick={(e) => e.stopPropagation()}
-                          onCheckedChange={(checked) => toggleTagMutation.mutate({ id: tag.id, enabled: checked as boolean })}
-                        />
-                        <div>
-                          <div className="text-white font-medium">{tag.label}</div>
-                          <div className="text-xs text-zinc-500">{tag.slug} • {tag.eventCount || 0} events</div>
-                        </div>
-                      </div>
-                      {tag.enabled && <Check className="w-4 h-4 text-wild-brand" />}
-                    </Card>
-                  ))}
-              </div>
-            )}
-
-            {polymarketTags.filter(t => t.enabled).length > 0 && (
-              <div className="mt-4 p-4 bg-zinc-900 rounded-md">
-                <div className="text-sm text-zinc-400 mb-2">
-                  Enabled Tags - Events will be fetched for:
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {polymarketTags.filter(t => t.enabled).map((tag) => (
-                    <span
-                      key={tag.id}
-                      className="px-2 py-1 bg-wild-brand/20 text-wild-brand rounded text-xs"
-                    >
-                      {tag.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
 
         {activeSection === "matchday" && (
           <div className="space-y-4">
@@ -756,7 +583,7 @@ export default function AdminPage() {
         )}
 
         {activeSection === "futures" && (
-          <div className="space-y-6">
+          <div className="space-y-4">
             <div>
               <h2 className="text-lg font-bold">Futures - Long-term Events</h2>
               <p className="text-sm text-zinc-500">
@@ -795,173 +622,56 @@ export default function AdminPage() {
               </p>
             </Card>
 
-            {/* Category Management Section */}
-            <div className="space-y-3">
-              <h3 className="font-semibold text-zinc-300">Categories</h3>
-              <p className="text-xs text-zinc-500">Create categories to organize your futures events. Assign each future to a category below.</p>
-              
-              <Card className="p-4 space-y-3">
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="New category name (e.g., Football, Basketball)"
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && newCategoryName.trim() && createCategoryMutation.mutate(newCategoryName.trim())}
-                    data-testid="input-new-category"
-                  />
-                  <Button
-                    onClick={() => newCategoryName.trim() && createCategoryMutation.mutate(newCategoryName.trim())}
-                    disabled={createCategoryMutation.isPending || !newCategoryName.trim()}
-                    data-testid="button-add-category"
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    Add
-                  </Button>
-                </div>
-
-                {categoriesLoading ? (
-                  <div className="text-zinc-500 text-sm">Loading categories...</div>
-                ) : futuresCategories.length === 0 ? (
-                  <div className="text-zinc-600 text-sm">No categories yet. Create one above.</div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {futuresCategories.map((cat) => (
-                      <div key={cat.id} className="flex items-center gap-1 bg-zinc-800 rounded px-2 py-1">
-                        {editingCategoryId === cat.id ? (
-                          <>
-                            <Input
-                              value={editingCategoryName}
-                              onChange={(e) => setEditingCategoryName(e.target.value)}
-                              className="h-6 w-24 text-xs"
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" && editingCategoryName.trim()) {
-                                  updateCategoryMutation.mutate({ id: cat.id, name: editingCategoryName.trim() });
-                                }
-                                if (e.key === "Escape") {
-                                  setEditingCategoryId(null);
-                                  setEditingCategoryName("");
-                                }
-                              }}
-                              autoFocus
-                            />
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-6 w-6"
-                              onClick={() => updateCategoryMutation.mutate({ id: cat.id, name: editingCategoryName.trim() })}
-                            >
-                              <Check className="w-3 h-3" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-6 w-6"
-                              onClick={() => { setEditingCategoryId(null); setEditingCategoryName(""); }}
-                            >
-                              <X className="w-3 h-3" />
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <span
-                              className="text-sm cursor-pointer hover:text-wild-brand"
-                              onClick={() => { setEditingCategoryId(cat.id); setEditingCategoryName(cat.name); }}
-                            >
-                              {cat.name}
-                            </span>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-5 w-5 ml-1"
-                              onClick={() => deleteCategoryMutation.mutate(cat.id)}
-                            >
-                              <X className="w-3 h-3" />
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
+            {futuresLoading ? (
+              <div className="text-zinc-500">Loading...</div>
+            ) : futuresList.length === 0 ? (
+              <Card className="p-8 text-center text-zinc-500">
+                No futures events yet. Add one using a Polymarket event link above.
               </Card>
-            </div>
-
-            {/* Futures List */}
-            <div className="space-y-3">
-              <h3 className="font-semibold text-zinc-300">Futures Events</h3>
-              {futuresLoading ? (
-                <div className="text-zinc-500">Loading...</div>
-              ) : futuresList.length === 0 ? (
-                <Card className="p-8 text-center text-zinc-500">
-                  No futures events yet. Add one using a Polymarket event link above.
-                </Card>
-              ) : (
-                <div className="space-y-2">
-                  {futuresList.map((future) => (
-                    <Card
-                      key={future.id}
-                      className="p-4 flex justify-between items-start gap-4"
-                      data-testid={`futures-${future.id}`}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="font-bold truncate">{future.title}</div>
-                        <div className="text-sm text-zinc-500 truncate">
-                          Slug: {future.polymarketSlug}
-                        </div>
-                        {future.marketData?.outcomes && (
-                          <div className="flex flex-wrap gap-2 mt-2">
-                            {future.marketData.outcomes.slice(0, 3).map((outcome, i) => (
-                              <span
-                                key={i}
-                                className="text-xs px-2 py-1 bg-zinc-800 rounded"
-                              >
-                                {outcome.label}: {(outcome.probability * 100).toFixed(0)}%
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 mt-3">
-                          <span className="text-xs text-zinc-500">Category:</span>
-                          <Select
-                            value={future.categoryId?.toString() || "none"}
-                            onValueChange={(value) => {
-                              const categoryId = value === "none" ? null : parseInt(value);
-                              updateFuturesCategoryMutation.mutate({ futuresId: future.id, categoryId });
-                            }}
-                          >
-                            <SelectTrigger className="h-7 w-40 text-xs" data-testid={`select-category-${future.id}`}>
-                              <SelectValue placeholder="Select category" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">Uncategorized</SelectItem>
-                              {futuresCategories.map((cat) => (
-                                <SelectItem key={cat.id} value={cat.id.toString()}>
-                                  {cat.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        {future.endDate && (
-                          <div className="text-xs text-zinc-600 mt-1">
-                            Ends: {new Date(future.endDate).toLocaleDateString()}
-                          </div>
-                        )}
+            ) : (
+              <div className="space-y-2">
+                {futuresList.map((future) => (
+                  <Card
+                    key={future.id}
+                    className="p-4 flex justify-between items-start gap-4"
+                    data-testid={`futures-${future.id}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold truncate">{future.title}</div>
+                      <div className="text-sm text-zinc-500 truncate">
+                        Slug: {future.polymarketSlug}
                       </div>
-                      <Button
-                        variant="destructive"
-                        size="icon"
-                        onClick={() => deleteFuturesMutation.mutate(future.id)}
-                        disabled={deleteFuturesMutation.isPending}
-                        data-testid={`button-delete-futures-${future.id}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
+                      {future.marketData?.outcomes && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {future.marketData.outcomes.slice(0, 3).map((outcome, i) => (
+                            <span
+                              key={i}
+                              className="text-xs px-2 py-1 bg-zinc-800 rounded"
+                            >
+                              {outcome.label}: {(outcome.probability * 100).toFixed(0)}%
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {future.endDate && (
+                        <div className="text-xs text-zinc-600 mt-1">
+                          Ends: {new Date(future.endDate).toLocaleDateString()}
+                        </div>
+                      )}
+                    </div>
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      onClick={() => deleteFuturesMutation.mutate(future.id)}
+                      disabled={deleteFuturesMutation.isPending}
+                      data-testid={`button-delete-futures-${future.id}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

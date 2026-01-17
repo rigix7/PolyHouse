@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Market, Futures, AdminSettings, SportMarketConfig } from "@shared/schema";
 import type { DisplayEvent, ParsedMarket, MarketGroup } from "@/lib/polymarket";
+import { prefetchTeams, getTeamAbbreviationSync } from "@/lib/polymarket";
 import type { UseLivePricesResult } from "@/hooks/useLivePrices";
 
 // Type for live prices map
@@ -397,30 +398,8 @@ function parseSpreadFromQuestion(question: string): { team: string; line: number
   return null;
 }
 
-// Team name to abbreviation mapping for major leagues
-// This helps match parsed team names like "Rockets" to abbreviations like "HOU"
-const TEAM_NAME_TO_ABBREV: Record<string, string> = {
-  // NBA Teams
-  "hawks": "ATL", "celtics": "BOS", "nets": "BKN", "hornets": "CHA",
-  "bulls": "CHI", "cavaliers": "CLE", "mavericks": "DAL", "nuggets": "DEN",
-  "pistons": "DET", "warriors": "GSW", "rockets": "HOU", "pacers": "IND",
-  "clippers": "LAC", "lakers": "LAL", "grizzlies": "MEM", "heat": "MIA",
-  "bucks": "MIL", "timberwolves": "MIN", "pelicans": "NOP", "knicks": "NYK",
-  "thunder": "OKC", "magic": "ORL", "76ers": "PHI", "sixers": "PHI",
-  "suns": "PHX", "blazers": "POR", "trail blazers": "POR", "kings": "SAC",
-  "spurs": "SAS", "raptors": "TOR", "jazz": "UTA", "wizards": "WAS",
-  // NFL Teams
-  "cardinals": "ARI", "falcons": "ATL", "ravens": "BAL", "bills": "BUF",
-  "panthers": "CAR", "bears": "CHI", "bengals": "CIN", "browns": "CLE",
-  "cowboys": "DAL", "broncos": "DEN", "lions": "DET", "packers": "GB",
-  "texans": "HOU", "colts": "IND", "jaguars": "JAX", "chiefs": "KC",
-  "raiders": "LV", "chargers": "LAC", "rams": "LAR", "dolphins": "MIA",
-  "vikings": "MIN", "patriots": "NE", "saints": "NO", "giants": "NYG",
-  "jets": "NYJ", "eagles": "PHI", "steelers": "PIT", "49ers": "SF",
-  "seahawks": "SEA", "buccaneers": "TB", "titans": "TEN", "commanders": "WAS",
-};
-
 // Check if a parsed team name matches an outcome
+// Uses Gamma API team lookup for accurate name → abbreviation matching
 // Returns true if the team name corresponds to the outcome's label/abbrev
 function doesTeamMatchOutcome(
   parsedTeam: string, 
@@ -439,38 +418,16 @@ function doesTeamMatchOutcome(
     return true;
   }
   
-  // Check team name → abbreviation mapping
-  const mappedAbbrev = TEAM_NAME_TO_ABBREV[teamLower];
-  if (mappedAbbrev) {
-    const mappedLower = mappedAbbrev.toLowerCase();
-    if (labelLower === mappedLower || abbrevLower === mappedLower) {
+  // Use Gamma API team lookup: team name → abbreviation (e.g., "Rockets" → "hou")
+  const gammaAbbrev = getTeamAbbreviationSync(parsedTeam);
+  if (gammaAbbrev) {
+    // gammaAbbrev is lowercase (e.g., "hou"), compare case-insensitively
+    if (labelLower === gammaAbbrev || abbrevLower === gammaAbbrev) {
       return true;
     }
-    // Also check if label starts with the mapped abbrev (e.g., "HOU" matches "Houston")
-    if (labelLower.startsWith(mappedLower) || mappedLower.startsWith(labelLower)) {
+    // Also check if label starts with the mapped abbrev
+    if (labelLower.startsWith(gammaAbbrev) || gammaAbbrev.startsWith(labelLower)) {
       return true;
-    }
-  }
-  
-  // Check if team name appears near the outcome label in event title
-  // e.g., "Timberwolves vs. Rockets" with outcome "HOU" - we check if "Rockets" is near "HOU" context
-  if (eventTitle) {
-    const titleLower = eventTitle.toLowerCase();
-    // If both team name and outcome label appear in title, they might correspond
-    // This is a weaker signal, used as fallback
-    const teamInTitle = titleLower.includes(teamLower);
-    const labelInTitle = titleLower.includes(labelLower) || titleLower.includes(abbrevLower);
-    if (teamInTitle && labelInTitle) {
-      // Check relative position - if team appears right before or after label context
-      const teamIdx = titleLower.indexOf(teamLower);
-      const vsIdx = titleLower.indexOf(" vs");
-      if (vsIdx !== -1) {
-        // Team before "vs" = first team, after = second team
-        const teamIsFirst = teamIdx < vsIdx;
-        // Outcome labels in Polymarket are usually [first_team, second_team] order
-        // but this varies, so we just use this as a weak positive signal
-        return teamIsFirst;
-      }
     }
   }
   
@@ -1452,6 +1409,11 @@ export function PredictView({
   });
   
   const configMap = buildConfigMap(sportConfigs);
+  
+  // Prefetch teams from Gamma API for team name → abbreviation lookup
+  useEffect(() => {
+    prefetchTeams();
+  }, []);
   
   // Extract all token IDs from visible events for WebSocket subscription
   const allTokenIds = useMemo(() => {

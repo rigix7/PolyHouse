@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/terminal/EmptyState";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { Market, Futures, AdminSettings, SportMarketConfig } from "@shared/schema";
+import type { Market, Futures, AdminSettings, SportMarketConfig, FuturesCategory } from "@shared/schema";
 import type { DisplayEvent, ParsedMarket, MarketGroup } from "@/lib/polymarket";
 import { prefetchTeams } from "@/lib/polymarket";
 import type { UseLivePricesResult } from "@/hooks/useLivePrices";
@@ -64,7 +64,8 @@ interface PredictViewProps {
   adminSettings?: AdminSettings;
   userPositions?: { tokenId: string; size: number; avgPrice: number; outcomeLabel?: string; marketQuestion?: string; unrealizedPnl?: number }[];
   livePrices?: UseLivePricesResult;
-  enabledTags?: { id: number; label: string; slug: string }[];
+  enabledTags?: { id: string; label: string; slug: string }[];
+  futuresCategories?: FuturesCategory[];
 }
 
 function formatVolume(vol: number): string {
@@ -1426,10 +1427,11 @@ export function PredictView({
   userPositions = [],
   livePrices,
   enabledTags = [],
+  futuresCategories = [],
 }: PredictViewProps) {
   const [activeSubTab, setActiveSubTab] = useState<PredictSubTab>("matchday");
   const [selectedLeagues, setSelectedLeagues] = useState<Set<string>>(new Set());
-  const [selectedFuturesTags, setSelectedFuturesTags] = useState<Set<string>>(new Set());
+  const [selectedFuturesCategory, setSelectedFuturesCategory] = useState<number | null>(null);
 
   // Load sport market configs for dynamic formatting
   const { data: sportConfigs = [] } = useQuery<SportMarketConfig[]>({
@@ -1482,17 +1484,13 @@ export function PredictView({
   // Helper to normalize text for tag matching (lowercase, trim)
   const normalizeForMatch = (text: string) => text.toLowerCase().trim();
   
-  // Filter and categorize events - match event.league against selected tag labels
+  // Filter and categorize events - match event.league directly
   const filteredEvents = displayEvents.filter(event => {
     if (!isWithin5Days(event.gameStartTime)) return false;
     if (event.status === "ended") return false;
     if (selectedLeagues.size === 0) return true;
-    // Match event league against selected tag labels (case-insensitive)
-    const eventLeagueLower = normalizeForMatch(event.league);
-    return Array.from(selectedLeagues).some(tag => 
-      normalizeForMatch(tag) === eventLeagueLower || 
-      eventLeagueLower.includes(normalizeForMatch(tag))
-    );
+    // Match event league directly against selected leagues
+    return selectedLeagues.has(event.league);
   });
   
   const liveEvents = filteredEvents.filter(e => e.status === "live");
@@ -1500,10 +1498,23 @@ export function PredictView({
     .filter(e => e.status === "upcoming")
     .sort((a, b) => new Date(a.gameStartTime).getTime() - new Date(b.gameStartTime).getTime());
   
-  // Use enabled tags from Tag Management for filter pills (both Match Day and Futures)
-  const availableTagLabels = useMemo(() => {
-    return enabledTags.map(tag => tag.label).sort();
-  }, [enabledTags]);
+  // Extract leagues from displayEvents for Match Day filter pills
+  const availableMatchDayLeagues = useMemo(() => {
+    const leagueSet = new Set<string>();
+    for (const event of displayEvents) {
+      if (event.league) {
+        leagueSet.add(event.league);
+      }
+    }
+    return Array.from(leagueSet).sort();
+  }, [displayEvents]);
+  
+  // Use futures categories for filter pills, sorted by sortOrder
+  const availableFuturesCategoryNames = useMemo(() => {
+    return [...futuresCategories]
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      .map(cat => cat.name);
+  }, [futuresCategories]);
   
   const handleLeagueToggle = (league: string) => {
     if (league === "ALL") {
@@ -1522,36 +1533,29 @@ export function PredictView({
     });
   };
 
-  // Filter futures by selected tags - match future.tags against selected enabled tag labels
+  // Filter futures by selected category
   const filteredFutures = useMemo(() => {
-    if (selectedFuturesTags.size === 0) return futures;
-    return futures.filter(future => {
-      if (!future.tags || !Array.isArray(future.tags)) return false;
-      // Match any of the future's tags against selected enabled tag labels
-      return future.tags.some(futureTag => 
-        Array.from(selectedFuturesTags).some(selectedTag => 
-          normalizeForMatch(futureTag.label) === normalizeForMatch(selectedTag) ||
-          normalizeForMatch(futureTag.slug || '') === normalizeForMatch(selectedTag)
-        )
-      );
-    });
-  }, [futures, selectedFuturesTags]);
+    if (selectedFuturesCategory === null) return futures;
+    if (selectedFuturesCategory === -1) {
+      // Show uncategorized futures
+      return futures.filter(future => !future.categoryId);
+    }
+    return futures.filter(future => future.categoryId === selectedFuturesCategory);
+  }, [futures, selectedFuturesCategory]);
 
-  const handleFuturesTagToggle = (tag: string) => {
-    if (tag === "ALL") {
-      setSelectedFuturesTags(new Set());
+  const handleFuturesCategoryToggle = (categoryName: string) => {
+    if (categoryName === "ALL") {
+      setSelectedFuturesCategory(null);
       return;
     }
-    
-    setSelectedFuturesTags(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(tag)) {
-        newSet.delete(tag);
-      } else {
-        newSet.add(tag);
-      }
-      return newSet;
-    });
+    if (categoryName === "Uncategorized") {
+      setSelectedFuturesCategory(prev => prev === -1 ? null : -1);
+      return;
+    }
+    const category = futuresCategories.find(c => c.name === categoryName);
+    if (category) {
+      setSelectedFuturesCategory(prev => prev === category.id ? null : category.id);
+    }
   };
 
   const handleSelectMarket = (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string, passedOutcomeLabel?: string) => {
@@ -1671,7 +1675,7 @@ export function PredictView({
         {activeSubTab === "matchday" && (
           <div className="space-y-3">
             <LeagueFilters 
-              leagues={availableTagLabels}
+              leagues={availableMatchDayLeagues}
               selectedLeagues={selectedLeagues}
               onToggle={handleLeagueToggle}
             />
@@ -1743,9 +1747,13 @@ export function PredictView({
         {activeSubTab === "futures" && (
           <div className="space-y-3">
             <LeagueFilters 
-              leagues={availableTagLabels}
-              selectedLeagues={selectedFuturesTags}
-              onToggle={handleFuturesTagToggle}
+              leagues={[...availableFuturesCategoryNames, ...(futures.some(f => !f.categoryId) ? ["Uncategorized"] : [])]}
+              selectedLeagues={new Set(
+                selectedFuturesCategory === null ? [] : 
+                selectedFuturesCategory === -1 ? ["Uncategorized"] : 
+                [futuresCategories.find(c => c.id === selectedFuturesCategory)?.name || ""]
+              )}
+              onToggle={handleFuturesCategoryToggle}
             />
             
             {futuresLoading ? (

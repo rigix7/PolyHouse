@@ -1331,6 +1331,85 @@ export async function registerRoutes(
     }
   });
 
+  // Update futures category assignment
+  app.patch("/api/futures/:id/category", async (req, res) => {
+    try {
+      const { categoryId } = req.body;
+      const updated = await storage.updateFuturesCategory(req.params.id, categoryId);
+      if (!updated) {
+        return res.status(404).json({ error: "Futures not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update futures category" });
+    }
+  });
+
+  // ============================================================
+  // FUTURES CATEGORIES CRUD
+  // ============================================================
+
+  app.get("/api/futures-categories", async (req, res) => {
+    try {
+      const categories = await storage.getFuturesCategories();
+      res.json(categories);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch futures categories" });
+    }
+  });
+
+  app.post("/api/futures-categories", async (req, res) => {
+    try {
+      const { name, slug, sortOrder } = req.body;
+      if (!name || !slug) {
+        return res.status(400).json({ error: "name and slug are required" });
+      }
+      const category = await storage.createFuturesCategory({ name, slug, sortOrder: sortOrder ?? 0 });
+      res.status(201).json(category);
+    } catch (error: any) {
+      if (error.code === "23505") {
+        return res.status(400).json({ error: "Category slug already exists" });
+      }
+      res.status(500).json({ error: "Failed to create futures category" });
+    }
+  });
+
+  app.patch("/api/futures-categories/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid category ID" });
+      }
+      const updates = req.body;
+      const updated = await storage.updateFuturesCategory2(id, updates);
+      if (!updated) {
+        return res.status(404).json({ error: "Category not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      if (error.code === "23505") {
+        return res.status(400).json({ error: "Category slug already exists" });
+      }
+      res.status(500).json({ error: "Failed to update futures category" });
+    }
+  });
+
+  app.delete("/api/futures-categories/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid category ID" });
+      }
+      const deleted = await storage.deleteFuturesCategory(id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Category not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete futures category" });
+    }
+  });
+
   // ============================================================
   // POLYMARKET CLOB ORDER PLACEMENT
   // ============================================================

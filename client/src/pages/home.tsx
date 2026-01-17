@@ -18,7 +18,7 @@ import useTradingSession from "@/hooks/useTradingSession";
 import useClobClient from "@/hooks/useClobClient";
 import useClobOrder from "@/hooks/useClobOrder";
 import { useLivePrices } from "@/hooks/useLivePrices";
-import type { Market, Player, Trade, Bet, Wallet, AdminSettings, WalletRecord, Futures, PolymarketTagRecord } from "@shared/schema";
+import type { Market, Player, Trade, Bet, Wallet, AdminSettings, WalletRecord, Futures, PolymarketTagRecord, FuturesCategory } from "@shared/schema";
 
 export default function HomePage() {
   const { authenticated: isConnected, eoaAddress: address, login, logout, isReady } = useWallet();
@@ -84,6 +84,10 @@ export default function HomePage() {
 
   const { data: enabledTags = [] } = useQuery<PolymarketTagRecord[]>({
     queryKey: ["/api/admin/tags/enabled"],
+  });
+
+  const { data: futuresCategories = [] } = useQuery<FuturesCategory[]>({
+    queryKey: ["/api/futures-categories"],
   });
 
   const { data: walletRecord } = useQuery<WalletRecord>({
@@ -511,6 +515,7 @@ export default function HomePage() {
               userPositions={userPositions}
               livePrices={livePrices}
               enabledTags={enabledTags}
+              futuresCategories={futuresCategories}
             />
           )}
           {activeTab === "scout" && (

@@ -9,6 +9,7 @@ import {
   walletRecords,
   adminSettings,
   futures,
+  futuresCategories,
   sportFieldConfigs,
   sportMarketConfigs,
   polymarketPositions,
@@ -27,6 +28,8 @@ import {
   type WalletRecord,
   type Futures,
   type InsertFutures,
+  type FuturesCategory,
+  type InsertFuturesCategory,
   type SportFieldConfig,
   type InsertSportFieldConfig,
   type SportMarketConfig,
@@ -74,6 +77,13 @@ export interface IStorage {
   getFuturesById(id: string): Promise<Futures | undefined>;
   createFutures(future: InsertFutures): Promise<Futures>;
   deleteFutures(id: string): Promise<boolean>;
+  updateFuturesCategory(id: string, categoryId: number | null): Promise<Futures | undefined>;
+
+  getFuturesCategories(): Promise<FuturesCategory[]>;
+  getFuturesCategoryById(id: number): Promise<FuturesCategory | undefined>;
+  createFuturesCategory(category: InsertFuturesCategory): Promise<FuturesCategory>;
+  updateFuturesCategory2(id: number, updates: Partial<InsertFuturesCategory>): Promise<FuturesCategory | undefined>;
+  deleteFuturesCategory(id: number): Promise<boolean>;
 
   getSportFieldConfigs(): Promise<SportFieldConfig[]>;
   getSportFieldConfig(sportSlug: string): Promise<SportFieldConfig | undefined>;
@@ -363,6 +373,54 @@ export class DatabaseStorage implements IStorage {
 
   async deleteFutures(id: string): Promise<boolean> {
     await db.delete(futures).where(eq(futures.id, id));
+    return true;
+  }
+
+  async updateFuturesCategory(id: string, categoryId: number | null): Promise<Futures | undefined> {
+    const [updated] = await db.update(futures)
+      .set({ categoryId })
+      .where(eq(futures.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async getFuturesCategories(): Promise<FuturesCategory[]> {
+    return await db.select().from(futuresCategories).orderBy(futuresCategories.sortOrder);
+  }
+
+  async getFuturesCategoryById(id: number): Promise<FuturesCategory | undefined> {
+    const [category] = await db.select().from(futuresCategories).where(eq(futuresCategories.id, id));
+    return category || undefined;
+  }
+
+  async createFuturesCategory(category: InsertFuturesCategory): Promise<FuturesCategory> {
+    const now = new Date().toISOString();
+    const [newCategory] = await db.insert(futuresCategories).values({
+      name: category.name,
+      slug: category.slug,
+      sortOrder: category.sortOrder ?? 0,
+      createdAt: now,
+      updatedAt: now,
+    }).returning();
+    return newCategory;
+  }
+
+  async updateFuturesCategory2(id: number, updates: Partial<InsertFuturesCategory>): Promise<FuturesCategory | undefined> {
+    const now = new Date().toISOString();
+    const [updated] = await db.update(futuresCategories)
+      .set({ ...updates, updatedAt: now })
+      .where(eq(futuresCategories.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteFuturesCategory(id: number): Promise<boolean> {
+    // First, unassign any futures that have this category
+    await db.update(futures)
+      .set({ categoryId: null })
+      .where(eq(futures.categoryId, id));
+    // Then delete the category
+    await db.delete(futuresCategories).where(eq(futuresCategories.id, id));
     return true;
   }
 

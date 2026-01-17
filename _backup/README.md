@@ -2,8 +2,14 @@
 
 Created: January 17, 2026
 
+**⚠️ IMPORTANT: See [POST_ROLLBACK_NOTES.md](./POST_ROLLBACK_NOTES.md) for detailed debugging findings and guidance for the next agent.**
+
 ## Purpose
 This backup contains all UI improvements and components before rolling back to a working betting checkpoint.
+
+## Rollback Target
+- **Working Commit:** `4d05274` (Jan 14, 2026)
+- **Reason:** Betting fails with "invalid signature" error after this commit
 
 ## What's Backed Up
 

@@ -17,7 +17,6 @@ export interface TradingSession {
 
 export type SessionStep =
   | "idle"
-  | "auto_restore"
   | "checking"
   | "deploying"
   | "credentials"
@@ -62,7 +61,8 @@ export const clearSession = (address: string): void => {
 
 // Force clear ALL trading sessions (one-time migration for credential fix)
 // Uses a version flag to only run once per browser
-const SESSION_CLEAR_VERSION = "v2_owner_fix";
+// v3: Remove auto-restore to guarantee fresh credential derivation each session
+const SESSION_CLEAR_VERSION = "v3_no_auto_restore";
 
 export const forceSessionClearIfNeeded = (): boolean => {
   const clearKey = "polymarket_session_clear_version";

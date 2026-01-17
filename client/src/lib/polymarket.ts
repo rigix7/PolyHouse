@@ -320,6 +320,33 @@ function mergeChildEvents(events: GammaEvent[]): GammaEvent[] {
   return mergedEvents;
 }
 
+// Fetch all active sports events (no tag filtering)
+export async function fetchAllGammaEvents(): Promise<GammaEvent[]> {
+  try {
+    const response = await fetch("/api/polymarket/events?limit=100");
+    if (!response.ok) {
+      throw new Error(`Failed to fetch events: ${response.status}`);
+    }
+    const events: GammaEvent[] = await response.json();
+    
+    const validEvents = events.filter(event => {
+      if (!event.markets?.length) return false;
+      const market = event.markets[0];
+      try {
+        const prices = JSON.parse(market.outcomePrices || "[]");
+        return prices.length > 0;
+      } catch {
+        return false;
+      }
+    });
+    
+    return mergeChildEvents(validEvents);
+  } catch (error) {
+    console.error("Error fetching all Gamma events:", error);
+    return [];
+  }
+}
+
 // Fetch events by tag slugs (e.g., ["nba", "nfl", "soccer"])
 // Uses enabled tags from polymarketTags table
 export async function fetchEventsByTagSlugs(tagSlugs: string[]): Promise<GammaEvent[]> {

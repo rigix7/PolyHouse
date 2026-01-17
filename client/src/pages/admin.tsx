@@ -97,7 +97,7 @@ export default function AdminPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/tags"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/tags/enabled"] });
-      toast({ title: "Tags synced from Polymarket" });
+      toast({ title: "Tags extracted from current events" });
     },
     onError: () => {
       toast({ title: "Failed to sync tags", variant: "destructive" });
@@ -495,7 +495,7 @@ export default function AdminPage() {
                 data-testid="button-sync-tags"
               >
                 <RefreshCw className={`w-4 h-4 mr-2 ${syncTagsMutation.isPending ? "animate-spin" : ""}`} />
-                Sync from Polymarket
+                Sync Tags from Events
               </Button>
             </div>
 
@@ -503,7 +503,7 @@ export default function AdminPage() {
               <div className="text-zinc-500">Loading tags...</div>
             ) : polymarketTags.length === 0 ? (
               <Card className="p-8 text-center text-zinc-500">
-                No tags found. Click "Sync from Polymarket" to fetch sports tags.
+                No tags found. Click "Sync Tags from Events" to extract tags from your current events.
               </Card>
             ) : (
               <div className="space-y-2">
@@ -527,7 +527,7 @@ export default function AdminPage() {
                         />
                         <div>
                           <div className="text-white font-medium">{tag.label}</div>
-                          <div className="text-xs text-zinc-500">{tag.slug}</div>
+                          <div className="text-xs text-zinc-500">{tag.slug} • {tag.eventCount || 0} events</div>
                         </div>
                       </div>
                       {tag.enabled && <Check className="w-4 h-4 text-wild-brand" />}

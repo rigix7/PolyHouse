@@ -10,7 +10,7 @@ import { ScoutView } from "@/components/views/ScoutView";
 import { TradeView } from "@/components/views/TradeView";
 import { DashboardView } from "@/components/views/DashboardView";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { fetchGammaEvents, fetchEventsByTagSlugs, gammaEventToMarket, gammaEventToDisplayEvent, type DisplayEvent } from "@/lib/polymarket";
+import { fetchAllGammaEvents, fetchEventsByTagSlugs, gammaEventToMarket, gammaEventToDisplayEvent, type DisplayEvent } from "@/lib/polymarket";
 import { fetchPositions, type PolymarketPosition } from "@/lib/polymarketOrder";
 import { getUSDCBalance } from "@/lib/polygon";
 import { useWallet } from "@/providers/WalletContext";
@@ -169,15 +169,13 @@ export default function HomePage() {
   useEffect(() => {
     const loadLiveMarkets = async () => {
       const tagSlugs = enabledTagSlugs ? enabledTagSlugs.split(',') : [];
-      if (tagSlugs.length === 0) {
-        setLiveMarkets([]);
-        setDisplayEvents([]);
-        return;
-      }
-
+      
       setLiveMarketsLoading(true);
       try {
-        const events = await fetchEventsByTagSlugs(tagSlugs);
+        // If no tags enabled, fetch all active events; otherwise filter by enabled tags
+        const events = tagSlugs.length > 0 
+          ? await fetchEventsByTagSlugs(tagSlugs)
+          : await fetchAllGammaEvents();
         
         // Convert to DisplayEvents for new event-based UI
         const displayEvts = events
@@ -215,9 +213,9 @@ export default function HomePage() {
     loadLiveMarkets();
   }, [enabledTagSlugs]);
 
-  const hasLiveMarkets = enabledTags.length > 0;
-  const markets = hasLiveMarkets ? liveMarkets : demoMarkets;
-  const marketsLoading = hasLiveMarkets ? liveMarketsLoading : demoMarketsLoading;
+  // Always use live markets from Polymarket (filtered by enabled tags or all if none enabled)
+  const markets = liveMarkets;
+  const marketsLoading = liveMarketsLoading;
 
   // Build wallet object from real data
   const wildBalance = walletRecord?.wildPoints || 0;

@@ -1157,44 +1157,74 @@ export async function registerRoutes(
   app.post("/api/admin/tags/sync", async (req, res) => {
     try {
       const GAMMA_API = "https://gamma-api.polymarket.com";
-      const response = await fetch(`${GAMMA_API}/tags`);
-      if (!response.ok) {
-        throw new Error(`Gamma API error: ${response.status}`);
+      
+      // Fetch Match Day events from Gamma API (active sports events)
+      const eventsResponse = await fetch(
+        `${GAMMA_API}/events?active=true&closed=false&limit=200`
+      );
+      if (!eventsResponse.ok) {
+        throw new Error(`Gamma API events error: ${eventsResponse.status}`);
       }
-      const allTags = await response.json() as Array<{
+      const matchDayEvents = await eventsResponse.json() as Array<{
         id: string;
-        label: string;
-        slug: string;
-        parentTagId?: string;
-        forceShow?: boolean;
+        tags: Array<{ id: string; label: string; slug: string }>;
       }>;
       
-      const sportsTag = allTags.find((t) => t.slug === "sports");
-      if (!sportsTag) {
-        return res.json({ synced: 0, tags: [] });
+      // Get Futures from database
+      const futures = await storage.getFutures();
+      
+      // Extract unique tags from Match Day events
+      const tagMap = new Map<string, { id: string; label: string; slug: string; eventCount: number }>();
+      
+      for (const event of matchDayEvents) {
+        if (event.tags && Array.isArray(event.tags)) {
+          for (const tag of event.tags) {
+            if (tag.id && tag.slug) {
+              const existing = tagMap.get(tag.id);
+              tagMap.set(tag.id, {
+                id: tag.id,
+                label: tag.label || tag.slug,
+                slug: tag.slug,
+                eventCount: (existing?.eventCount || 0) + 1,
+              });
+            }
+          }
+        }
       }
       
-      const childTags = allTags.filter((t) => t.parentTagId === sportsTag.id);
-      const grandchildTags = allTags.filter((t) => 
-        childTags.some((child) => child.id === t.parentTagId)
-      );
+      // Extract tags from Futures (stored in the tags field)
+      for (const future of futures) {
+        if (future.tags && Array.isArray(future.tags)) {
+          for (const tag of future.tags as Array<{ id: string; label: string; slug: string }>) {
+            if (tag.id && tag.slug) {
+              const existing = tagMap.get(tag.id);
+              tagMap.set(tag.id, {
+                id: tag.id,
+                label: tag.label || tag.slug,
+                slug: tag.slug,
+                eventCount: (existing?.eventCount || 0) + 1,
+              });
+            }
+          }
+        }
+      }
       
-      const allSportsTags = [sportsTag, ...childTags, ...grandchildTags];
-      
+      // Get existing tags to preserve enabled state
       const existingTags = await storage.getPolymarketTags();
       const existingMap = new Map(existingTags.map(t => [t.id, t]));
       
+      // Upsert extracted tags
       const upsertedTags = [];
       let sortOrder = 0;
-      for (const tag of allSportsTags) {
+      for (const tag of Array.from(tagMap.values())) {
         const existing = existingMap.get(tag.id);
         const upserted = await storage.upsertPolymarketTag({
           id: tag.id,
           label: tag.label,
           slug: tag.slug,
-          category: tag.parentTagId === sportsTag.id ? "league" : (tag.id === sportsTag.id ? "root" : "subleague"),
-          parentTagId: tag.parentTagId || null,
-          eventCount: 0,
+          category: "league",
+          parentTagId: null,
+          eventCount: tag.eventCount,
           enabled: existing?.enabled ?? false,
           sortOrder: sortOrder++,
         });

@@ -575,7 +575,8 @@ export async function registerRoutes(
       }
       
       // Prefer series_id for more specific results (actual game matches)
-      let url = `${GAMMA_API_BASE}/events?active=true&closed=false&limit=15`;
+      // Fetch 50 events to ensure we capture all games - Polymarket API returns events in non-chronological order
+      let url = `${GAMMA_API_BASE}/events?active=true&closed=false&limit=50`;
       if (seriesId) {
         url += `&series_id=${seriesId}`;
       } else if (tagId) {

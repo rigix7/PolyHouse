@@ -406,9 +406,9 @@ function SpreadMarketDisplay({
   const line = market.line ?? parseLineFromTitle(market.groupItemTitle) ?? 0;
   const homeTeam = outcomes[0].label;
   const awayTeam = outcomes[1].label;
-  // For spreads, outcome labels are team names - use first 3 chars as abbreviation
-  const homeAbbr = homeTeam.slice(0, 3).toUpperCase();
-  const awayAbbr = awayTeam.slice(0, 3).toUpperCase();
+  // Use official abbreviations from Polymarket slug if available, fallback to first 3 chars
+  const homeAbbr = outcomes[0].abbrev || homeTeam.slice(0, 3).toUpperCase();
+  const awayAbbr = outcomes[1].abbrev || awayTeam.slice(0, 3).toUpperCase();
   
   // Home team gets negative line (e.g., -4.5), away team gets positive (+4.5)
   const homeLine = line; // Already negative from API

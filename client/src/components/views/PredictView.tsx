@@ -397,6 +397,86 @@ function parseSpreadFromQuestion(question: string): { team: string; line: number
   return null;
 }
 
+// Team name to abbreviation mapping for major leagues
+// This helps match parsed team names like "Rockets" to abbreviations like "HOU"
+const TEAM_NAME_TO_ABBREV: Record<string, string> = {
+  // NBA Teams
+  "hawks": "ATL", "celtics": "BOS", "nets": "BKN", "hornets": "CHA",
+  "bulls": "CHI", "cavaliers": "CLE", "mavericks": "DAL", "nuggets": "DEN",
+  "pistons": "DET", "warriors": "GSW", "rockets": "HOU", "pacers": "IND",
+  "clippers": "LAC", "lakers": "LAL", "grizzlies": "MEM", "heat": "MIA",
+  "bucks": "MIL", "timberwolves": "MIN", "pelicans": "NOP", "knicks": "NYK",
+  "thunder": "OKC", "magic": "ORL", "76ers": "PHI", "sixers": "PHI",
+  "suns": "PHX", "blazers": "POR", "trail blazers": "POR", "kings": "SAC",
+  "spurs": "SAS", "raptors": "TOR", "jazz": "UTA", "wizards": "WAS",
+  // NFL Teams
+  "cardinals": "ARI", "falcons": "ATL", "ravens": "BAL", "bills": "BUF",
+  "panthers": "CAR", "bears": "CHI", "bengals": "CIN", "browns": "CLE",
+  "cowboys": "DAL", "broncos": "DEN", "lions": "DET", "packers": "GB",
+  "texans": "HOU", "colts": "IND", "jaguars": "JAX", "chiefs": "KC",
+  "raiders": "LV", "chargers": "LAC", "rams": "LAR", "dolphins": "MIA",
+  "vikings": "MIN", "patriots": "NE", "saints": "NO", "giants": "NYG",
+  "jets": "NYJ", "eagles": "PHI", "steelers": "PIT", "49ers": "SF",
+  "seahawks": "SEA", "buccaneers": "TB", "titans": "TEN", "commanders": "WAS",
+};
+
+// Check if a parsed team name matches an outcome
+// Returns true if the team name corresponds to the outcome's label/abbrev
+function doesTeamMatchOutcome(
+  parsedTeam: string, 
+  outcome: { label: string; abbrev?: string },
+  eventTitle?: string
+): boolean {
+  const teamLower = parsedTeam.toLowerCase();
+  const labelLower = outcome.label.toLowerCase();
+  const abbrevLower = (outcome.abbrev || "").toLowerCase();
+  
+  // Direct match: label or abbrev contains team name or vice versa
+  if (labelLower.includes(teamLower) || teamLower.includes(labelLower)) {
+    return true;
+  }
+  if (abbrevLower && (abbrevLower.includes(teamLower) || teamLower.includes(abbrevLower))) {
+    return true;
+  }
+  
+  // Check team name → abbreviation mapping
+  const mappedAbbrev = TEAM_NAME_TO_ABBREV[teamLower];
+  if (mappedAbbrev) {
+    const mappedLower = mappedAbbrev.toLowerCase();
+    if (labelLower === mappedLower || abbrevLower === mappedLower) {
+      return true;
+    }
+    // Also check if label starts with the mapped abbrev (e.g., "HOU" matches "Houston")
+    if (labelLower.startsWith(mappedLower) || mappedLower.startsWith(labelLower)) {
+      return true;
+    }
+  }
+  
+  // Check if team name appears near the outcome label in event title
+  // e.g., "Timberwolves vs. Rockets" with outcome "HOU" - we check if "Rockets" is near "HOU" context
+  if (eventTitle) {
+    const titleLower = eventTitle.toLowerCase();
+    // If both team name and outcome label appear in title, they might correspond
+    // This is a weaker signal, used as fallback
+    const teamInTitle = titleLower.includes(teamLower);
+    const labelInTitle = titleLower.includes(labelLower) || titleLower.includes(abbrevLower);
+    if (teamInTitle && labelInTitle) {
+      // Check relative position - if team appears right before or after label context
+      const teamIdx = titleLower.indexOf(teamLower);
+      const vsIdx = titleLower.indexOf(" vs");
+      if (vsIdx !== -1) {
+        // Team before "vs" = first team, after = second team
+        const teamIsFirst = teamIdx < vsIdx;
+        // Outcome labels in Polymarket are usually [first_team, second_team] order
+        // but this varies, so we just use this as a weak positive signal
+        return teamIsFirst;
+      }
+    }
+  }
+  
+  return false;
+}
+
 // Spread market display component - shows two buttons like [SF +4.5 48¢] [PHI -4.5 53¢]
 function SpreadMarketDisplay({
   market,
@@ -423,19 +503,23 @@ function SpreadMarketDisplay({
   let outcome1Line: number;
   
   if (parsed) {
-    // Match parsed team to outcomes to assign correct lines
-    const parsedTeamLower = parsed.team.toLowerCase();
-    const outcome0Match = outcomes[0].label.toLowerCase().includes(parsedTeamLower) || 
-                          parsedTeamLower.includes(outcomes[0].label.toLowerCase());
+    // Use smart matching to find which outcome corresponds to the parsed team
+    const outcome0Match = doesTeamMatchOutcome(parsed.team, outcomes[0], eventTitle);
+    const outcome1Match = doesTeamMatchOutcome(parsed.team, outcomes[1], eventTitle);
     
-    if (outcome0Match) {
+    if (outcome0Match && !outcome1Match) {
       // outcomes[0] is the team mentioned in question with the parsed line
       outcome0Line = parsed.line;
       outcome1Line = -parsed.line;
-    } else {
+    } else if (outcome1Match && !outcome0Match) {
       // outcomes[1] is the team mentioned in question
       outcome1Line = parsed.line;
       outcome0Line = -parsed.line;
+    } else {
+      // Ambiguous or no match - fallback to parsed line on outcomes[0]
+      // This preserves the original behavior when matching fails
+      outcome0Line = parsed.line;
+      outcome1Line = -parsed.line;
     }
   } else {
     // Fallback: use market.line directly on outcomes[0], negated on outcomes[1]

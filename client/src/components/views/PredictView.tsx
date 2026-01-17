@@ -64,6 +64,7 @@ interface PredictViewProps {
   adminSettings?: AdminSettings;
   userPositions?: { tokenId: string; size: number; avgPrice: number; outcomeLabel?: string; marketQuestion?: string; unrealizedPnl?: number }[];
   livePrices?: UseLivePricesResult;
+  enabledTags?: { id: number; label: string; slug: string }[];
 }
 
 function formatVolume(vol: number): string {

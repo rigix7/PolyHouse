@@ -510,6 +510,7 @@ export default function HomePage() {
               adminSettings={adminSettings}
               userPositions={userPositions}
               livePrices={livePrices}
+              enabledTags={enabledTags}
             />
           )}
           {activeTab === "scout" && (

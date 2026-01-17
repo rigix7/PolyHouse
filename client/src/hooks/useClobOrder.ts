@@ -35,6 +35,10 @@ export default function useClobOrder(
       setOrderId(null);
 
       try {
+        console.log("[Order] Submitting order with walletAddress:", walletAddress);
+        console.log("[Order] ClobClient orderBuilder signatureType:", (clobClient as any).orderBuilder?.signatureType);
+        console.log("[Order] ClobClient orderBuilder funder:", (clobClient as any).orderBuilder?.funderAddress);
+        
         const side = params.side === "BUY" ? Side.BUY : Side.SELL;
         let response;
 

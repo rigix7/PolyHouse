@@ -646,6 +646,13 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
         const result = await response.wait();
 
         console.log("[PolymarketClient] Withdrawal result:", result);
+        
+        // Invalidate credentials after successful wallet operation
+        // This forces fresh credential derivation on next order
+        clientRef.current = null;
+        credsRef.current = null;
+        console.log("[PolymarketClient] Credentials invalidated after withdrawal");
+        
         return { success: true, txHash: result?.transactionHash };
       } catch (err) {
         console.error("[PolymarketClient] Withdrawal error:", err);
@@ -739,6 +746,13 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
         const result = await response.wait();
 
         console.log("[PolymarketClient] Redeem result:", result);
+        
+        // Invalidate credentials after successful wallet operation
+        // This forces fresh credential derivation on next order
+        clientRef.current = null;
+        credsRef.current = null;
+        console.log("[PolymarketClient] Credentials invalidated after redemption");
+        
         return { success: true, txHash: result?.transactionHash };
       } catch (err) {
         console.error("[PolymarketClient] Redeem error:", err);
@@ -836,6 +850,13 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
         const result = await response.wait();
 
         console.log("[PolymarketClient] Batch redeem result:", result);
+        
+        // Invalidate credentials after successful wallet operation
+        // This forces fresh credential derivation on next order
+        clientRef.current = null;
+        credsRef.current = null;
+        console.log("[PolymarketClient] Credentials invalidated after batch redemption");
+        
         return { success: true, txHash: result?.transactionHash };
       } catch (err) {
         console.error("[PolymarketClient] Batch redeem error:", err);
@@ -950,6 +971,12 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
     setError(null);
   }, []);
 
+  const invalidateCredentials = useCallback(() => {
+    console.log("[PolymarketClient] Invalidating cached credentials - will re-derive on next order");
+    clientRef.current = null;
+    credsRef.current = null;
+  }, []);
+
   // Get the user's Safe address for deposits
   // USDC is deposited by sending directly to this address on Polygon
   const getSafeAddress = useCallback(async (): Promise<string | null> => {
@@ -982,6 +1009,7 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
     redeemPositions,
     batchRedeemPositions,
     resetClient,
+    invalidateCredentials,
     isInitializing,
     isSubmitting,
     isRelayerLoading,

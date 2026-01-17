@@ -10,7 +10,7 @@ import { ScoutView } from "@/components/views/ScoutView";
 import { TradeView } from "@/components/views/TradeView";
 import { DashboardView } from "@/components/views/DashboardView";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { fetchAllGammaEvents, fetchEventsByTagSlugs, gammaEventToMarket, gammaEventToDisplayEvent, type DisplayEvent } from "@/lib/polymarket";
+import { fetchGammaEvents, gammaEventToMarket, gammaEventToDisplayEvent, type DisplayEvent } from "@/lib/polymarket";
 import { fetchPositions, type PolymarketPosition } from "@/lib/polymarketOrder";
 import { getUSDCBalance } from "@/lib/polygon";
 import { useWallet } from "@/providers/WalletContext";
@@ -164,18 +164,28 @@ export default function HomePage() {
     }
   }, [safeAddress, address]);
 
-  const enabledTagSlugs = useMemo(() => enabledTags.map(t => t.slug).sort().join(','), [enabledTags]);
+  // Use admin settings activeTagIds to fetch Match Day events
+  const activeTagIds = useMemo(() => 
+    (adminSettings?.activeTagIds || []).sort().join(','), 
+    [adminSettings?.activeTagIds]
+  );
   
   useEffect(() => {
     const loadLiveMarkets = async () => {
-      const tagSlugs = enabledTagSlugs ? enabledTagSlugs.split(',') : [];
+      const tagIds = activeTagIds ? activeTagIds.split(',').filter(Boolean) : [];
+      
+      // Don't fetch if no leagues are selected in Match Day settings
+      if (tagIds.length === 0) {
+        setDisplayEvents([]);
+        setLiveMarkets([]);
+        setLiveMarketsLoading(false);
+        return;
+      }
       
       setLiveMarketsLoading(true);
       try {
-        // If no tags enabled, fetch all active events; otherwise filter by enabled tags
-        const events = tagSlugs.length > 0 
-          ? await fetchEventsByTagSlugs(tagSlugs)
-          : await fetchAllGammaEvents();
+        // Fetch events based on Match Day settings (series IDs)
+        const events = await fetchGammaEvents(tagIds);
         
         // Convert to DisplayEvents for new event-based UI
         const displayEvts = events
@@ -211,7 +221,7 @@ export default function HomePage() {
     };
 
     loadLiveMarkets();
-  }, [enabledTagSlugs]);
+  }, [activeTagIds]);
 
   // Always use live markets from Polymarket (filtered by enabled tags or all if none enabled)
   const markets = liveMarkets;

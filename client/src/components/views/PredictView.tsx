@@ -1540,22 +1540,29 @@ export function PredictView({
   
   // Get live prices map for checking effectively-ended events
   const livePricesMap = livePrices?.prices;
+  // Create a dependency that changes when live prices update (size or any value changes)
+  const livePricesVersion = livePricesMap ? Array.from(livePricesMap.values()).map(p => `${p.tokenId}:${p.bestAsk}`).join(',') : '';
   
-  // Filter live events and sort so effectively-ended ones (99¢/0¢ prices) go to bottom
-  const liveEvents = filteredEvents
-    .filter(e => e.status === "live")
-    .sort((a, b) => {
-      const aEnded = isEffectivelyEnded(a, livePricesMap);
-      const bEnded = isEffectivelyEnded(b, livePricesMap);
-      // Push effectively-ended events to the bottom
-      if (aEnded && !bEnded) return 1;
-      if (!aEnded && bEnded) return -1;
-      return 0; // Maintain original order for same category
-    });
+  // Filter live events and sort so effectively-ended ones (100¢ prices) go to bottom
+  // useMemo ensures re-sorting when live prices update
+  const liveEvents = useMemo(() => {
+    return filteredEvents
+      .filter(e => e.status === "live")
+      .sort((a, b) => {
+        const aEnded = isEffectivelyEnded(a, livePricesMap);
+        const bEnded = isEffectivelyEnded(b, livePricesMap);
+        // Push effectively-ended events to the bottom
+        if (aEnded && !bEnded) return 1;
+        if (!aEnded && bEnded) return -1;
+        return 0; // Maintain original order for same category
+      });
+  }, [filteredEvents, livePricesMap, livePricesVersion]);
   
-  const upcomingEvents = filteredEvents
-    .filter(e => e.status === "upcoming")
-    .sort((a, b) => new Date(a.gameStartTime).getTime() - new Date(b.gameStartTime).getTime());
+  const upcomingEvents = useMemo(() => {
+    return filteredEvents
+      .filter(e => e.status === "upcoming")
+      .sort((a, b) => new Date(a.gameStartTime).getTime() - new Date(b.gameStartTime).getTime());
+  }, [filteredEvents]);
   
   // Extract leagues from displayEvents for Match Day filter pills
   const availableMatchDayLeagues = useMemo(() => {

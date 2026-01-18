@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { Check, X, AlertTriangle, Info } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 export type ToastType = "success" | "error" | "warning" | "info";
 
@@ -66,10 +66,10 @@ let toastId = 0;
 export function useTerminalToast() {
   const [toasts, setToasts] = useState<ToastState[]>([]);
 
-  const showToast = (message: string, type: ToastType = "info") => {
+  const showToast = useCallback((message: string, type: ToastType = "info") => {
     const id = ++toastId;
     setToasts((prev) => [...prev, { message, type, id }]);
-  };
+  }, []);
 
   const removeToast = (id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));

@@ -119,15 +119,13 @@ function isWithin5Days(dateString: string): boolean {
   return diff >= sixHoursAgoMs && diff <= fiveDaysMs;
 }
 
-// Detect events that are effectively ended based on extreme moneyline prices
-// When one outcome is 99-100¢ and others are 0-1¢, the game is over but not yet resolved
+// Detect events that are effectively ended based on 100¢ moneyline price
+// When any outcome hits 100¢, the game is over but not yet officially resolved
 function isEffectivelyEnded(event: DisplayEvent, livePrices?: LivePricesMap): boolean {
   const moneylineGroup = event.marketGroups.find(g => g.type === "moneyline");
   if (!moneylineGroup || moneylineGroup.markets.length === 0) return false;
   
-  // Collect all moneyline outcome prices
-  const prices: number[] = [];
-  
+  // Check if any moneyline outcome is at 100¢
   for (const market of moneylineGroup.markets) {
     for (const outcome of market.outcomes) {
       // Use live price if available, otherwise fall back to static price
@@ -138,17 +136,14 @@ function isEffectivelyEnded(event: DisplayEvent, livePrices?: LivePricesMap): bo
           price = liveData.bestAsk;
         }
       }
-      prices.push(price);
+      // If any outcome is at 100¢ (using 0.995 for floating point tolerance)
+      if (price >= 0.995) {
+        return true;
+      }
     }
   }
   
-  if (prices.length < 2) return false;
-  
-  const maxPrice = Math.max(...prices);
-  const minPrice = Math.min(...prices);
-  
-  // Effectively ended: one outcome at 99-100% and another at 0-1%
-  return maxPrice >= 0.99 && minPrice <= 0.01;
+  return false;
 }
 
 // Format market type labels: replace underscores with spaces

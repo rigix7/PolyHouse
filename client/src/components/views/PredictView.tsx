@@ -119,6 +119,38 @@ function isWithin5Days(dateString: string): boolean {
   return diff >= sixHoursAgoMs && diff <= fiveDaysMs;
 }
 
+// Detect events that are effectively ended based on extreme moneyline prices
+// When one outcome is 99-100¢ and others are 0-1¢, the game is over but not yet resolved
+function isEffectivelyEnded(event: DisplayEvent, livePrices?: LivePricesMap): boolean {
+  const moneylineGroup = event.marketGroups.find(g => g.type === "moneyline");
+  if (!moneylineGroup || moneylineGroup.markets.length === 0) return false;
+  
+  // Collect all moneyline outcome prices
+  const prices: number[] = [];
+  
+  for (const market of moneylineGroup.markets) {
+    for (const outcome of market.outcomes) {
+      // Use live price if available, otherwise fall back to static price
+      let price = outcome.price || 0;
+      if (livePrices && outcome.tokenId) {
+        const liveData = livePrices.get(outcome.tokenId);
+        if (liveData && liveData.bestAsk > 0) {
+          price = liveData.bestAsk;
+        }
+      }
+      prices.push(price);
+    }
+  }
+  
+  if (prices.length < 2) return false;
+  
+  const maxPrice = Math.max(...prices);
+  const minPrice = Math.min(...prices);
+  
+  // Effectively ended: one outcome at 99-100% and another at 0-1%
+  return maxPrice >= 0.99 && minPrice <= 0.01;
+}
+
 // Format market type labels: replace underscores with spaces
 function formatMarketTypeLabel(label: string): string {
   return label.replace(/_/g, " ");
@@ -1504,7 +1536,21 @@ export function PredictView({
     return selectedLeagues.has(event.league);
   });
   
-  const liveEvents = filteredEvents.filter(e => e.status === "live");
+  // Get live prices map for checking effectively-ended events
+  const livePricesMap = livePrices?.prices;
+  
+  // Filter live events and sort so effectively-ended ones (99¢/0¢ prices) go to bottom
+  const liveEvents = filteredEvents
+    .filter(e => e.status === "live")
+    .sort((a, b) => {
+      const aEnded = isEffectivelyEnded(a, livePricesMap);
+      const bEnded = isEffectivelyEnded(b, livePricesMap);
+      // Push effectively-ended events to the bottom
+      if (aEnded && !bEnded) return 1;
+      if (!aEnded && bEnded) return -1;
+      return 0; // Maintain original order for same category
+    });
+  
   const upcomingEvents = filteredEvents
     .filter(e => e.status === "upcoming")
     .sort((a, b) => new Date(a.gameStartTime).getTime() - new Date(b.gameStartTime).getTime());

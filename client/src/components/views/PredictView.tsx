@@ -125,19 +125,26 @@ function isEffectivelyEnded(event: DisplayEvent, livePrices?: LivePricesMap): bo
   const moneylineGroup = event.marketGroups.find(g => g.type === "moneyline");
   if (!moneylineGroup || moneylineGroup.markets.length === 0) return false;
   
-  // Check if any moneyline outcome is at 100¢
+  // Check if any moneyline market/outcome is at 100¢
+  // For soccer 3-way, each market represents a team/draw outcome
   for (const market of moneylineGroup.markets) {
+    // First check market.bestAsk (used by soccer 3-way markets)
+    if (market.bestAsk && market.bestAsk >= 0.995) {
+      return true;
+    }
+    
+    // Then check individual outcomes (for 2-way markets and as fallback)
     for (const outcome of market.outcomes) {
-      // Use live price if available, otherwise fall back to static price
-      let price = outcome.price || 0;
+      // Use live price if available
       if (livePrices && outcome.tokenId) {
         const liveData = livePrices.get(outcome.tokenId);
-        if (liveData && liveData.bestAsk > 0) {
-          price = liveData.bestAsk;
+        if (liveData && liveData.bestAsk >= 0.995) {
+          return true;
         }
       }
-      // If any outcome is at 100¢ (using 0.995 for floating point tolerance)
-      if (price >= 0.995) {
+      // Fall back to static price or executionPrice
+      const staticPrice = outcome.executionPrice || outcome.price || 0;
+      if (staticPrice >= 0.995) {
         return true;
       }
     }

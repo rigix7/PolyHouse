@@ -505,6 +505,52 @@ export default function HomePage() {
     fetchBalance();
   };
 
+  // Memoized getOrderBook function to prevent infinite re-renders in BetSlip
+  // This must be stable across renders to avoid triggering BetSlip's useEffect repeatedly
+  const getOrderBook = useCallback(async (tokenId: string) => {
+    if (!clobClient) return null;
+    
+    try {
+      console.log("[OrderBook] Fetching for token:", tokenId);
+      const book = await clobClient.getOrderBook(tokenId);
+      console.log("[OrderBook] Raw response:", JSON.stringify(book).slice(0, 500));
+      const bids = (book.bids || []).map((b: any) => ({
+        price: parseFloat(b.price || "0"),
+        size: parseFloat(b.size || "0"),
+      }));
+      const asks = (book.asks || []).map((a: any) => ({
+        price: parseFloat(a.price || "0"),
+        size: parseFloat(a.size || "0"),
+      }));
+      const bestBid = bids[0]?.price || 0;
+      const bestAsk = asks[0]?.price || 0;
+      console.log("[OrderBook] Parsed - bestBid:", bestBid, "bestAsk:", bestAsk);
+      const spread = bestAsk > 0 && bestBid > 0 ? bestAsk - bestBid : 0;
+      const spreadPercent = bestAsk > 0 && bestBid > 0 ? (spread / bestBid) * 100 : 0;
+      const bidDepth = bids[0]?.size || 0;
+      const askDepth = asks[0]?.size || 0;
+      const totalBidLiquidity = bids.reduce((sum: number, b: any) => sum + b.size * b.price, 0);
+      const totalAskLiquidity = asks.reduce((sum: number, a: any) => sum + a.size * a.price, 0);
+      return {
+        bids,
+        asks,
+        bestBid,
+        bestAsk,
+        spread,
+        spreadPercent,
+        bidDepth,
+        askDepth,
+        totalBidLiquidity,
+        totalAskLiquidity,
+        isLowLiquidity: totalAskLiquidity < 100,
+        isWideSpread: spreadPercent > 5,
+      };
+    } catch (err) {
+      console.error("Failed to get order book:", err);
+      return null;
+    }
+  }, [clobClient]);
+
   const handleCancelBet = () => {
     setSelectedBet(undefined);
     setShowBetSlip(false);
@@ -622,49 +668,7 @@ export default function HomePage() {
           onSuccess={handleBetSuccess}
           question={selectedBet.question}
           isSoccer3Way={selectedBet.isSoccer3Way}
-          getOrderBook={clobClient ? async (tokenId: string) => {
-            try {
-              console.log("[OrderBook] Fetching for token:", tokenId);
-              console.log("[OrderBook] Selected bet yesTokenId:", selectedBet.yesTokenId);
-              console.log("[OrderBook] Selected bet noTokenId:", selectedBet.noTokenId);
-              const book = await clobClient.getOrderBook(tokenId);
-              console.log("[OrderBook] Raw response:", JSON.stringify(book).slice(0, 500));
-              const bids = (book.bids || []).map((b: any) => ({
-                price: parseFloat(b.price || "0"),
-                size: parseFloat(b.size || "0"),
-              }));
-              const asks = (book.asks || []).map((a: any) => ({
-                price: parseFloat(a.price || "0"),
-                size: parseFloat(a.size || "0"),
-              }));
-              const bestBid = bids[0]?.price || 0;
-              const bestAsk = asks[0]?.price || 0;
-              console.log("[OrderBook] Parsed - bestBid:", bestBid, "bestAsk:", bestAsk);
-              const spread = bestAsk > 0 && bestBid > 0 ? bestAsk - bestBid : 0;
-              const spreadPercent = bestAsk > 0 && bestBid > 0 ? (spread / bestBid) * 100 : 0;
-              const bidDepth = bids[0]?.size || 0;
-              const askDepth = asks[0]?.size || 0;
-              const totalBidLiquidity = bids.reduce((sum: number, b: any) => sum + b.size * b.price, 0);
-              const totalAskLiquidity = asks.reduce((sum: number, a: any) => sum + a.size * a.price, 0);
-              return {
-                bids,
-                asks,
-                bestBid,
-                bestAsk,
-                spread,
-                spreadPercent,
-                bidDepth,
-                askDepth,
-                totalBidLiquidity,
-                totalAskLiquidity,
-                isLowLiquidity: totalAskLiquidity < 100,
-                isWideSpread: spreadPercent > 5,
-              };
-            } catch (err) {
-              console.error("Failed to get order book:", err);
-              return null;
-            }
-          } : undefined}
+          getOrderBook={clobClient ? getOrderBook : undefined}
         />
       )}
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { X, AlertTriangle, Loader2, RefreshCw, CheckCircle2, XCircle, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -166,6 +166,17 @@ export function BetSlip({
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [confirmedStake, setConfirmedStake] = useState<number>(0);
   
+  // Safety guard: track last fetched token to prevent duplicate fetches
+  const lastFetchedTokenRef = useRef<string | null>(null);
+  // Retry counter to trigger re-fetch when user clicks refresh
+  const [retryCounter, setRetryCounter] = useState(0);
+  
+  // Allow manual retry by resetting the ref AND triggering a re-render
+  const retryOrderBook = useCallback(() => {
+    lastFetchedTokenRef.current = null;
+    setRetryCounter(c => c + 1);
+  }, []);
+  
   const stakeNum = parseFloat(stake) || 0;
   
   // For match-winner markets, each outcome has its own token
@@ -173,37 +184,49 @@ export function BetSlip({
   const currentTokenId = betDirection === "yes" ? yesTokenId : noTokenId;
   
   // Fetch order book for the selected outcome's token
-  const fetchOrderBook = useCallback(async () => {
+  // Only fetch if tokenId changed since last fetch (prevents infinite loops)
+  useEffect(() => {
     if (!getOrderBook || !currentTokenId) {
       setOrderBook(null);
       return;
     }
     
-    setIsLoadingBook(true);
-    setBookError(null);
-    
-    try {
-      console.log("[BetSlip] Fetching order book for direction:", betDirection, "token:", currentTokenId?.slice(0, 20) + "...");
-      const book = await getOrderBook(currentTokenId);
-      setOrderBook(book);
-      setLastFetchTime(Date.now());
-      
-      if (!book) {
-        setBookError("Could not fetch order book");
-      }
-    } catch (err) {
-      console.error("Failed to fetch order book:", err);
-      setBookError("Failed to fetch market data");
-      setOrderBook(null);
-    } finally {
-      setIsLoadingBook(false);
+    // Safety guard: skip if already fetched for this token or currently loading
+    if (lastFetchedTokenRef.current === currentTokenId || isLoadingBook) {
+      return;
     }
-  }, [getOrderBook, currentTokenId, betDirection]);
-  
-  // Fetch order book on mount and when direction changes
-  useEffect(() => {
-    fetchOrderBook();
-  }, [fetchOrderBook]);
+    
+    const fetchBook = async () => {
+      setIsLoadingBook(true);
+      setBookError(null);
+      
+      try {
+        console.log("[BetSlip] Fetching order book for direction:", betDirection, "token:", currentTokenId?.slice(0, 20) + "...");
+        const book = await getOrderBook(currentTokenId);
+        setOrderBook(book);
+        setLastFetchTime(Date.now());
+        // Only mark as fetched AFTER success
+        lastFetchedTokenRef.current = currentTokenId;
+        
+        if (!book) {
+          setBookError("Could not fetch order book");
+          // Allow retry on null response
+          lastFetchedTokenRef.current = null;
+        }
+      } catch (err) {
+        console.error("Failed to fetch order book:", err);
+        setBookError("Failed to fetch market data");
+        setOrderBook(null);
+        // Clear ref on error to allow retry
+        lastFetchedTokenRef.current = null;
+      } finally {
+        setIsLoadingBook(false);
+      }
+    };
+    
+    fetchBook();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [getOrderBook, currentTokenId, betDirection, retryCounter]);
   
   // Calculate the execution price from order book
   // Using 3% buffer to ensure we cross the spread and match against existing orders
@@ -480,7 +503,7 @@ export function BetSlip({
                 <span>{bookError}</span>
               </div>
               <button
-                onClick={fetchOrderBook}
+                onClick={retryOrderBook}
                 className="p-1 hover:bg-amber-400/20 rounded"
                 data-testid="button-refresh-book"
               >

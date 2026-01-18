@@ -502,9 +502,9 @@ function SpreadMarketDisplay({
     ? `${spreadLabels[1].label} ${spreadLabels[1].lineStr}` 
     : spreadLabels[1].label;
   
-  // Prices: use live prices from WebSocket if available, fall back to Gamma API
-  const leftStaticPrice = outcomes[0].price ?? market.bestAsk ?? 0.5;
-  const rightStaticPrice = outcomes[1].price ?? (1 - market.bestAsk) ?? 0.5;
+  // Prices: use live prices from WebSocket if available, fall back to market.bestAsk from Gamma API
+  const leftStaticPrice = market.bestAsk ?? 0.5;
+  const rightStaticPrice = market.bestBid ?? (1 - (market.bestAsk ?? 0.5));
   const leftPrice = Math.round(getLivePrice(outcomes[0].tokenId, leftStaticPrice, livePrices) * 100);
   const rightPrice = Math.round(getLivePrice(outcomes[1].tokenId, rightStaticPrice, livePrices) * 100);
   
@@ -566,8 +566,8 @@ function TotalsMarketDisplay({
   const line = market.line ?? parseLineFromTitle(market.groupItemTitle) ?? 0;
   
   // Outcomes: ["Over", "Under"] with live prices from WebSocket if available
-  const overStaticPrice = outcomes[0].price ?? market.bestAsk ?? 0.5;
-  const underStaticPrice = outcomes[1].price ?? (1 - market.bestAsk) ?? 0.5;
+  const overStaticPrice = market.bestAsk ?? 0.5;
+  const underStaticPrice = market.bestBid ?? (1 - (market.bestAsk ?? 0.5));
   const overPrice = Math.round(getLivePrice(outcomes[0].tokenId, overStaticPrice, livePrices) * 100);
   const underPrice = Math.round(getLivePrice(outcomes[1].tokenId, underStaticPrice, livePrices) * 100);
   
@@ -655,7 +655,7 @@ function SoccerMoneylineDisplay({
   
   // Calculate prices using live data when available and find favorite using normalized probabilities
   const prices = sortedMarkets.map(m => {
-    const staticPrice = m.outcomes[0]?.price ?? m.bestAsk ?? 0;
+    const staticPrice = m.bestAsk ?? 0;
     return getLivePrice(m.outcomes[0]?.tokenId, staticPrice, livePrices);
   });
   const totalProb = prices.reduce((sum, p) => sum + p, 0);
@@ -763,7 +763,7 @@ function MoneylineMarketDisplay({
   
   // Calculate prices using live data when available, find favorite
   const prices = outcomes.map((o, idx) => {
-    const staticPrice = o.price ?? (idx === 0 ? market.bestAsk : market.bestBid) ?? 0.5;
+    const staticPrice = (idx === 0 ? market.bestAsk : market.bestBid) ?? 0.5;
     return getLivePrice(o.tokenId, staticPrice, livePrices);
   });
   const maxPrice = Math.max(...prices);
@@ -887,8 +887,8 @@ function SimplifiedMarketRow({
       <div className="text-sm text-zinc-300">{market.question}</div>
       <div className="flex gap-2">
         {market.outcomes.map((outcome, idx) => {
-          // Use live price from WebSocket if available, fall back to Gamma API
-          const staticPrice = outcome.price ?? (idx === 0 ? market.bestAsk : market.bestBid) ?? 0;
+          // Use live price from WebSocket if available, fall back to market.bestAsk from Gamma API
+          const staticPrice = (idx === 0 ? market.bestAsk : market.bestBid) ?? 0;
           const price = getLivePrice(outcome.tokenId, staticPrice, livePrices);
           const priceInCents = Math.round(price * 100);
           const isSelected = isThisMarket && selectedOutcomeIndex === idx;
@@ -1468,18 +1468,29 @@ export function PredictView({
   }, [displayEvents]);
   
   // Subscribe to live prices for visible markets
-  // Note: subscribe/unsubscribe are stable callbacks from useLivePrices hook
+  // Using a stable string representation to avoid re-runs due to array reference changes
   const { subscribe, unsubscribe } = livePrices || {};
+  const tokenIdString = useMemo(() => allTokenIds.join(','), [allTokenIds]);
+  const subscribedRef = useRef(false);
+  
   useEffect(() => {
-    if (subscribe && allTokenIds.length > 0) {
-      subscribe(allTokenIds);
+    if (!subscribe || !tokenIdString || subscribedRef.current) return;
+    
+    const tokenIds = tokenIdString.split(',').filter(Boolean);
+    if (tokenIds.length > 0) {
+      subscribe(tokenIds);
+      subscribedRef.current = true;
     }
+  }, [subscribe, tokenIdString]);
+  
+  // Cleanup only on unmount
+  useEffect(() => {
     return () => {
-      if (unsubscribe && allTokenIds.length > 0) {
-        unsubscribe(allTokenIds);
+      if (unsubscribe && subscribedRef.current) {
+        subscribedRef.current = false;
       }
     };
-  }, [subscribe, unsubscribe, allTokenIds]);
+  }, [unsubscribe]);
 
   // Helper to normalize text for tag matching (lowercase, trim)
   const normalizeForMatch = (text: string) => text.toLowerCase().trim();
@@ -1569,17 +1580,17 @@ export function PredictView({
     }
     
     const outcome = market.outcomes[outcomeIndex];
-    // Use executionPrice for order submission (bestAsk or buffered price for instant fills)
-    const execPrice = outcome?.executionPrice || outcome?.price || market.bestAsk || 0.5;
+    // Use executionPrice for order submission, fallback to market.bestAsk
+    const execPrice = outcome?.executionPrice || market.bestAsk || 0.5;
     const odds = execPrice > 0 ? 1 / execPrice : 2;
     
     // Extract CLOB token IDs based on direction
     const yesTokenId = market.clobTokenIds?.[0] || market.outcomes[0]?.tokenId;
     const noTokenId = market.clobTokenIds?.[1] || market.outcomes[1]?.tokenId;
     
-    // Use executionPrice for each outcome (what user will actually pay)
-    const yesPrice = market.outcomes[0]?.executionPrice || market.outcomes[0]?.price || market.bestAsk || 0.5;
-    const noPrice = market.outcomes[1]?.executionPrice || market.outcomes[1]?.price || 0.5;
+    // Use executionPrice for each outcome, fallback to market.bestAsk/bestBid
+    const yesPrice = market.outcomes[0]?.executionPrice || market.bestAsk || 0.5;
+    const noPrice = market.outcomes[1]?.executionPrice || market.bestBid || 0.5;
     
     // Create a descriptive outcome label
     // For spreads, use the display label passed from SpreadMarketDisplay (e.g., "Clippers -2.5")
@@ -1627,8 +1638,8 @@ export function PredictView({
   // Handler for additional markets (simplified view) - uses direct outcome labels
   const handleSelectAdditionalMarket = (market: ParsedMarket, eventTitle: string, marketType: string, outcomeIndex: number, outcomeLabel: string) => {
     const outcome = market.outcomes[outcomeIndex];
-    // Use executionPrice for order submission (bestAsk or buffered price for instant fills)
-    const execPrice = outcome?.executionPrice || outcome?.price || (outcomeIndex === 0 ? market.bestAsk : 0.5) || 0.5;
+    // Use executionPrice for order submission, fallback to market.bestAsk/bestBid
+    const execPrice = outcome?.executionPrice || (outcomeIndex === 0 ? market.bestAsk : market.bestBid) || 0.5;
     const odds = execPrice > 0 ? 1 / execPrice : 2;
     
     // Extract CLOB token IDs - use the selected outcome's token
@@ -1638,9 +1649,9 @@ export function PredictView({
     // Use outcome's token as the outcomeId for bet placement
     const outcomeId = selectedTokenId || outcome?.tokenId || market.conditionId;
     
-    // Use executionPrice for each outcome (what user will actually pay)
-    const yesPrice = market.outcomes[0]?.executionPrice || market.outcomes[0]?.price || market.bestAsk || 0.5;
-    const noPrice = market.outcomes[1]?.executionPrice || market.outcomes[1]?.price || 0.5;
+    // Use executionPrice for each outcome, fallback to market.bestAsk/bestBid
+    const yesPrice = market.outcomes[0]?.executionPrice || market.bestAsk || 0.5;
+    const noPrice = market.outcomes[1]?.executionPrice || market.bestBid || 0.5;
     
     // Map direction to "yes" | "no" for BetSlip
     const betDirection: "yes" | "no" = outcomeIndex === 0 ? "yes" : "no";

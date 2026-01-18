@@ -268,8 +268,7 @@ export function BetSlip({
     fillSimulation.wouldSlip
   );
   
-  // Check if order book is stale (older than 10 seconds)
-  const isBookStale = Date.now() - lastFetchTime > 10000;
+  // Note: Order book is fetched once per bet selection, no stale refresh
   
   // Determine button labels based on market type or custom outcomeLabels
   const getDirectionLabels = () => {
@@ -292,35 +291,8 @@ export function BetSlip({
     setConfirmedStake(stakeNum);
     
     try {
-      let result: { success: boolean; error?: string; orderId?: string };
-      
-      // If book is stale, refresh before submitting using the current direction's token
-      if (isBookStale && getOrderBook && currentTokenId) {
-        setIsLoadingBook(true);
-        try {
-          const freshBook = await getOrderBook(currentTokenId);
-          setOrderBook(freshBook);
-          setLastFetchTime(Date.now());
-          
-          if (freshBook) {
-            let freshPrice: number;
-            // Use bestAsk from the selected outcome's order book directly
-            if (freshBook.bestAsk > 0 && freshBook.bestAsk < 0.99) {
-              freshPrice = Math.min(freshBook.bestAsk + PRICE_BUFFER, 0.99);
-            } else {
-              freshPrice = executionPrice;
-            }
-            const freshOdds = 1 / freshPrice;
-            result = await onConfirm(stakeNum, betDirection, freshOdds, freshPrice);
-          } else {
-            result = await onConfirm(stakeNum, betDirection, effectiveOdds, executionPrice);
-          }
-        } finally {
-          setIsLoadingBook(false);
-        }
-      } else {
-        result = await onConfirm(stakeNum, betDirection, effectiveOdds, executionPrice);
-      }
+      // Submit with current execution price (no stale refresh - prices come from WebSocket/Gamma)
+      const result = await onConfirm(stakeNum, betDirection, effectiveOdds, executionPrice);
       
       if (result.success) {
         setSubmissionStatus("success");

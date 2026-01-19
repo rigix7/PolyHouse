@@ -257,6 +257,7 @@ export async function registerRoutes(
   });
 
   // Get wallet record (WILD points) by address
+  // Uses calculated WILD points from order history as source of truth
   app.get("/api/wallet/:address", async (req, res) => {
     try {
       const { address } = req.params;
@@ -264,8 +265,18 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Address required" });
       }
       const record = await storage.getOrCreateWalletRecord(address);
-      res.json(record);
+      
+      // Calculate WILD points from order history (more reliable than stored value)
+      const calculatedWildPoints = await storage.getCalculatedWildPoints(address);
+      
+      // Return record with calculated WILD points as source of truth
+      res.json({
+        ...record,
+        wildPoints: calculatedWildPoints,
+        storedWildPoints: record.wildPoints, // Keep stored value for debugging
+      });
     } catch (error) {
+      console.error("Failed to fetch wallet record:", error);
       res.status(500).json({ error: "Failed to fetch wallet record" });
     }
   });
@@ -1502,14 +1513,16 @@ export async function registerRoutes(
       }
       
       // Award WILD points only for filled/matched orders (actual execution)
-      // "cancelled" means order was rejected - don't award
-      // "filled" or "matched" means order executed and USDC was spent
-      if (walletAddress && (status === "filled" || status === "matched")) {
+      // Normalize status to handle case variations from Polymarket SDK
+      const normalizedStatus = (status || "").toLowerCase().trim();
+      const isFilledOrder = ["filled", "matched", "executed", "completed", "success"].includes(normalizedStatus);
+      
+      if (walletAddress && isFilledOrder) {
         const stakeAmount = Math.floor(orderAmount);
         await storage.addWildPoints(walletAddress, stakeAmount);
-        console.log(`[Orders] Awarded ${stakeAmount} WILD points to ${walletAddress}`);
+        console.log(`[Orders] Awarded ${stakeAmount} WILD points to ${walletAddress} (status: ${status} -> ${normalizedStatus})`);
       } else {
-        console.log(`[Orders] No WILD points awarded - status: ${status} (only filled/matched get points)`);
+        console.log(`[Orders] No WILD points awarded - status: "${status}" normalized to "${normalizedStatus}" (accepted: filled/matched/executed/completed/success)`);
       }
       
       res.json({

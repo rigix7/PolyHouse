@@ -99,6 +99,7 @@ export interface IStorage {
   getPolymarketOrders(walletAddress: string): Promise<PolymarketOrder[]>;
   createPolymarketOrder(order: InsertPolymarketOrder): Promise<PolymarketOrder>;
   updatePolymarketOrder(id: number, updates: Partial<PolymarketOrder>): Promise<PolymarketOrder | undefined>;
+  getCalculatedWildPoints(walletAddress: string): Promise<number>;
   
   getPolymarketPositions(walletAddress: string): Promise<PolymarketPosition[]>;
   createPolymarketPosition(position: InsertPolymarketPosition): Promise<PolymarketPosition>;
@@ -675,6 +676,40 @@ export class DatabaseStorage implements IStorage {
       .where(eq(polymarketOrders.id, id))
       .returning();
     return updated || undefined;
+  }
+
+  async getCalculatedWildPoints(walletAddress: string): Promise<number> {
+    const normalizedAddress = walletAddress.toLowerCase();
+    const orders = await db.select().from(polymarketOrders)
+      .where(eq(polymarketOrders.walletAddress, normalizedAddress));
+    
+    // Sum amounts from all filled/matched/executed orders
+    // Status values are case-insensitive
+    const filledStatuses = ["filled", "matched", "executed", "completed", "success"];
+    
+    let totalSpent = 0;
+    for (const order of orders) {
+      const normalizedStatus = (order.status || "").toLowerCase().trim();
+      if (filledStatuses.includes(normalizedStatus)) {
+        const price = parseFloat(order.price || "0");
+        const size = parseFloat(order.size || "0");
+        
+        // For FOK orders: price is 0 and size contains the stake amount
+        // For limit orders: amount is price * size
+        let orderAmount: number;
+        if (price === 0 || price < 0.001) {
+          // FOK order - size IS the stake amount
+          orderAmount = size;
+        } else {
+          // Limit order - calculate from price * size
+          orderAmount = price * size;
+        }
+        
+        totalSpent += Math.floor(orderAmount);
+      }
+    }
+    
+    return totalSpent;
   }
 
   async getPolymarketPositions(walletAddress: string): Promise<PolymarketPosition[]> {

@@ -102,6 +102,7 @@ export interface IStorage {
   getCalculatedWildPoints(walletAddress: string): Promise<number>;
   getAllWalletsWithWildPoints(): Promise<Array<{
     address: string;
+    safeAddress: string | null;
     storedWildPoints: number;
     calculatedWildPoints: number;
     orderCount: number;
@@ -773,6 +774,7 @@ export class DatabaseStorage implements IStorage {
 
   async getAllWalletsWithWildPoints(): Promise<Array<{
     address: string;
+    safeAddress: string | null;
     storedWildPoints: number;
     calculatedWildPoints: number;
     orderCount: number;
@@ -808,6 +810,7 @@ export class DatabaseStorage implements IStorage {
       
       results.push({
         address: wallet.address,
+        safeAddress: wallet.safeAddress || null,
         storedWildPoints: wallet.wildPoints || 0,
         calculatedWildPoints: calculatedPoints,
         orderCount: filledOrderCount,

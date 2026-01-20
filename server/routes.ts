@@ -14,6 +14,46 @@ const BUILDER_CREDENTIALS: BuilderApiKeyCreds = {
 
 const GAMMA_API_BASE = "https://gamma-api.polymarket.com";
 
+// Shared helper to calculate WILD points from Polymarket Activity API
+// Returns { wildPoints, activityCount, success, partial } where:
+// - success: true if API call worked
+// - partial: true if results may be incomplete (hit limit)
+const ACTIVITY_API_LIMIT = 1000;
+async function fetchWildPointsFromPolymarket(address: string): Promise<{ wildPoints: number; activityCount: number; success: boolean; partial: boolean }> {
+  if (!address) return { wildPoints: 0, activityCount: 0, success: false, partial: false };
+  
+  try {
+    const activityUrl = `https://data-api.polymarket.com/activity?user=${address}&type=TRADE&sortBy=TIMESTAMP&sortDirection=DESC&limit=${ACTIVITY_API_LIMIT}`;
+    const response = await fetch(activityUrl);
+    
+    if (!response.ok) {
+      console.error(`[WildPoints] Polymarket API returned ${response.status} for ${address}`);
+      return { wildPoints: 0, activityCount: 0, success: false, partial: false };
+    }
+    
+    const activities = await response.json();
+    let wildPoints = 0;
+    for (const activity of activities) {
+      // Only count BUY trades (when user spends USDC)
+      if (activity.side === "BUY" && activity.usdcSize) {
+        wildPoints += Math.floor(activity.usdcSize);
+      }
+    }
+    
+    // Flag if we hit the limit - data may be incomplete
+    const partial = activities.length >= ACTIVITY_API_LIMIT;
+    if (partial) {
+      console.warn(`[WildPoints] Hit limit=${ACTIVITY_API_LIMIT} for ${address} - data may be incomplete`);
+    }
+    
+    console.log(`[WildPoints] Calculated ${wildPoints} WILD from ${activities.length} activities for ${address}${partial ? " (PARTIAL)" : ""}`);
+    return { wildPoints, activityCount: activities.length, success: true, partial };
+  } catch (error) {
+    console.error(`[WildPoints] Failed to fetch activity for ${address}:`, error);
+    return { wildPoints: 0, activityCount: 0, success: false, partial: false };
+  }
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -257,7 +297,7 @@ export async function registerRoutes(
   });
 
   // Get wallet record (WILD points) by address
-  // Uses calculated WILD points from order history as source of truth
+  // Uses Polymarket Activity API as source of truth for WILD points
   app.get("/api/wallet/:address", async (req, res) => {
     try {
       const { address } = req.params;
@@ -266,13 +306,33 @@ export async function registerRoutes(
       }
       const record = await storage.getOrCreateWalletRecord(address);
       
-      // Calculate WILD points from order history (more reliable than stored value)
-      const calculatedWildPoints = await storage.getCalculatedWildPoints(address);
+      // Calculate WILD points from Polymarket Activity API (source of truth)
+      // Use Safe address for activity query since trading happens via Safe wallet
+      const queryAddress = record.safeAddress || address;
       
-      // Return record with calculated WILD points as source of truth
+      let wildPoints = 0;
+      let activityCount = 0;
+      let usedFallback = false;
+      let partial = false;
+      
+      const polyResult = await fetchWildPointsFromPolymarket(queryAddress);
+      if (polyResult.success) {
+        wildPoints = polyResult.wildPoints;
+        activityCount = polyResult.activityCount;
+        partial = polyResult.partial;
+      } else {
+        // Fall back to database calculation if Polymarket API fails
+        wildPoints = await storage.getCalculatedWildPoints(address);
+        usedFallback = true;
+      }
+      
+      // Return record with Polymarket-calculated WILD points as source of truth
       res.json({
         ...record,
-        wildPoints: calculatedWildPoints,
+        wildPoints,
+        activityCount,
+        usedFallback,
+        partial, // true if data may be incomplete (hit API limit)
         storedWildPoints: record.wildPoints, // Keep stored value for debugging
       });
     } catch (error) {
@@ -1149,8 +1209,43 @@ export async function registerRoutes(
 
   app.get("/api/admin/wild-points", async (req, res) => {
     try {
+      // Get all wallets with Safe addresses
       const wallets = await storage.getAllWalletsWithWildPoints();
-      res.json(wallets);
+      
+      // Calculate WILD points from Polymarket Activity API for each wallet with a Safe address
+      const results = [];
+      for (const wallet of wallets) {
+        const safeAddress = wallet.safeAddress || "";
+        let polymarketWildPoints = 0;
+        let activityCount = 0;
+        let source = "none";
+        
+        let partial = false;
+        if (safeAddress) {
+          const polyResult = await fetchWildPointsFromPolymarket(safeAddress);
+          if (polyResult.success) {
+            polymarketWildPoints = polyResult.wildPoints;
+            activityCount = polyResult.activityCount;
+            partial = polyResult.partial;
+            source = partial ? "polymarket (partial)" : "polymarket";
+          } else {
+            // Fall back to DB calculation if Polymarket API fails
+            polymarketWildPoints = wallet.calculatedWildPoints;
+            activityCount = wallet.orderCount;
+            source = "database";
+          }
+        }
+        
+        results.push({
+          ...wallet,
+          polymarketWildPoints,
+          activityCount,
+          source,
+          partial,
+        });
+      }
+      
+      res.json(results);
     } catch (error) {
       console.error("Error fetching wild points:", error);
       res.status(500).json({ error: "Failed to fetch wild points" });

@@ -1155,9 +1155,13 @@ export default function AdminPage() {
 
 interface WildWallet {
   address: string;
+  safeAddress: string | null;
   storedWildPoints: number;
   calculatedWildPoints: number;
   orderCount: number;
+  polymarketWildPoints: number;
+  activityCount: number;
+  source: string;
   createdAt: string;
 }
 
@@ -1166,8 +1170,8 @@ function WildPointsManager() {
     queryKey: ["/api/admin/wild-points"],
   });
 
-  const totalPoints = wallets.reduce((sum, w) => sum + w.calculatedWildPoints, 0);
-  const totalOrders = wallets.reduce((sum, w) => sum + w.orderCount, 0);
+  const totalPoints = wallets.reduce((sum, w) => sum + (w.polymarketWildPoints || w.calculatedWildPoints || 0), 0);
+  const totalActivity = wallets.reduce((sum, w) => sum + (w.activityCount || 0), 0);
 
   const formatAddress = (addr: string) => {
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
@@ -1196,7 +1200,7 @@ function WildPointsManager() {
       <div>
         <h2 className="text-lg font-bold">$WILD Points Management</h2>
         <p className="text-sm text-zinc-500">
-          Track WILD points for all users. 1 USDC spent = 1 WILD point.
+          Track WILD points for all users. 1 USDC spent = 1 WILD point. Data sourced from Polymarket Activity API.
         </p>
       </div>
 
@@ -1210,8 +1214,8 @@ function WildPointsManager() {
           <div className="text-2xl font-bold font-mono text-wild-gold">{totalPoints.toLocaleString()}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-xs text-zinc-500 uppercase tracking-wider">Total Orders</div>
-          <div className="text-2xl font-bold font-mono">{totalOrders}</div>
+          <div className="text-xs text-zinc-500 uppercase tracking-wider">Total Activity</div>
+          <div className="text-2xl font-bold font-mono">{totalActivity}</div>
         </Card>
       </div>
 
@@ -1222,35 +1226,31 @@ function WildPointsManager() {
       ) : (
         <Card className="divide-y divide-zinc-800">
           <div className="p-3 bg-zinc-900/50 grid grid-cols-12 gap-2 text-xs font-bold text-zinc-400 uppercase tracking-wider">
-            <div className="col-span-4">Wallet</div>
+            <div className="col-span-3">EOA Wallet</div>
+            <div className="col-span-3">Safe Wallet</div>
             <div className="col-span-2 text-right">$WILD</div>
-            <div className="col-span-2 text-right">Orders</div>
-            <div className="col-span-2 text-right">Delta</div>
+            <div className="col-span-2 text-right">Activity</div>
             <div className="col-span-2 text-right">Joined</div>
           </div>
           {wallets.map((wallet, i) => {
-            const delta = wallet.calculatedWildPoints - wallet.storedWildPoints;
+            const wildPoints = wallet.polymarketWildPoints || wallet.calculatedWildPoints || 0;
             return (
               <div 
                 key={wallet.address} 
                 className="p-3 grid grid-cols-12 gap-2 items-center"
                 data-testid={`wild-wallet-${i}`}
               >
-                <div className="col-span-4 font-mono text-sm truncate" title={wallet.address}>
+                <div className="col-span-3 font-mono text-sm truncate" title={wallet.address}>
                   {formatAddress(wallet.address)}
                 </div>
+                <div className="col-span-3 font-mono text-sm truncate text-zinc-500" title={wallet.safeAddress || ""}>
+                  {wallet.safeAddress ? formatAddress(wallet.safeAddress) : "-"}
+                </div>
                 <div className="col-span-2 text-right font-mono font-bold text-wild-gold">
-                  {wallet.calculatedWildPoints.toLocaleString()}
+                  {wildPoints.toLocaleString()}
                 </div>
                 <div className="col-span-2 text-right font-mono text-zinc-400">
-                  {wallet.orderCount}
-                </div>
-                <div className={`col-span-2 text-right font-mono text-xs ${
-                  delta === 0 ? "text-zinc-600" 
-                    : delta > 0 ? "text-wild-scout" 
-                    : "text-wild-brand"
-                }`}>
-                  {delta === 0 ? "-" : delta > 0 ? `+${delta}` : delta}
+                  {wallet.activityCount || 0}
                 </div>
                 <div className="col-span-2 text-right text-xs text-zinc-500">
                   {formatDate(wallet.createdAt)}
@@ -1262,8 +1262,7 @@ function WildPointsManager() {
       )}
 
       <p className="text-xs text-zinc-600">
-        Delta shows difference between calculated (from orders) and stored points. 
-        Non-zero delta may indicate missed point credits.
+        WILD points calculated from Polymarket Activity API. Sum of all BUY trades (USDC spent) = WILD earned.
       </p>
     </div>
   );

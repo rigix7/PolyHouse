@@ -167,13 +167,13 @@ Key API Endpoints:
   - Removed deprecated hardcoded team abbreviation maps (NFL_TEAM_ABBREVIATIONS, NBA_TEAM_ABBREVIATIONS)
   - Removed unused functions: getTeamAbbreviation(), fetchPolymarketSports(), fetchCategorizedTags
   - All terminal components in use: BetSlip, BottomNav, DemoBadge (Scout/Trade), Header, etc.
-- Fixed Wild Points crediting system (January 19, 2026)
-  - Wild Points now calculated from order history as source of truth (self-healing)
-  - Added `getCalculatedWildPoints()` function that sums filled order amounts
-  - Status check normalized to be case-insensitive and accept variations (filled, matched, executed, completed, success)
-  - FOK orders: price=0 means size field contains stake amount directly
-  - Limit orders: amount = price × size
-  - Wallet endpoint returns calculated points instead of stored incremental value
+- Migrated Wild Points to Polymarket Activity API (January 20, 2026)
+  - WILD points now calculated from Polymarket Activity API as source of truth
+  - Shared helper `fetchWildPointsFromPolymarket()` sums BUY trade usdcSize values
+  - Queries Safe wallet address (not EOA) since trading happens via Safe
+  - `partial` flag indicates when data may be incomplete (>1000 trades)
+  - Admin shows source: "polymarket", "polymarket (partial)", or "database" (fallback)
+  - Database fallback if Polymarket API fails or returns non-OK status
 - Added pending position status for won bets (January 20, 2026)
   - Positions with curPrice >= 0.99 but redeemable !== true are marked as "pending"
   - Pending = user won but Polymarket hasn't enabled redemption yet

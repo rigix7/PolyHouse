@@ -1695,28 +1695,24 @@ export function PredictView({
   };
   
   // Handler for additional markets (simplified view) - uses direct outcome labels
+  // For non-3-way markets, we pass the selected token directly as yesTokenId
+  // and always use direction "yes" so BetSlip uses the correct token
   const handleSelectAdditionalMarket = (market: ParsedMarket, eventTitle: string, marketType: string, outcomeIndex: number, outcomeLabel: string) => {
     const outcome = market.outcomes[outcomeIndex];
-    // Use executionPrice for order submission, fallback to market.bestAsk/bestBid
+    // Use the selected outcome's execution price
     const execPrice = outcome?.executionPrice || (outcomeIndex === 0 ? market.bestAsk : market.bestBid) || 0.5;
     const odds = execPrice > 0 ? 1 / execPrice : 2;
     
-    // Extract CLOB token IDs - use the selected outcome's token
+    // Get the selected outcome's token ID directly
     const selectedTokenId = market.clobTokenIds?.[outcomeIndex] || outcome?.tokenId;
-    const otherTokenId = market.clobTokenIds?.[outcomeIndex === 0 ? 1 : 0] || market.outcomes[outcomeIndex === 0 ? 1 : 0]?.tokenId;
+    const otherOutcomeIndex = outcomeIndex === 0 ? 1 : 0;
+    const otherTokenId = market.clobTokenIds?.[otherOutcomeIndex] || market.outcomes[otherOutcomeIndex]?.tokenId;
     
     // Use outcome's token as the outcomeId for bet placement
     const outcomeId = selectedTokenId || outcome?.tokenId || market.conditionId;
     
-    // Use executionPrice for each outcome, fallback to market.bestAsk/bestBid
-    const yesPrice = market.outcomes[0]?.executionPrice || market.bestAsk || 0.5;
-    const noPrice = market.outcomes[1]?.executionPrice || market.bestBid || 0.5;
-    
-    // Map direction to "yes" | "no" for BetSlip
-    const betDirection: "yes" | "no" = outcomeIndex === 0 ? "yes" : "no";
-    
-    // Use the question as market title and outcome label directly
-    // Additional markets are not soccer 3-way, so no toggle needed
+    // For non-3-way markets: pass selected token as yesTokenId, use direction "yes"
+    // This ensures BetSlip uses the exact token the user clicked on
     onPlaceBet(
       market.id, 
       outcomeId, 
@@ -1724,14 +1720,14 @@ export function PredictView({
       market.question || eventTitle,
       outcomeLabel,
       marketType,
-      betDirection,
-      selectedTokenId,
+      "yes", // Always "yes" - no direction toggle for non-3-way markets
+      selectedTokenId, // Selected token goes in yesTokenId position
       otherTokenId,
-      yesPrice,
-      noPrice,
+      execPrice, // Use selected outcome's price as yesPrice
+      market.outcomes[otherOutcomeIndex]?.executionPrice || 0.5,
       market.orderMinSize,
       market.question,
-      false
+      false // Not a soccer 3-way market
     );
   };
 

@@ -900,8 +900,8 @@ function isTennisLeague(league: string, leagueSlug?: string): boolean {
   return TENNIS_LEAGUES.some(tl => league.toLowerCase().includes(tl.toLowerCase()));
 }
 
-// Core market types that get the polished UI
-const CORE_MARKET_TYPES = ["moneyline", "spreads", "totals"];
+// Core market types that get the polished UI (spreads moved to More Markets for better label display)
+const CORE_MARKET_TYPES = ["moneyline", "totals"];
 
 // Simplified market row for additional markets - shows question + all outcomes with prices
 function SimplifiedMarketRow({

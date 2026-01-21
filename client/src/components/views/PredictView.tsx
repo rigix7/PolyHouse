@@ -1646,6 +1646,12 @@ export function PredictView({
     const yesTokenId = market.clobTokenIds?.[0] || market.outcomes[0]?.tokenId;
     const noTokenId = market.clobTokenIds?.[1] || market.outcomes[1]?.tokenId;
     
+    // Debug logging for soccer 3-way markets
+    console.log("[handleSelectMarket] Market:", market.question?.slice(0, 50));
+    console.log("[handleSelectMarket] clobTokenIds:", market.clobTokenIds);
+    console.log("[handleSelectMarket] outcomes:", market.outcomes?.map(o => ({ label: o.label, tokenId: o.tokenId?.slice(0, 20) })));
+    console.log("[handleSelectMarket] yesTokenId:", yesTokenId?.slice(0, 20), "noTokenId:", noTokenId?.slice(0, 20));
+    
     // Use executionPrice for each outcome, fallback to market.bestAsk/bestBid
     const yesPrice = market.outcomes[0]?.executionPrice || market.bestAsk || 0.5;
     const noPrice = market.outcomes[1]?.executionPrice || market.bestBid || 0.5;

@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import WalletProvider from "@/providers/WalletProvider";
+import { GeoblockBanner } from "@/components/GeoblockBanner";
 import NotFound from "@/pages/not-found";
 import HomePage from "@/pages/home";
 import AdminPage from "@/pages/admin";
@@ -37,6 +38,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WalletProvider appId={privyAppId}>
+          <GeoblockBanner />
           <Toaster />
           <Router />
         </WalletProvider>

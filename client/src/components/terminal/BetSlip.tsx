@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { X, AlertTriangle, Loader2, RefreshCw, CheckCircle2, XCircle, ArrowRight } from "lucide-react";
+import { X, AlertTriangle, Loader2, RefreshCw, CheckCircle2, XCircle, ArrowRight, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { OrderBookData } from "@/hooks/usePolymarketClient";
+import { categorizeError, type CategorizedError } from "@/lib/polymarketErrors";
 
 type SubmissionStatus = "idle" | "pending" | "success" | "error";
 
@@ -164,6 +165,7 @@ export function BetSlip({
   const [lastFetchTime, setLastFetchTime] = useState<number>(0);
   const [submissionStatus, setSubmissionStatus] = useState<SubmissionStatus>("idle");
   const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<CategorizedError | null>(null);
   const [confirmedStake, setConfirmedStake] = useState<number>(0);
   
   // Safety guard: track last fetched token to prevent duplicate fetches
@@ -316,10 +318,10 @@ export function BetSlip({
     
     setSubmissionStatus("pending");
     setSubmissionError(null);
+    setErrorDetails(null);
     setConfirmedStake(stakeNum);
     
     try {
-      // Submit with current execution price (no stale refresh - prices come from WebSocket/Gamma)
       const result = await onConfirm(stakeNum, betDirection, effectiveOdds, executionPrice);
       
       if (result.success) {
@@ -327,17 +329,22 @@ export function BetSlip({
         onSuccess?.();
       } else {
         setSubmissionStatus("error");
-        setSubmissionError(result.error || "Order failed");
+        const categorized = categorizeError(result.error || "Order failed");
+        setSubmissionError(categorized.userMessage);
+        setErrorDetails(categorized);
       }
     } catch (err) {
       setSubmissionStatus("error");
-      setSubmissionError(err instanceof Error ? err.message : "Unknown error");
+      const categorized = categorizeError(err);
+      setSubmissionError(categorized.userMessage);
+      setErrorDetails(categorized);
     }
   };
   
   const handleRetry = () => {
     setSubmissionStatus("idle");
     setSubmissionError(null);
+    setErrorDetails(null);
   };
 
   // Success Panel
@@ -381,16 +388,38 @@ export function BetSlip({
 
   // Error Panel
   if (submissionStatus === "error") {
+    const isWarning = errorDetails?.severity === "warning";
+    const borderColor = isWarning ? "border-amber-500/50" : "border-red-500/50";
+    const iconBgColor = isWarning ? "bg-amber-500/20" : "bg-red-500/20";
+    const iconColor = isWarning ? "text-amber-400" : "text-red-400";
+    const textColor = isWarning ? "text-amber-400" : "text-red-400";
+    
     return (
       <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm">
-        <div className="w-full max-w-[430px] bg-zinc-900 border-t border-red-500/50 rounded-t-xl p-6 animate-slide-up">
+        <div className={`w-full max-w-[430px] bg-zinc-900 border-t ${borderColor} rounded-t-xl p-6 animate-slide-up`}>
           <div className="text-center space-y-4">
-            <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mx-auto">
-              <XCircle className="w-10 h-10 text-red-400" />
+            <div className={`w-16 h-16 rounded-full ${iconBgColor} flex items-center justify-center mx-auto`}>
+              {isWarning ? (
+                <AlertTriangle className={`w-10 h-10 ${iconColor}`} />
+              ) : (
+                <XCircle className={`w-10 h-10 ${iconColor}`} />
+              )}
             </div>
             <div>
-              <h3 className="text-xl font-bold text-white mb-1">Bet Failed</h3>
-              <p className="text-red-400 text-sm">{submissionError || "Something went wrong"}</p>
+              <h3 className="text-xl font-bold text-white mb-1">
+                {submissionError || "Bet Failed"}
+              </h3>
+              {errorDetails?.actionable && (
+                <p className="text-zinc-400 text-sm mt-2">{errorDetails.actionable}</p>
+              )}
+              {errorDetails?.category && (
+                <div className="flex items-center justify-center gap-1 mt-3">
+                  <Info className="w-3 h-3 text-zinc-500" />
+                  <p className="text-zinc-500 text-xs font-mono">
+                    {errorDetails.category.replace(/_/g, " ")}
+                  </p>
+                </div>
+              )}
             </div>
             <div className="pt-2 space-y-3">
               <Button

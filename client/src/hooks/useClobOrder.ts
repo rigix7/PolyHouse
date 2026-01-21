@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Side, OrderType } from "@polymarket/clob-client";
 import type { ClobClient, UserOrder, UserMarketOrder } from "@polymarket/clob-client";
+import { categorizeError, type CategorizedError } from "@/lib/polymarketErrors";
 
 export type OrderParams = {
   tokenId: string;
@@ -10,7 +11,20 @@ export type OrderParams = {
   side: "BUY" | "SELL";
   negRisk?: boolean;
   isMarketOrder?: boolean;
+  marketContext?: {
+    marketTitle?: string;
+    marketType?: string;
+    isLive?: boolean;
+    eventSlug?: string;
+  };
 };
+
+export interface OrderResult {
+  success: boolean;
+  orderId?: string;
+  error?: string;
+  errorCategory?: CategorizedError;
+}
 
 export default function useClobOrder(
   clobClient: ClobClient | null,
@@ -18,55 +32,96 @@ export default function useClobOrder(
 ) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [lastError, setLastError] = useState<CategorizedError | null>(null);
   const [orderId, setOrderId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const submitOrder = useCallback(
-    async (params: OrderParams) => {
+    async (params: OrderParams): Promise<OrderResult> => {
+      const logContext = {
+        tokenId: params.tokenId?.slice(0, 20) + "...",
+        size: params.size,
+        side: params.side,
+        isMarketOrder: params.isMarketOrder,
+        ...params.marketContext,
+      };
+      
+      console.log("[Order] Starting order submission", logContext);
+      
       if (!walletAddress) {
-        throw new Error("Wallet not connected");
+        const err = new Error("Wallet not connected");
+        const categorized = categorizeError(err);
+        console.error("[Order] Failed: No wallet address", categorized);
+        setLastError(categorized);
+        return { success: false, error: categorized.userMessage, errorCategory: categorized };
       }
+      
       if (!clobClient) {
-        throw new Error("CLOB client not initialized");
+        const err = new Error("CLOB client not initialized");
+        const categorized = categorizeError(err);
+        console.error("[Order] Failed: No CLOB client", categorized);
+        setLastError(categorized);
+        return { success: false, error: categorized.userMessage, errorCategory: categorized };
+      }
+
+      if (!params.tokenId) {
+        const err = new Error("Token ID is missing");
+        const categorized = categorizeError(err);
+        console.error("[Order] Failed: No token ID", categorized);
+        setLastError(categorized);
+        return { success: false, error: categorized.userMessage, errorCategory: categorized };
       }
 
       setIsSubmitting(true);
       setError(null);
+      setLastError(null);
       setOrderId(null);
 
       try {
-        console.log("[Order] Submitting order with walletAddress:", walletAddress);
-        console.log("[Order] ClobClient orderBuilder signatureType:", (clobClient as any).orderBuilder?.signatureType);
-        console.log("[Order] ClobClient orderBuilder funder:", (clobClient as any).orderBuilder?.funderAddress);
+        console.log("[Order] Wallet address:", walletAddress);
+        console.log("[Order] CLOB client signatureType:", (clobClient as any).orderBuilder?.signatureType);
+        console.log("[Order] CLOB client funder:", (clobClient as any).orderBuilder?.funderAddress);
+        console.log("[Order] Token ID:", params.tokenId);
         
         const side = params.side === "BUY" ? Side.BUY : Side.SELL;
         let response;
 
         if (params.isMarketOrder) {
-          // For market orders, use createAndPostMarketOrder with FOK
-          // BUY orders: amount is in USDC (dollars to spend)
-          // SELL orders: amount is in shares
+          console.log("[Order] Preparing FOK market order");
+          
           let marketAmount: number;
 
           if (side === Side.BUY) {
-            // Validate that we can get a reasonable market price before submitting
-            const priceResponse = await clobClient.getPrice(
-              params.tokenId,
-              Side.SELL // Get sell side price = ask price for buyers
-            );
-            const askPrice = parseFloat(priceResponse.price);
+            console.log("[Order] Fetching current ask price for BUY order");
+            
+            try {
+              const priceResponse = await clobClient.getPrice(
+                params.tokenId,
+                Side.SELL
+              );
+              const askPrice = parseFloat(priceResponse.price);
+              console.log("[Order] Ask price response:", priceResponse, "parsed:", askPrice);
 
-            if (isNaN(askPrice) || askPrice <= 0 || askPrice >= 1) {
-              throw new Error("Unable to get valid market price - no liquidity available");
+              if (isNaN(askPrice) || askPrice <= 0 || askPrice >= 1) {
+                const err = new Error("Unable to get valid market price - no liquidity available");
+                const categorized = categorizeError(err);
+                console.error("[Order] Failed: Invalid ask price", { askPrice, categorized });
+                setLastError(categorized);
+                setError(err);
+                return { success: false, error: categorized.userMessage, errorCategory: categorized };
+              }
+
+              marketAmount = params.size;
+              console.log(`[Order] Market BUY: spending $${marketAmount} USDC at ~${(askPrice * 100).toFixed(0)}¢`);
+            } catch (priceErr) {
+              console.error("[Order] Failed to fetch price:", priceErr);
+              const categorized = categorizeError(priceErr);
+              setLastError(categorized);
+              return { success: false, error: categorized.userMessage, errorCategory: categorized };
             }
-
-            // For BUY market orders, params.size is already the USDC amount to spend
-            // The SDK handles converting dollars to shares internally
-            marketAmount = params.size;
-            console.log(`[Order] Market BUY: spending $${marketAmount} USDC at ~${(askPrice * 100).toFixed(0)}¢`);
           } else {
-            // For SELL orders, amount is in shares
             marketAmount = params.size;
+            console.log(`[Order] Market SELL: selling ${marketAmount} shares`);
           }
 
           const marketOrder: UserMarketOrder = {
@@ -76,15 +131,28 @@ export default function useClobOrder(
             feeRateBps: 0,
           };
 
-          response = await clobClient.createAndPostMarketOrder(
-            marketOrder,
-            { negRisk: params.negRisk },
-            OrderType.FOK // Fill or Kill for market orders
-          );
+          console.log("[Order] Submitting FOK order:", marketOrder);
+          
+          try {
+            response = await clobClient.createAndPostMarketOrder(
+              marketOrder,
+              { negRisk: params.negRisk },
+              OrderType.FOK
+            );
+            console.log("[Order] FOK order response:", response);
+          } catch (submitErr) {
+            console.error("[Order] FOK order submission failed:", submitErr);
+            throw submitErr;
+          }
         } else {
-          // For limit orders, use createAndPostOrder with GTC
+          console.log("[Order] Preparing GTC limit order");
+          
           if (!params.price) {
-            throw new Error("Price required for limit orders");
+            const err = new Error("Price required for limit orders");
+            const categorized = categorizeError(err);
+            console.error("[Order] Failed: No price for limit order", categorized);
+            setLastError(categorized);
+            return { success: false, error: categorized.userMessage, errorCategory: categorized };
           }
 
           const limitOrder: UserOrder = {
@@ -97,61 +165,71 @@ export default function useClobOrder(
             taker: "0x0000000000000000000000000000000000000000",
           };
 
-          response = await clobClient.createAndPostOrder(
-            limitOrder,
-            { negRisk: params.negRisk },
-            OrderType.GTC // Good Till Cancelled for limit orders
-          );
+          console.log("[Order] Submitting GTC order:", limitOrder);
+          
+          try {
+            response = await clobClient.createAndPostOrder(
+              limitOrder,
+              { negRisk: params.negRisk },
+              OrderType.GTC
+            );
+            console.log("[Order] GTC order response:", response);
+          } catch (submitErr) {
+            console.error("[Order] GTC order submission failed:", submitErr);
+            throw submitErr;
+          }
         }
 
         if (response.orderID) {
+          console.log("[Order] Success! Order ID:", response.orderID);
           setOrderId(response.orderID);
           queryClient.invalidateQueries({ queryKey: ["active-orders"] });
           queryClient.invalidateQueries({ queryKey: ["polymarket-positions"] });
           return { success: true, orderId: response.orderID };
+        } else if (response.errorMsg) {
+          console.error("[Order] Order failed with errorMsg:", response.errorMsg);
+          const categorized = categorizeError(response.errorMsg);
+          setLastError(categorized);
+          setError(new Error(response.errorMsg));
+          return { success: false, error: categorized.userMessage, errorCategory: categorized };
         } else {
-          throw new Error("Order submission failed");
+          console.error("[Order] Order failed - no orderId in response:", response);
+          const err = new Error("Order submission failed - no confirmation received");
+          const categorized = categorizeError(err);
+          setLastError(categorized);
+          setError(err);
+          return { success: false, error: categorized.userMessage, errorCategory: categorized };
         }
       } catch (err: unknown) {
-        // Log the full error for debugging
-        console.error("[Order] Full error object:", err);
+        console.error("[Order] Exception during order submission:");
         console.error("[Order] Error type:", typeof err);
-        if (err && typeof err === 'object') {
-          console.error("[Order] Error keys:", Object.keys(err));
-          console.error("[Order] Error JSON:", JSON.stringify(err, null, 2));
+        console.error("[Order] Error:", err);
+        
+        if (err && typeof err === "object") {
+          const errObj = err as Record<string, unknown>;
+          console.error("[Order] Error keys:", Object.keys(errObj));
+          console.error("[Order] Error message:", errObj.message);
+          console.error("[Order] Error code:", errObj.code);
+          console.error("[Order] Error status:", errObj.status || errObj.statusCode);
+          
+          try {
+            console.error("[Order] Error JSON:", JSON.stringify(err, null, 2));
+          } catch {
+            console.error("[Order] Could not stringify error");
+          }
         }
         
-        let error: Error;
-        if (err instanceof Error) {
-          // Check for wallet/signer initialization errors
-          const errMsg = err.message.toLowerCase();
-          console.error("[Order] Error message:", err.message);
-          
-          if (
-            errMsg.includes("first argument must be one of type string") ||
-            errMsg.includes("received type undefined") ||
-            errMsg.includes("wallet proxy not initialized") ||
-            errMsg.includes("cannot read properties of undefined")
-          ) {
-            error = new Error("Wallet not ready. Please try logging out and back in, or activate your wallet again.");
-          } else if (errMsg.includes("forbidden") || errMsg.includes("403")) {
-            error = new Error("Trading blocked - Polymarket restricts access from certain regions");
-          } else if (errMsg.includes("unauthorized") || errMsg.includes("401")) {
-            error = new Error("Authentication failed - please reconnect your wallet");
-          } else {
-            error = err;
-          }
-        } else if (err && typeof err === 'object') {
-          // Handle object-type errors (common from API responses)
-          const errObj = err as Record<string, unknown>;
-          const message = errObj.message || errObj.error || errObj.reason || JSON.stringify(err);
-          console.error("[Order] Extracted error message:", message);
-          error = new Error(String(message));
-        } else {
-          error = new Error("Failed to submit order");
-        }
-        setError(error);
-        throw error;
+        const categorized = categorizeError(err);
+        console.error("[Order] Categorized error:", categorized);
+        
+        setLastError(categorized);
+        setError(err instanceof Error ? err : new Error(categorized.technicalDetails));
+        
+        return { 
+          success: false, 
+          error: categorized.userMessage, 
+          errorCategory: categorized 
+        };
       } finally {
         setIsSubmitting(false);
       }
@@ -189,6 +267,7 @@ export default function useClobOrder(
     cancelOrder,
     isSubmitting,
     error,
+    lastError,
     orderId,
   };
 }

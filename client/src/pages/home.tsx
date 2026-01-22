@@ -452,11 +452,18 @@ export default function HomePage() {
       ? selectedBet.yesTokenId
       : selectedBet.noTokenId;
     
-    // Validate tokenId before attempting submission
+    // Detailed debug logging for comparing working vs non-working bets
+    console.log("=== BET SUBMISSION DEBUG ===");
+    console.log("[ConfirmBet] Market Type:", selectedBet.marketType);
+    console.log("[ConfirmBet] Is Soccer 3-Way:", selectedBet.isSoccer3Way);
+    console.log("[ConfirmBet] Market Title:", selectedBet.marketTitle);
+    console.log("[ConfirmBet] Outcome Label:", selectedBet.outcomeLabel);
     console.log("[ConfirmBet] Direction:", direction);
     console.log("[ConfirmBet] yesTokenId:", selectedBet.yesTokenId);
     console.log("[ConfirmBet] noTokenId:", selectedBet.noTokenId);
     console.log("[ConfirmBet] Selected tokenId:", tokenId);
+    console.log("[ConfirmBet] Stake:", stake, "Execution Price:", executionPrice);
+    console.log("============================");
     
     if (!tokenId) {
       return { success: false, error: `No token ID for ${direction} direction - market data may be incomplete` };

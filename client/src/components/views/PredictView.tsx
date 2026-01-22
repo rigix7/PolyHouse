@@ -1205,7 +1205,14 @@ function EventCard({
   
   // Separate core markets (polished UI) from additional markets (simplified view)
   const coreMarketGroups = event.marketGroups.filter(g => CORE_MARKET_TYPES.includes(g.type));
-  const additionalMarketGroups = event.marketGroups.filter(g => !CORE_MARKET_TYPES.includes(g.type));
+  const baseAdditionalMarketGroups = event.marketGroups.filter(g => !CORE_MARKET_TYPES.includes(g.type));
+  
+  // DEBUG: Also add soccer 3-way moneylines to More Markets for testing alternate code path
+  const isSoccer = event.league && isSoccerLeague(event.league, event.leagueSlug);
+  const soccer3WayGroup = coreMarketGroups.find(g => g.type === "moneyline" && isSoccer && g.markets.length >= 3);
+  const additionalMarketGroups = soccer3WayGroup 
+    ? [...baseAdditionalMarketGroups, { ...soccer3WayGroup, type: "moneyline-test" }]  // Rename type so it renders via SimplifiedMarketRow
+    : baseAdditionalMarketGroups;
   
   // Extract moneyline order for consistent spread ordering
   // Find the 2-way moneyline market and get the team order from its outcomes

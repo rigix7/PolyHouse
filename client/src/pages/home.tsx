@@ -482,16 +482,13 @@ export default function HomePage() {
       });
       
       const orderResult = result as { 
-        orderID?: string; 
-        filled?: boolean; 
-        status?: string; 
+        success: boolean;
+        orderId?: string; 
         error?: string;
       };
       
-      const isFilled = orderResult?.filled !== false;
-      
-      if (isFilled) {
-        return { success: true, orderId: orderResult?.orderID };
+      if (orderResult?.success) {
+        return { success: true, orderId: orderResult?.orderId };
       } else {
         return { success: false, error: orderResult?.error || "Order not filled - not enough liquidity" };
       }

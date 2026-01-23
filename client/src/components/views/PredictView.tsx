@@ -59,7 +59,7 @@ interface PredictViewProps {
   futures: Futures[];
   isLoading: boolean;
   futuresLoading: boolean;
-  onPlaceBet: (marketId: string, outcomeId: string, odds: number, marketTitle?: string, outcomeLabel?: string, marketType?: string, direction?: "yes" | "no", yesTokenId?: string, noTokenId?: string, yesPrice?: number, noPrice?: number, orderMinSize?: number, question?: string, isSoccer3Way?: boolean) => void;
+  onPlaceBet: (marketId: string, outcomeId: string, odds: number, marketTitle?: string, outcomeLabel?: string, marketType?: string, direction?: "yes" | "no", yesTokenId?: string, noTokenId?: string, yesPrice?: number, noPrice?: number, orderMinSize?: number, question?: string, isSoccer3Way?: boolean, negRisk?: boolean) => void;
   selectedBet?: { marketId: string; outcomeId: string; direction?: string };
   adminSettings?: AdminSettings;
   userPositions?: { tokenId: string; size: number; avgPrice: number; outcomeLabel?: string; marketQuestion?: string; unrealizedPnl?: number }[];
@@ -1703,7 +1703,8 @@ export function PredictView({
       noPrice,
       market.orderMinSize,
       market.question,
-      isSoccer3Way
+      isSoccer3Way,
+      market.negRisk
     );
   };
   
@@ -1740,7 +1741,8 @@ export function PredictView({
       market.outcomes[otherOutcomeIndex]?.executionPrice || 0.5,
       market.orderMinSize,
       market.question,
-      false // Not a soccer 3-way market
+      false, // Not a soccer 3-way market
+      market.negRisk // Pass negRisk for winner-take-all markets
     );
   };
 

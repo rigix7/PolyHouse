@@ -61,6 +61,7 @@ export default function HomePage() {
     orderMinSize?: number;
     question?: string;
     isSoccer3Way?: boolean;
+    negRisk?: boolean;
   } | undefined>();
   const [showBetSlip, setShowBetSlip] = useState(false);
   const [liveMarkets, setLiveMarkets] = useState<Market[]>([]);
@@ -301,11 +302,12 @@ export default function HomePage() {
         });
         
         // Use FOK (Fill-or-Kill) market order via official useClobOrder hook
+        // negRisk is true for winner-take-all markets like soccer 3-way moneylines
         const result = await submitOrder({
           tokenId: data.tokenId,
           side: "BUY",
           size: data.amount, // USDC amount to spend
-          negRisk: false,
+          negRisk: selectedBet.negRisk ?? false,
           isMarketOrder: true, // Use FOK market order
         });
         
@@ -369,7 +371,8 @@ export default function HomePage() {
     noPrice?: number,
     orderMinSize?: number,
     question?: string,
-    isSoccer3Way?: boolean
+    isSoccer3Way?: boolean,
+    negRisk?: boolean
   ) => {
     if (!isConnected) {
       showToast("Connect wallet to place bets", "info");
@@ -408,6 +411,7 @@ export default function HomePage() {
         orderMinSize,
         question,
         isSoccer3Way,
+        negRisk,
       });
       setShowBetSlip(true);
       return;
@@ -439,6 +443,7 @@ export default function HomePage() {
       orderMinSize,
       question,
       isSoccer3Way,
+      negRisk,
     });
     setShowBetSlip(true);
   };
@@ -456,6 +461,7 @@ export default function HomePage() {
     console.log("=== BET SUBMISSION DEBUG ===");
     console.log("[ConfirmBet] Market Type:", selectedBet.marketType);
     console.log("[ConfirmBet] Is Soccer 3-Way:", selectedBet.isSoccer3Way);
+    console.log("[ConfirmBet] NegRisk:", selectedBet.negRisk);
     console.log("[ConfirmBet] Market Title:", selectedBet.marketTitle);
     console.log("[ConfirmBet] Outcome Label:", selectedBet.outcomeLabel);
     console.log("[ConfirmBet] Direction:", direction);

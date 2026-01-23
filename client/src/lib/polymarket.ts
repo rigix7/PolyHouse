@@ -162,6 +162,8 @@ export interface GammaMarket {
   orderMinSize?: number;
   // Official team abbreviation from Polymarket (e.g., "LAL", "MCI")
   teamAbbrev?: string;
+  // NegRisk flag for winner-take-all markets (e.g., soccer 3-way moneylines)
+  negRisk?: boolean;
 }
 
 export interface GammaEvent {
@@ -183,6 +185,9 @@ export interface GammaEvent {
   liquidity?: number;
   // Parent event linking (for "More Markets" child events)
   parentEventId?: number;
+  // NegRisk flag for winner-take-all events (e.g., soccer 3-way moneylines)
+  negRisk?: boolean;
+  enableNegRisk?: boolean;
 }
 
 // Helper to convert sport slug to human-readable label
@@ -507,6 +512,8 @@ export interface ParsedMarket {
   orderMinSize?: number;
   // Official team abbreviation from Polymarket (e.g., "LAL", "MCI")
   teamAbbrev?: string;
+  // NegRisk flag for winner-take-all markets (e.g., soccer 3-way moneylines)
+  negRisk?: boolean;
 }
 
 // Grouped markets by type within an event
@@ -749,6 +756,8 @@ export function gammaEventToDisplayEvent(event: GammaEvent): DisplayEvent | null
       orderMinSize: market.orderMinSize,
       // Get team abbreviation from market slug parsing (falls back to undefined)
       teamAbbrev: getMarketTeamAbbrev(market, event.slug, teamAbbrevs),
+      // NegRisk from market or event level (for soccer 3-way moneylines)
+      negRisk: market.negRisk ?? event.negRisk ?? event.enableNegRisk ?? false,
     };
     
     if (!marketsByType.has(marketType)) {

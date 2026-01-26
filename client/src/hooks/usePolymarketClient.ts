@@ -100,6 +100,9 @@ const CHAIN_ID = 137; // Polygon mainnet
 const USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174" as Address;
 const CTF_ADDRESS = "0x4d97dcd97ec945f40cf65f87097ace5ea0476045" as Address;
 const CTF_EXCHANGE = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E" as Address;
+// NegRisk markets use WrappedCollateral instead of USDC
+// See: https://github.com/Polymarket/neg-risk-ctf-adapter/blob/main/addresses.json
+const WRAPPED_COLLATERAL_ADDRESS = "0x3A3BD7bb9528E159577F7C2e685CC81A765002E2" as Address;
 
 // ERC20 ABI fragments
 const ERC20_ABI = [
@@ -135,6 +138,27 @@ const CTF_ABI = [
       { name: "indexSets", type: "uint256[]" },
     ],
     outputs: [],
+  },
+] as const;
+
+// WrappedCollateral ABI - for unwrapping negRisk collateral back to USDC
+// See: https://github.com/Polymarket/neg-risk-ctf-adapter
+const WRAPPED_COLLATERAL_ABI = [
+  {
+    name: "withdraw",
+    type: "function",
+    inputs: [
+      { name: "_amount", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
+    name: "balanceOf",
+    type: "function",
+    inputs: [
+      { name: "account", type: "address" },
+    ],
+    outputs: [{ type: "uint256" }],
   },
 ] as const;
 
@@ -860,45 +884,50 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
           });
         }
 
-        // Add NegRisk Adapter redeem transactions (winner-take-all markets)
-        // NegRiskAdapter.redeemPositions(conditionId, amounts)
-        // amounts array contains the position size - contract redeems the winning outcome
+        // Add NegRisk CTF redeem transactions (winner-take-all markets)
+        // NegRisk positions use WrappedCollateral instead of USDC directly
+        // We call CTF.redeemPositions with WrappedCollateral address
+        // Then unwrap to USDC at the end
         for (const conditionId of negRiskIds) {
-          // Get position size for this conditionId
-          // Position sizes from Polymarket API are typically in whole token units
-          const positionSize = negRiskPositionSizes?.get(conditionId) || 0;
-          
-          // NegRiskAdapter expects amounts in CTF token units (10^18 decimals)
-          // Position sizes from API might be in different formats - convert appropriately
-          // If size appears small (< 1000), assume it's in token units needing 10^18 conversion
-          // If size appears large (> 1000000), assume it's already in raw units
-          let amountInWei: bigint;
-          if (positionSize < 1000) {
-            // Size is in whole tokens - convert to 18 decimals
-            amountInWei = BigInt(Math.floor(positionSize * 1e18));
-          } else if (positionSize > 1e15) {
-            // Size is already in wei-like format
-            amountInWei = BigInt(Math.floor(positionSize));
-          } else {
-            // Size might be in 6-decimal format - convert to 18 decimals
-            amountInWei = BigInt(Math.floor(positionSize * 1e12));
-          }
-          
-          console.log(`[NegRisk] Redeeming conditionId=${conditionId.slice(0, 10)}... rawSize=${positionSize} amountWei=${amountInWei}`);
+          console.log(`[NegRisk] Redeeming conditionId=${conditionId.slice(0, 10)}... via CTF with WrappedCollateral`);
           
           const redeemData = encodeFunctionData({
-            abi: NEG_RISK_ADAPTER_ABI,
+            abi: CTF_ABI,
             functionName: "redeemPositions",
             args: [
+              WRAPPED_COLLATERAL_ADDRESS,  // NegRisk uses WrappedCollateral, not USDC!
+              parentCollectionId,
               conditionId as `0x${string}`,
-              [amountInWei], // Pass position size as amount
+              indexSets.map(BigInt),
             ],
           });
 
           redeemTxs.push({
-            to: NEG_RISK_ADAPTER_ADDRESS,
+            to: CTF_ADDRESS,
             value: "0",
             data: redeemData,
+          });
+        }
+        
+        // If we have negRisk positions, add a WrappedCollateral.withdraw() call
+        // to convert all WrappedCollateral balance to USDC
+        // We use max uint256 to withdraw all available balance
+        if (negRiskIds.length > 0) {
+          console.log("[NegRisk] Adding WrappedCollateral.withdraw() to convert to USDC");
+          
+          // Withdraw max amount (the contract will withdraw available balance)
+          const withdrawData = encodeFunctionData({
+            abi: WRAPPED_COLLATERAL_ABI,
+            functionName: "withdraw",
+            args: [
+              BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), // max uint256
+            ],
+          });
+          
+          redeemTxs.push({
+            to: WRAPPED_COLLATERAL_ADDRESS,
+            value: "0",
+            data: withdrawData,
           });
         }
 

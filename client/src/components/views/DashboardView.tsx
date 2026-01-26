@@ -102,13 +102,12 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
         .map(p => p.conditionId)
         .filter((id): id is string => !!id);
       
-      // Build position sizes map for NegRisk redemption (conditionId -> size)
-      const negRiskPositionSizes = new Map<string, number>();
+      // Build tokenIds map for NegRisk redemption (conditionId -> tokenId)
+      // We use the actual tokenId from Polymarket API to query correct CTF balances
+      const negRiskTokenIds = new Map<string, string>();
       for (const p of negRiskPositions) {
-        if (p.conditionId && p.size) {
-          // If multiple positions share same conditionId, sum them
-          const existing = negRiskPositionSizes.get(p.conditionId) || 0;
-          negRiskPositionSizes.set(p.conditionId, existing + p.size);
+        if (p.conditionId && p.tokenId) {
+          negRiskTokenIds.set(p.conditionId, p.tokenId);
         }
       }
       
@@ -116,16 +115,17 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
       console.log("[ClaimAll] Claimable positions:", claimable.map(p => ({
         question: p.marketQuestion?.substring(0, 40),
         conditionId: p.conditionId?.substring(0, 10),
+        tokenId: p.tokenId?.substring(0, 20),
         negRisk: p.negRisk,
         outcome: p.outcomeLabel,
         size: p.size
       })));
       console.log("[ClaimAll] NegRisk condition IDs:", negRiskConditionIds);
-      console.log("[ClaimAll] NegRisk position sizes:", Object.fromEntries(negRiskPositionSizes));
+      console.log("[ClaimAll] NegRisk token IDs:", Object.fromEntries(negRiskTokenIds));
       console.log("[ClaimAll] CTF condition IDs:", conditionIds.filter(id => !negRiskConditionIds.includes(id)));
       
       if (conditionIds.length > 0) {
-        const result = await batchRedeemPositions(conditionIds, [1, 2], negRiskConditionIds, negRiskPositionSizes);
+        const result = await batchRedeemPositions(conditionIds, [1, 2], negRiskConditionIds, negRiskTokenIds);
         if (!result.success) {
           console.error("Batch claim failed:", result.error);
         }

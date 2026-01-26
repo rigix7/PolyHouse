@@ -896,7 +896,7 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
       conditionIds: string[],
       indexSets: number[] = [1, 2],
       negRiskConditionIds?: string[], // Optional: condition IDs that are negRisk markets
-      negRiskPositionSizes?: Map<string, number>, // conditionId -> position size in token units
+      negRiskTokenIds?: Map<string, string>, // conditionId -> tokenId (the actual CTF token ID from Polymarket API)
     ): Promise<TransactionResult> => {
       setIsRelayerLoading(true);
       setError(null);
@@ -983,29 +983,42 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
         }
         
         for (const conditionId of negRiskIds) {
-          // Compute YES and NO position IDs from conditionId
-          const { yesPositionId, noPositionId } = computeNegRiskPositionIds(conditionId as `0x${string}`);
+          // Get the actual tokenId from Polymarket API - this is the position the user owns
+          const tokenId = negRiskTokenIds?.get(conditionId);
+          if (!tokenId) {
+            console.log(`[NegRisk] No tokenId found for conditionId=${conditionId.slice(0, 10)}... - skipping`);
+            continue;
+          }
           
-          // Query actual CTF token balances for both positions
-          // This is CRITICAL - we must pass exact balances, not guessed amounts
-          const [yesBalance, noBalance] = await Promise.all([
-            queryCTFBalance(safeAddress as Address, yesPositionId),
-            queryCTFBalance(safeAddress as Address, noPositionId),
-          ]);
+          // Query actual CTF token balance using the real tokenId from Polymarket API
+          const positionId = BigInt(tokenId);
+          const balance = await queryCTFBalance(safeAddress as Address, positionId);
           
-          console.log(`[NegRisk] Queried balances for conditionId=${conditionId.slice(0, 10)}...:`);
-          console.log(`  YES position (${yesPositionId.toString().slice(0, 15)}...): ${yesBalance.toString()} (${Number(yesBalance) / 1e6} USDC)`);
-          console.log(`  NO position (${noPositionId.toString().slice(0, 15)}...): ${noBalance.toString()} (${Number(noBalance) / 1e6} USDC)`);
+          console.log(`[NegRisk] Queried balance for conditionId=${conditionId.slice(0, 10)}...:`);
+          console.log(`  Token ID: ${tokenId.slice(0, 20)}...`);
+          console.log(`  Balance: ${balance.toString()} (${Number(balance) / 1e6} USDC)`);
           
           // Skip if no balance to redeem
-          if (yesBalance === 0n && noBalance === 0n) {
+          if (balance === 0n) {
             console.log(`[NegRisk] Skipping conditionId=${conditionId.slice(0, 10)}... - no tokens to redeem`);
             continue;
           }
           
-          // amounts array: [yesAmount, noAmount] - pass EXACT balances from CTF
-          const amounts = [yesBalance, noBalance];
+          // For NegRiskAdapter.redeemPositions(conditionId, amounts[]):
+          // amounts = [yesAmount, noAmount]
+          // We need to determine if this position is YES or NO based on the tokenId
+          // The position with balance is the one we're redeeming
+          // Since we have the actual balance, we pass it in the correct slot
+          // We'll compute the YES/NO position IDs to determine which slot
+          const { yesPositionId, noPositionId } = computeNegRiskPositionIds(conditionId as `0x${string}`);
           
+          // Determine if user holds YES or NO position by comparing tokenIds
+          const isYesPosition = positionId === yesPositionId;
+          const amounts = isYesPosition 
+            ? [balance, 0n]  // YES position: [yesAmount, 0]
+            : [0n, balance]; // NO position: [0, noAmount]
+          
+          console.log(`[NegRisk] Position type: ${isYesPosition ? 'YES' : 'NO'}`);
           console.log(`[NegRisk] Redeeming conditionId=${conditionId.slice(0, 10)}... via NegRiskAdapter amounts=[${amounts[0].toString()}, ${amounts[1].toString()}]`);
           
           const redeemData = encodeFunctionData({

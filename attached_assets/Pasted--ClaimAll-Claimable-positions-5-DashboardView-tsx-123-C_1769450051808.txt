@@ -1,0 +1,28 @@
+[ClaimAll] Claimable positions: (5) [{…}, {…}, {…}, {…}, {…}]
+DashboardView.tsx:123 [ClaimAll] NegRisk condition IDs: (5) ['0x9f3ed5c36408a83d4c7dd219cfdb1f47c2754eaa8e1b3736cb78c38516fd9660', '0x3d2dfb26046477c7d972aff7556b5601096a4da25f97e81a902e5ed44d0c6365', '0x49ddf726e689bbecaa326c68d5be5a50ab14ff24c327fa86f0ead6a25c671bff', '0x0de95c4c718aa5dd99bdb8eda2846e82435894648e891b1fab154eca29509ba5', '0xae5dce31446525f3f2e661116b09fbbf1c714308ddc74c7a38befdf0171314de']
+DashboardView.tsx:124 [ClaimAll] NegRisk position sizes: {0x9f3ed5c36408a83d4c7dd219cfdb1f47c2754eaa8e1b3736cb78c38516fd9660: 8.4, 0x3d2dfb26046477c7d972aff7556b5601096a4da25f97e81a902e5ed44d0c6365: 7.5757, 0x49ddf726e689bbecaa326c68d5be5a50ab14ff24c327fa86f0ead6a25c671bff: 6.3291, 0x0de95c4c718aa5dd99bdb8eda2846e82435894648e891b1fab154eca29509ba5: 5.7948, 0xae5dce31446525f3f2e661116b09fbbf1c714308ddc74c7a38befdf0171314de: 5.3937}
+DashboardView.tsx:125 [ClaimAll] CTF condition IDs: []
+usePolymarketClient.ts:616 [PolymarketClient] RelayClient initialized
+usePolymarketClient.ts:929 [PolymarketClient] Batch redeeming positions from Safe wallet... {total: 5, ctfCount: 0, negRiskCount: 5}
+usePolymarketClient.ts:979 [NegRisk] Derived Safe address for balance query: 0x7291726D8BFbAB3FB3F059A441B53CcA64d03D0f
+usePolymarketClient.ts:996 [NegRisk] Queried balances for conditionId=0x9f3ed5c3...:
+usePolymarketClient.ts:997   YES position (324838489941204...): 0 (0 USDC)
+usePolymarketClient.ts:998   NO position (116052888558531...): 0 (0 USDC)
+usePolymarketClient.ts:1002 [NegRisk] Skipping conditionId=0x9f3ed5c3... - no tokens to redeem
+usePolymarketClient.ts:996 [NegRisk] Queried balances for conditionId=0x3d2dfb26...:
+usePolymarketClient.ts:997   YES position (655099605368200...): 0 (0 USDC)
+usePolymarketClient.ts:998   NO position (450117903924014...): 0 (0 USDC)
+usePolymarketClient.ts:1002 [NegRisk] Skipping conditionId=0x3d2dfb26... - no tokens to redeem
+usePolymarketClient.ts:996 [NegRisk] Queried balances for conditionId=0x49ddf726...:
+usePolymarketClient.ts:997   YES position (323697010147397...): 0 (0 USDC)
+usePolymarketClient.ts:998   NO position (910985199378900...): 0 (0 USDC)
+usePolymarketClient.ts:1002 [NegRisk] Skipping conditionId=0x49ddf726... - no tokens to redeem
+usePolymarketClient.ts:996 [NegRisk] Queried balances for conditionId=0x0de95c4c...:
+usePolymarketClient.ts:997   YES position (889566097573441...): 0 (0 USDC)
+usePolymarketClient.ts:998   NO position (698420777764301...): 0 (0 USDC)
+usePolymarketClient.ts:1002 [NegRisk] Skipping conditionId=0x0de95c4c... - no tokens to redeem
+usePolymarketClient.ts:996 [NegRisk] Queried balances for conditionId=0xae5dce31...:
+usePolymarketClient.ts:997   YES position (111254444364258...): 0 (0 USDC)
+usePolymarketClient.ts:998   NO position (271715178125663...): 0 (0 USDC)
+usePolymarketClient.ts:1002 [NegRisk] Skipping conditionId=0xae5dce31... - no tokens to redeem
+DashboardView.tsx:130 Batch claim failed: No transactions to execute

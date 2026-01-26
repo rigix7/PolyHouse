@@ -12,6 +12,11 @@ import {
   getCreate2Address,
   keccak256,
   encodeAbiParameters,
+  concat,
+  toHex,
+  pad,
+  createPublicClient,
+  http,
   type Address,
 } from "viem";
 
@@ -126,7 +131,7 @@ const ERC20_ABI = [
   },
 ] as const;
 
-// CTF ABI fragments
+// CTF ABI fragments - includes balanceOf for querying ERC-1155 token balances
 const CTF_ABI = [
   {
     name: "redeemPositions",
@@ -138,6 +143,16 @@ const CTF_ABI = [
       { name: "indexSets", type: "uint256[]" },
     ],
     outputs: [],
+  },
+  {
+    name: "balanceOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "id", type: "uint256" },
+    ],
+    outputs: [{ type: "uint256" }],
   },
 ] as const;
 
@@ -182,6 +197,64 @@ const NEG_RISK_ADAPTER_ABI = [
 
 // NegRisk Adapter address on Polygon
 const NEG_RISK_ADAPTER_ADDRESS = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296" as const;
+
+// Public client for read operations (balance queries)
+const publicClient = createPublicClient({
+  chain: polygon,
+  transport: http("https://polygon-rpc.com"),
+});
+
+// Compute YES and NO position IDs from conditionId for NegRisk markets
+// Uses CTHelpers logic: positionId = keccak256(collateral, keccak256(parentCollectionId, conditionId, indexSet))
+// For NegRisk markets, collateral is WCOL (WrappedCollateral), not USDC
+function computeNegRiskPositionIds(conditionId: `0x${string}`): { yesPositionId: bigint; noPositionId: bigint } {
+  const parentCollectionId = "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`;
+  
+  // Index sets: 1 = YES (0b01), 2 = NO (0b10)
+  // encodePacked(bytes32, bytes32, uint256) = 32 + 32 + 32 = 96 bytes
+  const yesCollectionId = keccak256(
+    concat([
+      parentCollectionId,
+      conditionId,
+      pad(toHex(1n), { size: 32 }), // indexSet = 1 for YES
+    ])
+  );
+  const noCollectionId = keccak256(
+    concat([
+      parentCollectionId,
+      conditionId,
+      pad(toHex(2n), { size: 32 }), // indexSet = 2 for NO
+    ])
+  );
+  
+  // positionId = uint256(keccak256(encodePacked(address, bytes32))) = 20 + 32 = 52 bytes
+  // Address needs to be lowercase and without padding for encodePacked
+  const wcolLower = WRAPPED_COLLATERAL_ADDRESS.toLowerCase() as `0x${string}`;
+  const yesPositionId = BigInt(
+    keccak256(concat([wcolLower, yesCollectionId]))
+  );
+  const noPositionId = BigInt(
+    keccak256(concat([wcolLower, noCollectionId]))
+  );
+  
+  return { yesPositionId, noPositionId };
+}
+
+// Query CTF token balances for a specific position
+async function queryCTFBalance(owner: Address, positionId: bigint): Promise<bigint> {
+  try {
+    const balance = await publicClient.readContract({
+      address: CTF_ADDRESS,
+      abi: CTF_ABI,
+      functionName: "balanceOf",
+      args: [owner, positionId],
+    });
+    return balance as bigint;
+  } catch (error) {
+    console.error(`Failed to query CTF balance for position ${positionId}:`, error);
+    return 0n;
+  }
+}
 
 // Optional props to pass session credentials - avoids duplicate credential derivation
 export interface PolymarketClientProps {
@@ -894,23 +967,37 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
         // 1. Redeeming conditional tokens via CTF with WCOL as collateral
         // 2. Automatically unwrapping WCOL → USDC
         // 3. Returning USDC to the caller
+        // CRITICAL: amounts[] must be [exactYesBalance, exactNoBalance] - queried from CTF contract
+        const safeAddress = safeAddressRef.current;
+        if (negRiskIds.length > 0 && !safeAddress) {
+          return { success: false, error: "Safe wallet address not available for balance query" };
+        }
+        
         for (const conditionId of negRiskIds) {
-          // Get position size for this condition (passed as human-readable, e.g. 25.0)
-          // Convert to raw token units (6 decimals, same as USDC)
-          const positionSizeHuman = negRiskPositionSizes?.get(conditionId);
+          // Compute YES and NO position IDs from conditionId
+          const { yesPositionId, noPositionId } = computeNegRiskPositionIds(conditionId as `0x${string}`);
           
-          // amounts array: [yesAmount, noAmount] - pass the position size for both outcomes
-          // The contract will only burn tokens you actually hold
-          // Add 10% buffer to handle any rounding issues
-          const amounts = positionSizeHuman 
-            ? (() => {
-                const rawAmount = BigInt(Math.floor(positionSizeHuman * 1.1 * 1e6)); // 10% buffer
-                return [rawAmount, rawAmount];
-              })()
-            : [BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), 
-               BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")]; // Max (redeem all)
+          // Query actual CTF token balances for both positions
+          // This is CRITICAL - we must pass exact balances, not guessed amounts
+          const [yesBalance, noBalance] = await Promise.all([
+            queryCTFBalance(safeAddress as Address, yesPositionId),
+            queryCTFBalance(safeAddress as Address, noPositionId),
+          ]);
           
-          console.log(`[NegRisk] Redeeming conditionId=${conditionId.slice(0, 10)}... via NegRiskAdapter (size=${positionSizeHuman?.toFixed(2) || 'max'}, raw=${amounts[0].toString()})`);
+          console.log(`[NegRisk] Queried balances for conditionId=${conditionId.slice(0, 10)}...:`);
+          console.log(`  YES position (${yesPositionId.toString().slice(0, 15)}...): ${yesBalance.toString()} (${Number(yesBalance) / 1e6} USDC)`);
+          console.log(`  NO position (${noPositionId.toString().slice(0, 15)}...): ${noBalance.toString()} (${Number(noBalance) / 1e6} USDC)`);
+          
+          // Skip if no balance to redeem
+          if (yesBalance === 0n && noBalance === 0n) {
+            console.log(`[NegRisk] Skipping conditionId=${conditionId.slice(0, 10)}... - no tokens to redeem`);
+            continue;
+          }
+          
+          // amounts array: [yesAmount, noAmount] - pass EXACT balances from CTF
+          const amounts = [yesBalance, noBalance];
+          
+          console.log(`[NegRisk] Redeeming conditionId=${conditionId.slice(0, 10)}... via NegRiskAdapter amounts=[${amounts[0].toString()}, ${amounts[1].toString()}]`);
           
           const redeemData = encodeFunctionData({
             abi: NEG_RISK_ADAPTER_ABI,

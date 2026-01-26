@@ -885,17 +885,17 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
         }
 
         // Add NegRisk CTF redeem transactions (winner-take-all markets)
-        // NegRisk positions use WrappedCollateral instead of USDC directly
-        // We call CTF.redeemPositions with WrappedCollateral address
-        // Then unwrap to USDC at the end
+        // Per poly-examples: For CLOB tokens (including negRisk), use CTF directly with USDC and parent=0
+        // The NegRiskAdapter uses different internal token IDs that don't match CLOB tokens
+        // See: https://github.com/AleSZanello/poly-examples
         for (const conditionId of negRiskIds) {
-          console.log(`[NegRisk] Redeeming conditionId=${conditionId.slice(0, 10)}... via CTF with WrappedCollateral`);
+          console.log(`[NegRisk] Redeeming conditionId=${conditionId.slice(0, 10)}... via CTF with USDC (same as regular)`);
           
           const redeemData = encodeFunctionData({
             abi: CTF_ABI,
             functionName: "redeemPositions",
             args: [
-              WRAPPED_COLLATERAL_ADDRESS,  // NegRisk uses WrappedCollateral, not USDC!
+              USDC_ADDRESS,  // Use USDC for ALL CLOB tokens, including negRisk
               parentCollectionId,
               conditionId as `0x${string}`,
               indexSets.map(BigInt),
@@ -906,28 +906,6 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
             to: CTF_ADDRESS,
             value: "0",
             data: redeemData,
-          });
-        }
-        
-        // If we have negRisk positions, add a WrappedCollateral.withdraw() call
-        // to convert all WrappedCollateral balance to USDC
-        // We use max uint256 to withdraw all available balance
-        if (negRiskIds.length > 0) {
-          console.log("[NegRisk] Adding WrappedCollateral.withdraw() to convert to USDC");
-          
-          // Withdraw max amount (the contract will withdraw available balance)
-          const withdrawData = encodeFunctionData({
-            abi: WRAPPED_COLLATERAL_ABI,
-            functionName: "withdraw",
-            args: [
-              BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), // max uint256
-            ],
-          });
-          
-          redeemTxs.push({
-            to: WRAPPED_COLLATERAL_ADDRESS,
-            value: "0",
-            data: withdrawData,
           });
         }
 

@@ -1,0 +1,252 @@
+# NegRisk vs CTF Markets: Why Soccer Moneylines Are Different
+
+## Your Observation is Correct! ✅
+
+**Yes, you're absolutely right:**
+- **Soccer moneylines** = NegRisk events
+- **Totals and Spreads** = Regular CTF (non-NegRisk) events
+
+They use **different smart contracts** and have **different claiming mechanisms**.
+
+---
+
+## What Are NegRisk Events?
+
+NegRisk (Negative Risk) events are "winner-take-all" markets where:
+- **Exactly ONE outcome wins**
+- All other outcomes lose
+- Examples: Soccer moneylines, elections, "Who will win X?"
+
+### Soccer Moneyline Example:
+```
+Match: Team A vs Team B vs Draw
+
+Markets:
+- Team A wins (YES/NO)
+- Team B wins (YES/NO)  
+- Draw (YES/NO)
+
+Only ONE of these can be YES, the rest are NO.
+```
+
+---
+
+## What Are Regular CTF Events?
+
+Regular CTF (Conditional Tokens Framework) events are independent binary markets:
+- Each market stands alone
+- No relationship between different markets
+- Examples: Spreads, totals, independent yes/no questions
+
+### Soccer Total Example:
+```
+Will total goals be over 2.5? (YES/NO)
+
+This is independent - doesn't relate to other markets
+```
+
+---
+
+## Key Differences in Smart Contracts
+
+| Aspect | Regular CTF | NegRisk |
+|--------|-------------|---------|
+| **Contract** | `ConditionalTokens` | `NegRiskAdapter` |
+| **Collateral** | Direct USDC | WrappedCollateral (wrapped USDC) |
+| **Exchange** | `CTFExchange` | `NegRiskCtfExchange` |
+| **Redemption** | `redeemPositions()` on CTF | `redeemPositions()` on NegRiskAdapter |
+| **Oracle** | UmaCtfAdapter | UmaCtfAdapter (via NegRiskOperator) |
+
+---
+
+## Why Claiming Is Different
+
+### Regular CTF Markets (Spreads/Totals):
+
+**Redemption Process:**
+```solidity
+// Call directly on ConditionalTokens contract
+CTF.redeemPositions(
+    collateralToken,    // USDC address
+    parentCollectionId, // bytes32(0)
+    conditionId,        // market's condition ID
+    indexSets          // [1, 2] for binary YES/NO
+)
+```
+
+### NegRisk Markets (Moneylines):
+
+**Redemption Process:**
+```solidity
+// Call on NegRiskAdapter contract instead!
+NegRiskAdapter.redeemPositions(
+    collateralToken,    // WrappedCollateral address (NOT USDC!)
+    parentCollectionId, // bytes32(0)
+    conditionId,        // market's condition ID
+    indexSets          // [1, 2, 4, 8...] for each outcome
+)
+```
+
+**Key Differences:**
+1. Different contract address
+2. Uses `WrappedCollateral` instead of USDC
+3. The adapter automatically unwraps to USDC for you
+
+---
+
+## How to Detect NegRisk Events
+
+### Via Gamma API:
+```javascript
+const event = await fetch('https://gamma-api.polymarket.com/events/{id}');
+const data = await event.json();
+
+if (data.negRisk === true) {
+    // This is a NegRisk event
+    // Use NegRiskAdapter for redemption
+} else {
+    // Regular CTF event
+    // Use ConditionalTokens for redemption
+}
+```
+
+### Via Event Characteristics:
+- **NegRisk:** Multi-outcome "winner-take-all" (elections, moneylines)
+- **Regular CTF:** Independent binary questions (spreads, totals, yes/no)
+
+---
+
+## Contract Addresses (Polygon)
+
+```javascript
+// Regular CTF
+const CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
+const CTF_EXCHANGE = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E";
+
+// NegRisk
+const NEGRISK_ADAPTER = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296";
+const NEGRISK_EXCHANGE = "0xC5d563A36AE78145C45a50134d48A1215220f80a";
+const WRAPPED_COLLATERAL = "0x9c8B2c5f8E9C4CB8a47F0b7d2Afa24E5Fc44e4A4";
+```
+
+---
+
+## Why Your App Has Trouble with Soccer Moneylines
+
+### The Problem:
+Your app is probably calling `redeemPositions()` on the **CTF contract** for ALL markets.
+
+This works for:
+- ✅ Spreads (regular CTF)
+- ✅ Totals (regular CTF)
+- ❌ Moneylines (NegRisk) - **FAILS!**
+
+### The Solution:
+You need to:
+
+1. **Check if event is NegRisk** (via Gamma API `negRisk` field)
+2. **Use different contract based on type:**
+
+```javascript
+async function redeemWinnings(market) {
+    // Get event data
+    const event = await fetchEvent(market.event_slug);
+    
+    if (event.negRisk) {
+        // NegRisk redemption
+        await negRiskAdapter.redeemPositions(
+            WRAPPED_COLLATERAL,  // ← Important!
+            parentCollectionId,
+            conditionId,
+            indexSets
+        );
+    } else {
+        // Regular CTF redemption
+        await ctfContract.redeemPositions(
+            USDC_ADDRESS,  // ← Different collateral!
+            parentCollectionId,
+            conditionId,
+            indexSets
+        );
+    }
+}
+```
+
+---
+
+## Full Example: Claiming Soccer Moneyline
+
+```javascript
+// 1. Fetch market data
+const market = await fetch(`https://gamma-api.polymarket.com/markets?condition_id=${conditionId}`);
+const marketData = await market.json()[0];
+
+// 2. Get parent event
+const event = await fetch(`https://gamma-api.polymarket.com/events/${marketData.event_slug}`);
+const eventData = await event.json();
+
+// 3. Check if NegRisk
+if (eventData.negRisk) {
+    console.log("This is a NegRisk event (soccer moneyline)");
+    
+    // 4. Build redemption parameters
+    const collateralToken = WRAPPED_COLLATERAL; // Not USDC!
+    const parentCollectionId = ethers.constants.HashZero;
+    const conditionId = marketData.condition_id;
+    const indexSets = [1, 2]; // YES and NO
+    
+    // 5. Call NegRiskAdapter
+    const tx = await negRiskAdapter.redeemPositions(
+        collateralToken,
+        parentCollectionId,
+        conditionId,
+        indexSets
+    );
+    
+    await tx.wait();
+    console.log("Claimed successfully! USDC unwrapped automatically.");
+}
+```
+
+---
+
+## Additional NegRisk Features
+
+### Position Conversion:
+NegRisk has a unique feature where you can **convert NO tokens** into YES tokens of other outcomes + USDC:
+
+```solidity
+// Example: Convert "Team A NO" + "Team B NO" 
+// Into: "Draw YES" + 1 USDC
+negRiskAdapter.convertPositions(
+    marketId,
+    indexSet,  // Which NO tokens you're converting
+    amount
+);
+```
+
+This is capital-efficient but only works for NegRisk markets!
+
+---
+
+## Summary
+
+| Market Type | Example | NegRisk? | Contract for Claiming |
+|-------------|---------|----------|----------------------|
+| Soccer Moneyline | "Who wins the match?" | ✅ Yes | NegRiskAdapter |
+| Soccer Total | "Over 2.5 goals?" | ❌ No | ConditionalTokens |
+| Soccer Spread | "Team A -1.5" | ❌ No | ConditionalTokens |
+| Election | "Who wins presidency?" | ✅ Yes | NegRiskAdapter |
+| Binary Question | "Will X happen?" | ❌ No | ConditionalTokens |
+
+---
+
+## Action Items for Your App
+
+1. ✅ Add `negRisk` field check from Gamma API
+2. ✅ Use different contract addresses based on event type
+3. ✅ Use `WrappedCollateral` for NegRisk (not USDC)
+4. ✅ Handle both redemption flows in your claiming logic
+5. ✅ Test with both event types
+
+This should fix your soccer moneyline claiming issue!

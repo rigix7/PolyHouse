@@ -163,14 +163,17 @@ const WRAPPED_COLLATERAL_ABI = [
 ] as const;
 
 // NegRiskAdapter ABI - for winner-take-all markets (soccer 3-way moneylines, elections, etc.)
+// Uses same redeemPositions signature as CTF, but requires WrappedCollateral instead of USDC
 // See: https://github.com/Polymarket/neg-risk-ctf-adapter
 const NEG_RISK_ADAPTER_ABI = [
   {
     name: "redeemPositions",
     type: "function",
     inputs: [
-      { name: "_conditionId", type: "bytes32" },
-      { name: "_amounts", type: "uint256[]" },
+      { name: "collateralToken", type: "address" },
+      { name: "parentCollectionId", type: "bytes32" },
+      { name: "conditionId", type: "bytes32" },
+      { name: "indexSets", type: "uint256[]" },
     ],
     outputs: [],
   },
@@ -884,18 +887,22 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
           });
         }
 
-        // Add NegRisk CTF redeem transactions (winner-take-all markets)
-        // Per poly-examples: For CLOB tokens (including negRisk), use CTF directly with USDC and parent=0
-        // The NegRiskAdapter uses different internal token IDs that don't match CLOB tokens
-        // See: https://github.com/AleSZanello/poly-examples
+        // Add NegRisk redeem transactions (winner-take-all markets like soccer 3-way moneylines)
+        // NegRisk markets use the NegRiskAdapter contract with WrappedCollateral (not USDC!)
+        // See: https://github.com/Polymarket/neg-risk-ctf-adapter
+        // The adapter has the same redeemPositions signature as CTF but uses WCOL collateral
+        // After redemption, WCOL is automatically unwrapped to USDC
         for (const conditionId of negRiskIds) {
-          console.log(`[NegRisk] Redeeming conditionId=${conditionId.slice(0, 10)}... via CTF with USDC (same as regular)`);
+          console.log(`[NegRisk] Redeeming conditionId=${conditionId.slice(0, 10)}... via NegRiskAdapter with WrappedCollateral`);
           
+          // NegRiskAdapter.redeemPositions uses same signature as CTF:
+          // redeemPositions(collateralToken, parentCollectionId, conditionId, indexSets)
+          // BUT uses WrappedCollateral (WCOL) instead of USDC as collateral!
           const redeemData = encodeFunctionData({
-            abi: CTF_ABI,
+            abi: NEG_RISK_ADAPTER_ABI,
             functionName: "redeemPositions",
             args: [
-              USDC_ADDRESS,  // Use USDC for ALL CLOB tokens, including negRisk
+              WRAPPED_COLLATERAL_ADDRESS,  // WrappedCollateral (WCOL), NOT USDC!
               parentCollectionId,
               conditionId as `0x${string}`,
               indexSets.map(BigInt),
@@ -903,7 +910,7 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
           });
 
           redeemTxs.push({
-            to: CTF_ADDRESS,
+            to: NEG_RISK_ADAPTER_ADDRESS,
             value: "0",
             data: redeemData,
           });

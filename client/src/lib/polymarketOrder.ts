@@ -80,6 +80,7 @@ export interface PolymarketPosition {
   currentPrice?: number;
   unrealizedPnl?: number;
   status: string;
+  negRisk?: boolean; // True for winner-take-all markets (soccer 3-way, elections)
 }
 
 export async function fetchPositions(walletAddress: string): Promise<PolymarketPosition[]> {

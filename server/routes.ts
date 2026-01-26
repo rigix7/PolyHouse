@@ -1748,6 +1748,9 @@ export async function registerRoutes(
           currentPrice: curPrice,
           unrealizedPnl: parseFloat(p.cashPnl) || parseFloat(p.unrealizedPnl) || 0,
           status,
+          // negRisk flag for winner-take-all markets (soccer 3-way, elections)
+          // This determines which contract to use for redemption (CTF vs NegRiskAdapter)
+          negRisk: p.negRisk === true || p.neg_risk === true,
         };
       });
       

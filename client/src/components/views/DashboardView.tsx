@@ -95,8 +95,15 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
         .map(p => p.conditionId)
         .filter((id): id is string => !!id);
       
+      // Identify negRisk condition IDs for proper redemption routing
+      // NegRisk markets (soccer 3-way, elections) use NegRiskAdapter contract
+      const negRiskConditionIds = claimable
+        .filter(p => p.negRisk === true && p.conditionId)
+        .map(p => p.conditionId)
+        .filter((id): id is string => !!id);
+      
       if (conditionIds.length > 0) {
-        const result = await batchRedeemPositions(conditionIds, [1, 2]);
+        const result = await batchRedeemPositions(conditionIds, [1, 2], negRiskConditionIds);
         if (!result.success) {
           console.error("Batch claim failed:", result.error);
         }

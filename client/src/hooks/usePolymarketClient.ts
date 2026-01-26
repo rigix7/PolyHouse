@@ -138,6 +138,23 @@ const CTF_ABI = [
   },
 ] as const;
 
+// NegRiskAdapter ABI - for winner-take-all markets (soccer 3-way moneylines, elections, etc.)
+// See: https://github.com/Polymarket/neg-risk-ctf-adapter
+const NEG_RISK_ADAPTER_ABI = [
+  {
+    name: "redeemPositions",
+    type: "function",
+    inputs: [
+      { name: "_conditionId", type: "bytes32" },
+      { name: "_amounts", type: "uint256[]" },
+    ],
+    outputs: [],
+  },
+] as const;
+
+// NegRisk Adapter address on Polygon
+const NEG_RISK_ADAPTER_ADDRESS = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296" as const;
+
 // Optional props to pass session credentials - avoids duplicate credential derivation
 export interface PolymarketClientProps {
   sessionCredentials?: ApiKeyCreds | null;
@@ -772,10 +789,12 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
   );
 
   // Batch redeem multiple positions in a single transaction (one signature for all)
+  // Supports both standard CTF markets and NegRisk markets (winner-take-all like soccer 3-way)
   const batchRedeemPositions = useCallback(
     async (
       conditionIds: string[],
       indexSets: number[] = [1, 2],
+      negRiskConditionIds?: string[], // Optional: condition IDs that are negRisk markets
     ): Promise<TransactionResult> => {
       setIsRelayerLoading(true);
       setError(null);
@@ -800,16 +819,28 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
           };
         }
 
+        // Separate CTF and NegRisk positions
+        const negRiskSet = new Set(negRiskConditionIds || []);
+        const ctfConditionIds = conditionIds.filter(id => !negRiskSet.has(id));
+        const negRiskIds = conditionIds.filter(id => negRiskSet.has(id));
+
         console.log(
           "[PolymarketClient] Batch redeeming positions from Safe wallet...",
-          { conditionIds, count: conditionIds.length },
+          { 
+            total: conditionIds.length, 
+            ctfCount: ctfConditionIds.length, 
+            negRiskCount: negRiskIds.length 
+          },
         );
 
         const parentCollectionId =
           "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`;
 
-        // Build an array of redeem transactions - one for each conditionId
-        const redeemTxs = conditionIds.map((conditionId) => {
+        // Build transactions array
+        const redeemTxs: { to: string; value: string; data: string }[] = [];
+
+        // Add CTF redeem transactions (standard markets)
+        for (const conditionId of ctfConditionIds) {
           const redeemData = encodeFunctionData({
             abi: CTF_ABI,
             functionName: "redeemPositions",
@@ -821,12 +852,36 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
             ],
           });
 
-          return {
+          redeemTxs.push({
             to: CTF_ADDRESS,
             value: "0",
             data: redeemData,
-          };
-        });
+          });
+        }
+
+        // Add NegRisk Adapter redeem transactions (winner-take-all markets)
+        // NegRiskAdapter.redeemPositions(conditionId, amounts)
+        // amounts array should match position sizes, but we pass empty to let contract determine
+        for (const conditionId of negRiskIds) {
+          const redeemData = encodeFunctionData({
+            abi: NEG_RISK_ADAPTER_ABI,
+            functionName: "redeemPositions",
+            args: [
+              conditionId as `0x${string}`,
+              [], // Empty amounts array - contract will redeem all available
+            ],
+          });
+
+          redeemTxs.push({
+            to: NEG_RISK_ADAPTER_ADDRESS,
+            value: "0",
+            data: redeemData,
+          });
+        }
+
+        if (redeemTxs.length === 0) {
+          return { success: false, error: "No transactions to execute" };
+        }
 
         // Execute ALL transactions in one batch - requires only ONE signature!
         const response = await relayClient.execute(

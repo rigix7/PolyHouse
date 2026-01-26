@@ -14,127 +14,6 @@ const BUILDER_CREDENTIALS: BuilderApiKeyCreds = {
 
 const GAMMA_API_BASE = "https://gamma-api.polymarket.com";
 
-// Helper to detect negRisk markets from title OR outcomeLabel patterns
-// NegRisk = winner-take-all markets where exactly one outcome wins
-// Soccer 3-way moneylines, elections with multiple candidates
-function detectNegRiskFromPosition(title: string, outcomeLabel: string, marketQuestion?: string): boolean {
-  const lowerTitle = (title || "").toLowerCase();
-  const lowerOutcome = (outcomeLabel || "").toLowerCase();
-  const lowerQuestion = (marketQuestion || "").toLowerCase();
-  
-  // Soccer 3-way: "Draw" as outcome or in title is a reliable indicator
-  if (lowerOutcome === "draw") return true;
-  if (lowerTitle.includes("will there be a draw")) return true;
-  if (lowerTitle === "draw" || lowerTitle === "draw?") return true;
-  
-  // Soccer moneyline patterns that indicate 3-way market
-  // These markets have Home Win, Draw, Away Win outcomes
-  const soccerMoneylinePatterns = [
-    /will .+ win\?$/i,  // "Will [Team] win?"
-    /^.+ win$/i,        // "[Team] Win" as outcome
-    /winner: .+ vs .+/i, // "Winner: Team A vs Team B"
-    /match winner/i,
-    /moneyline/i,
-    /three.?way/i,
-    /3.?way/i,
-  ];
-  
-  // Check if market question or title matches soccer moneyline patterns
-  for (const pattern of soccerMoneylinePatterns) {
-    if (pattern.test(lowerTitle) || pattern.test(lowerQuestion)) {
-      // Additional validation: check if this is actually soccer/football
-      // by looking for team abbreviations or vs. pattern
-      if (lowerTitle.includes(" vs ") || lowerTitle.includes(" vs. ") || 
-          lowerQuestion.includes(" vs ") || lowerQuestion.includes(" vs. ")) {
-        // Could be soccer 3-way - flag for further checking
-        console.log(`[NegRisk] Pattern match: ${title?.substring(0, 50)} - flagging as potential negRisk`);
-        return true;
-      }
-    }
-  }
-  
-  return false;
-}
-
-// Cache for negRisk status from Gamma API (conditionId -> negRisk)
-const negRiskCache = new Map<string, boolean>();
-const NEGRISK_CACHE_TTL = 3600000; // 1 hour
-let negRiskCacheTime = 0;
-
-// Fetch negRisk status from Gamma API for a list of conditionIds
-// Returns a Map of conditionId -> negRisk status
-async function fetchNegRiskFromGamma(conditionIds: string[]): Promise<Map<string, boolean>> {
-  const result = new Map<string, boolean>();
-  
-  // Return cached values if cache is fresh
-  const now = Date.now();
-  if (now - negRiskCacheTime < NEGRISK_CACHE_TTL) {
-    for (const id of conditionIds) {
-      if (negRiskCache.has(id)) {
-        result.set(id, negRiskCache.get(id)!);
-      }
-    }
-    // All IDs are cached
-    if (result.size === conditionIds.length) {
-      return result;
-    }
-  }
-  
-  // Find uncached conditionIds
-  const uncachedIds = conditionIds.filter(id => !result.has(id));
-  if (uncachedIds.length === 0) return result;
-  
-  try {
-    // Try fetching recent closed events with negRisk enabled
-    // These would contain resolved soccer 3-way and election markets
-    const eventsUrl = `${GAMMA_API_BASE}/events?closed=true&limit=100`;
-    const eventsResponse = await fetch(eventsUrl);
-    if (eventsResponse.ok) {
-      const events = await eventsResponse.json();
-      for (const event of events) {
-        // Check if event has negRisk enabled
-        const isNegRisk = event.enableNegRisk === true || event.negRisk === true;
-        if (isNegRisk && Array.isArray(event.markets)) {
-          // Mark all markets in this event as negRisk
-          for (const market of event.markets) {
-            if (market.conditionId && uncachedIds.includes(market.conditionId)) {
-              negRiskCache.set(market.conditionId, true);
-              result.set(market.conditionId, true);
-              console.log(`[NegRisk] Event lookup: conditionId=${market.conditionId.slice(0, 10)}... negRisk=true (event: ${event.title?.slice(0, 30)})`);
-            }
-          }
-        }
-      }
-    }
-    
-    // Also query individual markets for any remaining uncached IDs
-    // Note: Gamma API condition_id query may not work, but try anyway
-    const stillUncached = uncachedIds.filter(id => !result.has(id));
-    for (const conditionId of stillUncached.slice(0, 5)) { // Limit to 5 to avoid spam
-      try {
-        const url = `${GAMMA_API_BASE}/markets?condition_id=${conditionId}`;
-        const response = await fetch(url);
-        if (response.ok) {
-          const markets = await response.json();
-          if (Array.isArray(markets) && markets.length > 0) {
-            const negRisk = markets[0].negRisk === true;
-            negRiskCache.set(conditionId, negRisk);
-            result.set(conditionId, negRisk);
-            console.log(`[NegRisk] Market lookup: conditionId=${conditionId.slice(0, 10)}... negRisk=${negRisk}`);
-          }
-        }
-      } catch (err) {
-        // Ignore individual fetch errors
-      }
-    }
-    negRiskCacheTime = now;
-  } catch (err) {
-    console.error("[NegRisk] Failed to fetch from Gamma API:", err);
-  }
-  
-  return result;
-}
-
 // Shared helper to calculate WILD points from Polymarket Activity API
 // Returns { wildPoints, activityCount, success, partial } where:
 // - success: true if API call worked
@@ -1871,28 +1750,12 @@ export async function registerRoutes(
           status,
           // negRisk flag for winner-take-all markets (soccer 3-way, elections)
           // This determines which contract to use for redemption (CTF vs NegRiskAdapter)
-          // Priority: 1) API flag (negativeRisk is the actual field name), 2) fallback pattern detection
-          negRisk: p.negativeRisk === true || p.negRisk === true || p.neg_risk === true || detectNegRiskFromPosition(p.title || "", p.outcome || "", p.title || p.question || ""),
+          // API returns this directly as negativeRisk
+          negRisk: p.negativeRisk === true,
         };
       });
       
-      // Post-processing Step 1: Query Gamma API for negRisk status of claimable positions
-      // Only query for claimable positions to minimize API calls
-      const claimableConditionIds = positions
-        .filter(p => p.status === "claimable" && p.conditionId && !p.negRisk)
-        .map(p => p.conditionId)
-        .filter((id, i, arr) => arr.indexOf(id) === i); // Dedupe
-      
-      if (claimableConditionIds.length > 0) {
-        const gammaNegRisk = await fetchNegRiskFromGamma(claimableConditionIds);
-        for (const pos of positions) {
-          if (pos.conditionId && gammaNegRisk.has(pos.conditionId)) {
-            pos.negRisk = gammaNegRisk.get(pos.conditionId);
-          }
-        }
-      }
-      
-      // Post-processing Step 2: Propagate negRisk across sibling positions
+      // Propagate negRisk across sibling positions
       // If ANY position in a conditionId group is negRisk, ALL positions in that group should be
       // This handles soccer 3-way where we detect "Draw" but Home/Away Win share the same market
       const negRiskConditionIds = new Set<string>();

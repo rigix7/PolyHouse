@@ -12,9 +12,6 @@ import {
   getCreate2Address,
   keccak256,
   encodeAbiParameters,
-  concat,
-  toHex,
-  pad,
   createPublicClient,
   http,
   type Address,
@@ -203,42 +200,6 @@ const publicClient = createPublicClient({
   chain: polygon,
   transport: http("https://polygon-rpc.com"),
 });
-
-// Compute YES and NO position IDs from conditionId for NegRisk markets
-// Uses CTHelpers logic: positionId = keccak256(collateral, keccak256(parentCollectionId, conditionId, indexSet))
-// For NegRisk markets, collateral is WCOL (WrappedCollateral), not USDC
-function computeNegRiskPositionIds(conditionId: `0x${string}`): { yesPositionId: bigint; noPositionId: bigint } {
-  const parentCollectionId = "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`;
-  
-  // Index sets: 1 = YES (0b01), 2 = NO (0b10)
-  // encodePacked(bytes32, bytes32, uint256) = 32 + 32 + 32 = 96 bytes
-  const yesCollectionId = keccak256(
-    concat([
-      parentCollectionId,
-      conditionId,
-      pad(toHex(1n), { size: 32 }), // indexSet = 1 for YES
-    ])
-  );
-  const noCollectionId = keccak256(
-    concat([
-      parentCollectionId,
-      conditionId,
-      pad(toHex(2n), { size: 32 }), // indexSet = 2 for NO
-    ])
-  );
-  
-  // positionId = uint256(keccak256(encodePacked(address, bytes32))) = 20 + 32 = 52 bytes
-  // Address needs to be lowercase and without padding for encodePacked
-  const wcolLower = WRAPPED_COLLATERAL_ADDRESS.toLowerCase() as `0x${string}`;
-  const yesPositionId = BigInt(
-    keccak256(concat([wcolLower, yesCollectionId]))
-  );
-  const noPositionId = BigInt(
-    keccak256(concat([wcolLower, noCollectionId]))
-  );
-  
-  return { yesPositionId, noPositionId };
-}
 
 // Query CTF token balances for a specific position
 async function queryCTFBalance(owner: Address, positionId: bigint): Promise<bigint> {
@@ -891,7 +852,7 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
 
   // Position data from Polymarket API - used for redemption
   interface RedeemablePosition {
-    conditionId: string;
+    conditionId?: string; // Optional to match PolymarketPosition type, validated inside function
     tokenId?: string;
     outcomeLabel?: string; // "Yes" or "No" - from Polymarket API
     negRisk?: boolean;
@@ -987,9 +948,9 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
         }
         
         for (const pos of negRiskPositions) {
-          // Use the tokenId directly from the position - no computation needed
-          if (!pos.tokenId) {
-            console.log(`[NegRisk] No tokenId for conditionId=${pos.conditionId.slice(0, 10)}... - skipping`);
+          // Skip positions without required fields
+          if (!pos.conditionId || !pos.tokenId) {
+            console.log(`[NegRisk] Skipping position - missing conditionId or tokenId`);
             continue;
           }
           

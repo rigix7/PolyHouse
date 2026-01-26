@@ -90,29 +90,11 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
     
     setClaimingAll(true);
     try {
-      // Collect all conditionIds and batch redeem in ONE transaction (single signature!)
-      const conditionIds = claimable
-        .map(p => p.conditionId)
-        .filter((id): id is string => !!id);
+      // Filter to positions with valid conditionIds
+      const redeemablePositions = claimable.filter(p => p.conditionId);
       
-      // Identify negRisk condition IDs for proper redemption routing
-      // NegRisk markets (soccer 3-way, elections) use NegRiskAdapter contract
-      const negRiskPositions = claimable.filter(p => p.negRisk === true && p.conditionId);
-      const negRiskConditionIds = negRiskPositions
-        .map(p => p.conditionId)
-        .filter((id): id is string => !!id);
-      
-      // Build tokenIds map for NegRisk redemption (conditionId -> tokenId)
-      // We use the actual tokenId from Polymarket API to query correct CTF balances
-      const negRiskTokenIds = new Map<string, string>();
-      for (const p of negRiskPositions) {
-        if (p.conditionId && p.tokenId) {
-          negRiskTokenIds.set(p.conditionId, p.tokenId);
-        }
-      }
-      
-      // Debug: Log negRisk detection results
-      console.log("[ClaimAll] Claimable positions:", claimable.map(p => ({
+      // Debug: Log positions being redeemed
+      console.log("[ClaimAll] Claimable positions:", redeemablePositions.map(p => ({
         question: p.marketQuestion?.substring(0, 40),
         conditionId: p.conditionId?.substring(0, 10),
         tokenId: p.tokenId?.substring(0, 20),
@@ -120,12 +102,10 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
         outcome: p.outcomeLabel,
         size: p.size
       })));
-      console.log("[ClaimAll] NegRisk condition IDs:", negRiskConditionIds);
-      console.log("[ClaimAll] NegRisk token IDs:", Object.fromEntries(negRiskTokenIds));
-      console.log("[ClaimAll] CTF condition IDs:", conditionIds.filter(id => !negRiskConditionIds.includes(id)));
       
-      if (conditionIds.length > 0) {
-        const result = await batchRedeemPositions(conditionIds, [1, 2], negRiskConditionIds, negRiskTokenIds);
+      if (redeemablePositions.length > 0) {
+        // Pass positions directly - batchRedeemPositions uses the properties as-is
+        const result = await batchRedeemPositions(redeemablePositions);
         if (!result.success) {
           console.error("Batch claim failed:", result.error);
         }

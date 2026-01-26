@@ -889,27 +889,33 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
     [initializeRelayClient],
   );
 
+  // Position data from Polymarket API - used for redemption
+  interface RedeemablePosition {
+    conditionId: string;
+    tokenId?: string;
+    outcomeLabel?: string; // "Yes" or "No" - from Polymarket API
+    negRisk?: boolean;
+  }
+
   // Batch redeem multiple positions in a single transaction (one signature for all)
   // Supports both standard CTF markets and NegRisk markets (winner-take-all like soccer 3-way)
   const batchRedeemPositions = useCallback(
     async (
-      conditionIds: string[],
+      positions: RedeemablePosition[], // Pass position objects directly - no transformation needed
       indexSets: number[] = [1, 2],
-      negRiskConditionIds?: string[], // Optional: condition IDs that are negRisk markets
-      negRiskTokenIds?: Map<string, string>, // conditionId -> tokenId (the actual CTF token ID from Polymarket API)
     ): Promise<TransactionResult> => {
       setIsRelayerLoading(true);
       setError(null);
 
       try {
-        if (!conditionIds || conditionIds.length === 0) {
+        if (!positions || positions.length === 0) {
           return { success: false, error: "No positions to redeem" };
         }
 
         // Validate all conditionIds
-        for (const conditionId of conditionIds) {
-          if (!conditionId || !/^0x[a-fA-F0-9]{64}$/.test(conditionId)) {
-            return { success: false, error: `Invalid condition ID format: ${conditionId}` };
+        for (const pos of positions) {
+          if (!pos.conditionId || !/^0x[a-fA-F0-9]{64}$/.test(pos.conditionId)) {
+            return { success: false, error: `Invalid condition ID format: ${pos.conditionId}` };
           }
         }
 
@@ -921,17 +927,16 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
           };
         }
 
-        // Separate CTF and NegRisk positions
-        const negRiskSet = new Set(negRiskConditionIds || []);
-        const ctfConditionIds = conditionIds.filter(id => !negRiskSet.has(id));
-        const negRiskIds = conditionIds.filter(id => negRiskSet.has(id));
+        // Separate CTF and NegRisk positions using the negRisk flag from API
+        const ctfPositions = positions.filter(p => !p.negRisk);
+        const negRiskPositions = positions.filter(p => p.negRisk);
 
         console.log(
           "[PolymarketClient] Batch redeeming positions from Safe wallet...",
           { 
-            total: conditionIds.length, 
-            ctfCount: ctfConditionIds.length, 
-            negRiskCount: negRiskIds.length 
+            total: positions.length, 
+            ctfCount: ctfPositions.length, 
+            negRiskCount: negRiskPositions.length 
           },
         );
 
@@ -942,14 +947,14 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
         const redeemTxs: { to: string; value: string; data: string }[] = [];
 
         // Add CTF redeem transactions (standard markets)
-        for (const conditionId of ctfConditionIds) {
+        for (const pos of ctfPositions) {
           const redeemData = encodeFunctionData({
             abi: CTF_ABI,
             functionName: "redeemPositions",
             args: [
               USDC_ADDRESS,
               parentCollectionId,
-              conditionId as `0x${string}`,
+              pos.conditionId as `0x${string}`,
               indexSets.map(BigInt),
             ],
           });
@@ -967,7 +972,6 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
         // 1. Redeeming conditional tokens via CTF with WCOL as collateral
         // 2. Automatically unwrapping WCOL → USDC
         // 3. Returning USDC to the caller
-        // CRITICAL: amounts[] must be [exactYesBalance, exactNoBalance] - queried from CTF contract
         
         // Get Safe address - derive from EOA if not already cached
         let safeAddress = safeAddressRef.current;
@@ -978,54 +982,46 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
           safeAddressRef.current = safeAddress;
           console.log("[NegRisk] Derived Safe address for balance query:", safeAddress);
         }
-        if (negRiskIds.length > 0 && !safeAddress) {
+        if (negRiskPositions.length > 0 && !safeAddress) {
           return { success: false, error: "Safe wallet address not available for balance query" };
         }
         
-        for (const conditionId of negRiskIds) {
-          // Get the actual tokenId from Polymarket API - this is the position the user owns
-          const tokenId = negRiskTokenIds?.get(conditionId);
-          if (!tokenId) {
-            console.log(`[NegRisk] No tokenId found for conditionId=${conditionId.slice(0, 10)}... - skipping`);
+        for (const pos of negRiskPositions) {
+          // Use the tokenId directly from the position - no computation needed
+          if (!pos.tokenId) {
+            console.log(`[NegRisk] No tokenId for conditionId=${pos.conditionId.slice(0, 10)}... - skipping`);
             continue;
           }
           
           // Query actual CTF token balance using the real tokenId from Polymarket API
-          const positionId = BigInt(tokenId);
+          const positionId = BigInt(pos.tokenId);
           const balance = await queryCTFBalance(safeAddress as Address, positionId);
           
-          console.log(`[NegRisk] Queried balance for conditionId=${conditionId.slice(0, 10)}...:`);
-          console.log(`  Token ID: ${tokenId.slice(0, 20)}...`);
+          console.log(`[NegRisk] Position: conditionId=${pos.conditionId.slice(0, 10)}...`);
+          console.log(`  Token ID: ${pos.tokenId.slice(0, 20)}...`);
+          console.log(`  Outcome: ${pos.outcomeLabel} (from API)`);
           console.log(`  Balance: ${balance.toString()} (${Number(balance) / 1e6} USDC)`);
           
           // Skip if no balance to redeem
           if (balance === 0n) {
-            console.log(`[NegRisk] Skipping conditionId=${conditionId.slice(0, 10)}... - no tokens to redeem`);
+            console.log(`[NegRisk] Skipping - no tokens to redeem`);
             continue;
           }
           
-          // For NegRiskAdapter.redeemPositions(conditionId, amounts[]):
+          // Use outcomeLabel directly from Polymarket API - no computation needed!
           // amounts = [yesAmount, noAmount]
-          // We need to determine if this position is YES or NO based on the tokenId
-          // The position with balance is the one we're redeeming
-          // Since we have the actual balance, we pass it in the correct slot
-          // We'll compute the YES/NO position IDs to determine which slot
-          const { yesPositionId, noPositionId } = computeNegRiskPositionIds(conditionId as `0x${string}`);
-          
-          // Determine if user holds YES or NO position by comparing tokenIds
-          const isYesPosition = positionId === yesPositionId;
+          const isYesPosition = pos.outcomeLabel?.toLowerCase() === 'yes';
           const amounts = isYesPosition 
             ? [balance, 0n]  // YES position: [yesAmount, 0]
             : [0n, balance]; // NO position: [0, noAmount]
           
-          console.log(`[NegRisk] Position type: ${isYesPosition ? 'YES' : 'NO'}`);
-          console.log(`[NegRisk] Redeeming conditionId=${conditionId.slice(0, 10)}... via NegRiskAdapter amounts=[${amounts[0].toString()}, ${amounts[1].toString()}]`);
+          console.log(`[NegRisk] Redeeming via NegRiskAdapter amounts=[${amounts[0].toString()}, ${amounts[1].toString()}]`);
           
           const redeemData = encodeFunctionData({
             abi: NEG_RISK_ADAPTER_ABI,
             functionName: "redeemPositions",
             args: [
-              conditionId as `0x${string}`,
+              pos.conditionId as `0x${string}`,
               amounts,
             ],
           });

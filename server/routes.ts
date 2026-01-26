@@ -16,15 +16,42 @@ const GAMMA_API_BASE = "https://gamma-api.polymarket.com";
 
 // Helper to detect negRisk markets from title OR outcomeLabel patterns
 // NegRisk = winner-take-all markets where exactly one outcome wins
-// CONSERVATIVE: Only flag as negRisk for patterns that are CLEARLY 3-way/winner-take-all
-function detectNegRiskFromPosition(title: string, outcomeLabel: string): boolean {
+// Soccer 3-way moneylines, elections with multiple candidates
+function detectNegRiskFromPosition(title: string, outcomeLabel: string, marketQuestion?: string): boolean {
   const lowerTitle = (title || "").toLowerCase();
   const lowerOutcome = (outcomeLabel || "").toLowerCase();
+  const lowerQuestion = (marketQuestion || "").toLowerCase();
   
   // Soccer 3-way: "Draw" as outcome or in title is a reliable indicator
   if (lowerOutcome === "draw") return true;
   if (lowerTitle.includes("will there be a draw")) return true;
   if (lowerTitle === "draw" || lowerTitle === "draw?") return true;
+  
+  // Soccer moneyline patterns that indicate 3-way market
+  // These markets have Home Win, Draw, Away Win outcomes
+  const soccerMoneylinePatterns = [
+    /will .+ win\?$/i,  // "Will [Team] win?"
+    /^.+ win$/i,        // "[Team] Win" as outcome
+    /winner: .+ vs .+/i, // "Winner: Team A vs Team B"
+    /match winner/i,
+    /moneyline/i,
+    /three.?way/i,
+    /3.?way/i,
+  ];
+  
+  // Check if market question or title matches soccer moneyline patterns
+  for (const pattern of soccerMoneylinePatterns) {
+    if (pattern.test(lowerTitle) || pattern.test(lowerQuestion)) {
+      // Additional validation: check if this is actually soccer/football
+      // by looking for team abbreviations or vs. pattern
+      if (lowerTitle.includes(" vs ") || lowerTitle.includes(" vs. ") || 
+          lowerQuestion.includes(" vs ") || lowerQuestion.includes(" vs. ")) {
+        // Could be soccer 3-way - flag for further checking
+        console.log(`[NegRisk] Pattern match: ${title?.substring(0, 50)} - flagging as potential negRisk`);
+        return true;
+      }
+    }
+  }
   
   return false;
 }
@@ -58,9 +85,32 @@ async function fetchNegRiskFromGamma(conditionIds: string[]): Promise<Map<string
   if (uncachedIds.length === 0) return result;
   
   try {
-    // Query Gamma API for markets by conditionId
-    // Note: Gamma API supports searching by condition_id parameter
-    for (const conditionId of uncachedIds.slice(0, 10)) { // Limit to 10 to avoid spam
+    // Try fetching recent closed events with negRisk enabled
+    // These would contain resolved soccer 3-way and election markets
+    const eventsUrl = `${GAMMA_API_BASE}/events?closed=true&limit=100`;
+    const eventsResponse = await fetch(eventsUrl);
+    if (eventsResponse.ok) {
+      const events = await eventsResponse.json();
+      for (const event of events) {
+        // Check if event has negRisk enabled
+        const isNegRisk = event.enableNegRisk === true || event.negRisk === true;
+        if (isNegRisk && Array.isArray(event.markets)) {
+          // Mark all markets in this event as negRisk
+          for (const market of event.markets) {
+            if (market.conditionId && uncachedIds.includes(market.conditionId)) {
+              negRiskCache.set(market.conditionId, true);
+              result.set(market.conditionId, true);
+              console.log(`[NegRisk] Event lookup: conditionId=${market.conditionId.slice(0, 10)}... negRisk=true (event: ${event.title?.slice(0, 30)})`);
+            }
+          }
+        }
+      }
+    }
+    
+    // Also query individual markets for any remaining uncached IDs
+    // Note: Gamma API condition_id query may not work, but try anyway
+    const stillUncached = uncachedIds.filter(id => !result.has(id));
+    for (const conditionId of stillUncached.slice(0, 5)) { // Limit to 5 to avoid spam
       try {
         const url = `${GAMMA_API_BASE}/markets?condition_id=${conditionId}`;
         const response = await fetch(url);
@@ -70,7 +120,7 @@ async function fetchNegRiskFromGamma(conditionIds: string[]): Promise<Map<string
             const negRisk = markets[0].negRisk === true;
             negRiskCache.set(conditionId, negRisk);
             result.set(conditionId, negRisk);
-            console.log(`[NegRisk] Gamma API: conditionId=${conditionId.slice(0, 10)}... negRisk=${negRisk}`);
+            console.log(`[NegRisk] Market lookup: conditionId=${conditionId.slice(0, 10)}... negRisk=${negRisk}`);
           }
         }
       } catch (err) {
@@ -1822,7 +1872,7 @@ export async function registerRoutes(
           // negRisk flag for winner-take-all markets (soccer 3-way, elections)
           // This determines which contract to use for redemption (CTF vs NegRiskAdapter)
           // Priority: 1) API flag, 2) fallback pattern detection from title/outcome
-          negRisk: p.negRisk === true || p.neg_risk === true || detectNegRiskFromPosition(p.title || "", p.outcome || ""),
+          negRisk: p.negRisk === true || p.neg_risk === true || detectNegRiskFromPosition(p.title || "", p.outcome || "", p.title || p.question || ""),
         };
       });
       

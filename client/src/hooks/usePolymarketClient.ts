@@ -795,6 +795,7 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
       conditionIds: string[],
       indexSets: number[] = [1, 2],
       negRiskConditionIds?: string[], // Optional: condition IDs that are negRisk markets
+      negRiskPositionSizes?: Map<string, number>, // conditionId -> position size in token units
     ): Promise<TransactionResult> => {
       setIsRelayerLoading(true);
       setError(null);
@@ -861,14 +862,36 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
 
         // Add NegRisk Adapter redeem transactions (winner-take-all markets)
         // NegRiskAdapter.redeemPositions(conditionId, amounts)
-        // amounts array should match position sizes, but we pass empty to let contract determine
+        // amounts array contains the position size - contract redeems the winning outcome
         for (const conditionId of negRiskIds) {
+          // Get position size for this conditionId
+          // Position sizes from Polymarket API are typically in whole token units
+          const positionSize = negRiskPositionSizes?.get(conditionId) || 0;
+          
+          // NegRiskAdapter expects amounts in CTF token units (10^18 decimals)
+          // Position sizes from API might be in different formats - convert appropriately
+          // If size appears small (< 1000), assume it's in token units needing 10^18 conversion
+          // If size appears large (> 1000000), assume it's already in raw units
+          let amountInWei: bigint;
+          if (positionSize < 1000) {
+            // Size is in whole tokens - convert to 18 decimals
+            amountInWei = BigInt(Math.floor(positionSize * 1e18));
+          } else if (positionSize > 1e15) {
+            // Size is already in wei-like format
+            amountInWei = BigInt(Math.floor(positionSize));
+          } else {
+            // Size might be in 6-decimal format - convert to 18 decimals
+            amountInWei = BigInt(Math.floor(positionSize * 1e12));
+          }
+          
+          console.log(`[NegRisk] Redeeming conditionId=${conditionId.slice(0, 10)}... rawSize=${positionSize} amountWei=${amountInWei}`);
+          
           const redeemData = encodeFunctionData({
             abi: NEG_RISK_ADAPTER_ABI,
             functionName: "redeemPositions",
             args: [
               conditionId as `0x${string}`,
-              [], // Empty amounts array - contract will redeem all available
+              [amountInWei], // Pass position size as amount
             ],
           });
 

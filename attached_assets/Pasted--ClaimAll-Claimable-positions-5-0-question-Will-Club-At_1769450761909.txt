@@ -1,0 +1,88 @@
+[ClaimAll] Claimable positions: (5) [{…}, {…}, {…}, {…}, {…}]0: {question: 'Will Club Atlético de Madrid win on 2026', conditionId: '0x9f3ed5c3', tokenId: '42539239753198323367', negRisk: true, outcome: 'Yes', …}1: {question: 'Will Brighton & Hove Albion FC win on 20', conditionId: '0x3d2dfb26', tokenId: '15730191210371992371', negRisk: true, outcome: 'No', …}2: {question: 'Will FC Internazionale Milano win on 202', conditionId: '0x49ddf726', tokenId: '87346582767305511121', negRisk: true, outcome: 'Yes', …}3: conditionId: "0x0de95c4c"negRisk: trueoutcome: "No"question: "Will Arsenal FC win on 2026-01-25?"size: 5.7948tokenId: "10666242777199780889"[[Prototype]]: Object4: conditionId: "0xae5dce31"negRisk: trueoutcome: "No"question: "Will Pisa SC win on 2026-01-23?"size: 5.3937tokenId: "68733180544487242216"[[Prototype]]: Objectlength: 5[[Prototype]]: Array(0)
+DashboardView.tsx:123 [ClaimAll] NegRisk condition IDs: (5) ['0x9f3ed5c36408a83d4c7dd219cfdb1f47c2754eaa8e1b3736cb78c38516fd9660', '0x3d2dfb26046477c7d972aff7556b5601096a4da25f97e81a902e5ed44d0c6365', '0x49ddf726e689bbecaa326c68d5be5a50ab14ff24c327fa86f0ead6a25c671bff', '0x0de95c4c718aa5dd99bdb8eda2846e82435894648e891b1fab154eca29509ba5', '0xae5dce31446525f3f2e661116b09fbbf1c714308ddc74c7a38befdf0171314de']0: "0x9f3ed5c36408a83d4c7dd219cfdb1f47c2754eaa8e1b3736cb78c38516fd9660"1: "0x3d2dfb26046477c7d972aff7556b5601096a4da25f97e81a902e5ed44d0c6365"2: "0x49ddf726e689bbecaa326c68d5be5a50ab14ff24c327fa86f0ead6a25c671bff"3: "0x0de95c4c718aa5dd99bdb8eda2846e82435894648e891b1fab154eca29509ba5"4: "0xae5dce31446525f3f2e661116b09fbbf1c714308ddc74c7a38befdf0171314de"length: 5[[Prototype]]: Array(0)at: ƒ at()concat: ƒ concat()constructor: ƒ Array()copyWithin: ƒ copyWithin()entries: ƒ entries()every: ƒ every()fill: ƒ fill()filter: ƒ filter()find: ƒ find()findIndex: ƒ findIndex()findLast: ƒ findLast()findLastIndex: ƒ findLastIndex()flat: ƒ flat()flatMap: ƒ flatMap()forEach: ƒ forEach()includes: ƒ includes()indexOf: ƒ indexOf()join: ƒ join()keys: ƒ keys()lastIndexOf: ƒ lastIndexOf()length: 0map: ƒ map()pop: ƒ pop()push: ƒ push()reduce: ƒ reduce()reduceRight: ƒ reduceRight()reverse: ƒ reverse()shift: ƒ shift()slice: ƒ slice()some: ƒ some()sort: ƒ sort()splice: ƒ splice()toLocaleString: ƒ toLocaleString()toReversed: ƒ toReversed()toSorted: ƒ toSorted()toSpliced: ƒ toSpliced()toString: ƒ toString()unshift: ƒ unshift()values: ƒ values()with: ƒ with()Symbol(Symbol.iterator): ƒ values()Symbol(Symbol.unscopables): {at: true, copyWithin: true, entries: true, fill: true, find: true, …}[[Prototype]]: Object
+DashboardView.tsx:124 [ClaimAll] NegRisk token IDs: {0x9f3ed5c36408a83d4c7dd219cfdb1f47c2754eaa8e1b3736cb78c38516fd9660: '42539239753198323367697669119403648226529295872170426800690138859962480731554', 0x3d2dfb26046477c7d972aff7556b5601096a4da25f97e81a902e5ed44d0c6365: '15730191210371992371655413974794602322997148795048448961669290137906869440863', 0x49ddf726e689bbecaa326c68d5be5a50ab14ff24c327fa86f0ead6a25c671bff: '87346582767305511121676819406989808447001352679671273656682639899072985944860', 0x0de95c4c718aa5dd99bdb8eda2846e82435894648e891b1fab154eca29509ba5: '10666242777199780889987196336061428064071161309955673719084725061588321742215', 0xae5dce31446525f3f2e661116b09fbbf1c714308ddc74c7a38befdf0171314de: '68733180544487242216452521389883509159039259734838593270969824011317330199018'}0x0de95c4c718aa5dd99bdb8eda2846e82435894648e891b1fab154eca29509ba5: "10666242777199780889987196336061428064071161309955673719084725061588321742215"0x3d2dfb26046477c7d972aff7556b5601096a4da25f97e81a902e5ed44d0c6365: "15730191210371992371655413974794602322997148795048448961669290137906869440863"0x9f3ed5c36408a83d4c7dd219cfdb1f47c2754eaa8e1b3736cb78c38516fd9660: "42539239753198323367697669119403648226529295872170426800690138859962480731554"0x49ddf726e689bbecaa326c68d5be5a50ab14ff24c327fa86f0ead6a25c671bff: "87346582767305511121676819406989808447001352679671273656682639899072985944860"0xae5dce31446525f3f2e661116b09fbbf1c714308ddc74c7a38befdf0171314de: "68733180544487242216452521389883509159039259734838593270969824011317330199018"[[Prototype]]: Object
+DashboardView.tsx:125 [ClaimAll] CTF condition IDs: []length: 0[[Prototype]]: Array(0)
+usePolymarketClient.ts:616 [PolymarketClient] RelayClient initialized
+usePolymarketClient.ts:929 [PolymarketClient] Batch redeeming positions from Safe wallet... {total: 5, ctfCount: 0, negRiskCount: 5}ctfCount: 0negRiskCount: 5total: 5[[Prototype]]: Object
+usePolymarketClient.ts:979 [NegRisk] Derived Safe address for balance query: 0x7291726D8BFbAB3FB3F059A441B53CcA64d03D0f
+usePolymarketClient.ts:997 [NegRisk] Queried balance for conditionId=0x9f3ed5c3...:
+usePolymarketClient.ts:998   Token ID: 42539239753198323367...
+usePolymarketClient.ts:999   Balance: 8400000 (8.4 USDC)
+usePolymarketClient.ts:1021 [NegRisk] Position type: NO
+usePolymarketClient.ts:1022 [NegRisk] Redeeming conditionId=0x9f3ed5c3... via NegRiskAdapter amounts=[0, 8400000]
+usePolymarketClient.ts:997 [NegRisk] Queried balance for conditionId=0x3d2dfb26...:
+usePolymarketClient.ts:998   Token ID: 15730191210371992371...
+usePolymarketClient.ts:999   Balance: 7575755 (7.575755 USDC)
+usePolymarketClient.ts:1021 [NegRisk] Position type: NO
+usePolymarketClient.ts:1022 [NegRisk] Redeeming conditionId=0x3d2dfb26... via NegRiskAdapter amounts=[0, 7575755]
+usePolymarketClient.ts:997 [NegRisk] Queried balance for conditionId=0x49ddf726...:
+usePolymarketClient.ts:998   Token ID: 87346582767305511121...
+usePolymarketClient.ts:999   Balance: 6329109 (6.329109 USDC)
+usePolymarketClient.ts:1021 [NegRisk] Position type: NO
+usePolymarketClient.ts:1022 [NegRisk] Redeeming conditionId=0x49ddf726... via NegRiskAdapter amounts=[0, 6329109]
+usePolymarketClient.ts:997 [NegRisk] Queried balance for conditionId=0x0de95c4c...:
+usePolymarketClient.ts:998   Token ID: 10666242777199780889...
+usePolymarketClient.ts:999   Balance: 5794870 (5.79487 USDC)
+usePolymarketClient.ts:1021 [NegRisk] Position type: NO
+usePolymarketClient.ts:1022 [NegRisk] Redeeming conditionId=0x0de95c4c... via NegRiskAdapter amounts=[0, 5794870]
+usePolymarketClient.ts:997 [NegRisk] Queried balance for conditionId=0xae5dce31...:
+usePolymarketClient.ts:998   Token ID: 68733180544487242216...
+usePolymarketClient.ts:999   Balance: 5393739 (5.393739 USDC)
+usePolymarketClient.ts:1021 [NegRisk] Position type: NO
+usePolymarketClient.ts:1022 [NegRisk] Redeeming conditionId=0xae5dce31... via NegRiskAdapter amounts=[0, 5393739]
+usePolymarketClient.ts:1045 Executing safe transactions...
+(index):1 Access to fetch at 'https://auth.privy.io/api/v1/analytics_events' from origin 'https://652830ff-97fc-44e7-923b-a0bc785dc4f8-00-2g8u5tdcfukny.picard.replit.dev' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.
+chunk-CAXPCQPR.js?v=18b6e877:11975  POST https://auth.privy.io/api/v1/analytics_events net::ERR_FAILED 422 (Unprocessable Content)
+(anonymous) @ chunk-CAXPCQPR.js?v=18b6e877:11975
+$fetchRaw2 @ chunk-CAXPCQPR.js?v=18b6e877:11886
+await in $fetchRaw2
+$fetch2 @ chunk-CAXPCQPR.js?v=18b6e877:11944
+post @ chunk-2CZS6VBU.js?v=18b6e877:43283
+createAnalyticsEvent @ chunk-2CZS6VBU.js?v=18b6e877:43647
+w19 @ chunk-2CZS6VBU.js?v=18b6e877:42291
+await in w19
+onSign @ SignRequestScreen-DjLHkDxK-KJ5GWIZC.js?v=18b6e877:119
+onClick @ chunk-JWEATWJ6.js?v=18b6e877:44
+callCallback2 @ chunk-CX6EDVIC.js?v=18b6e877:10553
+invokeGuardedCallbackDev @ chunk-CX6EDVIC.js?v=18b6e877:10578
+invokeGuardedCallback @ chunk-CX6EDVIC.js?v=18b6e877:10612
+invokeGuardedCallbackAndCatchFirstError @ chunk-CX6EDVIC.js?v=18b6e877:10615
+executeDispatch @ chunk-CX6EDVIC.js?v=18b6e877:13919
+processDispatchQueueItemsInOrder @ chunk-CX6EDVIC.js?v=18b6e877:13939
+processDispatchQueue @ chunk-CX6EDVIC.js?v=18b6e877:13948
+dispatchEventsForPlugins @ chunk-CX6EDVIC.js?v=18b6e877:13956
+(anonymous) @ chunk-CX6EDVIC.js?v=18b6e877:14079
+batchedUpdates$1 @ chunk-CX6EDVIC.js?v=18b6e877:25839
+batchedUpdates @ chunk-CX6EDVIC.js?v=18b6e877:10458
+dispatchEventForPluginEventSystem @ chunk-CX6EDVIC.js?v=18b6e877:14078
+dispatchEventWithEnableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay @ chunk-CX6EDVIC.js?v=18b6e877:12357
+dispatchEvent @ chunk-CX6EDVIC.js?v=18b6e877:12351
+dispatchDiscreteEvent @ chunk-CX6EDVIC.js?v=18b6e877:12328
+chunk-2CZS6VBU.js?v=18b6e877:43649 Unable to submit event. This is not an issue.
+@polymarket_builder-relayer-client.js?v=18b6e877:35841 Created Safe Transaction Request: 
+@polymarket_builder-relayer-client.js?v=18b6e877:35842 {from: '0x98dEA54FDfC694a6768774b8296611dCC54c9F30', to: '0xA238CBeb142c10Ef7Ad8442C6D1f9E89e07e7761', proxyWallet: '0x7291726D8BFbAB3FB3F059A441B53CcA64d03D0f', data: '0x8d80ff0a0000000000000000000000000000000000000000…0000000000000000000000000000000000000524d4b000000', nonce: '59', …}
+@polymarket_builder-relayer-client.js?v=18b6e877:36241 Client side safe request creation took: 3.921 seconds
+usePolymarketClient.ts:1049 Waiting for transaction 019bfb78-ca2d-7843-b4f4-bf86d204acd7 matching states: STATE_MINED,STATE_CONFIRMED...
+usePolymarketClient.ts:1049 txn 019bfb78-ca2d-7843-b4f4-bf86d204acd7 failed onchain! Transaction hash: 0x17b8504c2145233b87b58fc2f04307a3b4de7b7625ffc4c109728640e45fbfe2
+pollUntilState @ @polymarket_builder-relayer-client.js?v=18b6e877:36311
+await in pollUntilState
+wait @ @polymarket_builder-relayer-client.js?v=18b6e877:36046
+(anonymous) @ usePolymarketClient.ts:1049
+await in (anonymous)
+handleClaimAll @ DashboardView.tsx:128
+callCallback2 @ chunk-CX6EDVIC.js?v=18b6e877:10553
+invokeGuardedCallbackDev @ chunk-CX6EDVIC.js?v=18b6e877:10578
+invokeGuardedCallback @ chunk-CX6EDVIC.js?v=18b6e877:10612
+invokeGuardedCallbackAndCatchFirstError @ chunk-CX6EDVIC.js?v=18b6e877:10615
+executeDispatch @ chunk-CX6EDVIC.js?v=18b6e877:13919
+processDispatchQueueItemsInOrder @ chunk-CX6EDVIC.js?v=18b6e877:13939
+processDispatchQueue @ chunk-CX6EDVIC.js?v=18b6e877:13948
+dispatchEventsForPlugins @ chunk-CX6EDVIC.js?v=18b6e877:13956
+(anonymous) @ chunk-CX6EDVIC.js?v=18b6e877:14079
+batchedUpdates$1 @ chunk-CX6EDVIC.js?v=18b6e877:25839
+batchedUpdates @ chunk-CX6EDVIC.js?v=18b6e877:10458
+dispatchEventForPluginEventSystem @ chunk-CX6EDVIC.js?v=18b6e877:14078
+dispatchEventWithEnableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay @ chunk-CX6EDVIC.js?v=18b6e877:12357
+dispatchEvent @ chunk-CX6EDVIC.js?v=18b6e877:12351
+dispatchDiscreteEvent @ chunk-CX6EDVIC.js?v=18b6e877:12328
+usePolymarketClient.ts:1051 [PolymarketClient] Batch redeem result: undefined

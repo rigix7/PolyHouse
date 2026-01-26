@@ -163,17 +163,18 @@ const WRAPPED_COLLATERAL_ABI = [
 ] as const;
 
 // NegRiskAdapter ABI - for winner-take-all markets (soccer 3-way moneylines, elections, etc.)
-// Uses same redeemPositions signature as CTF, but requires WrappedCollateral instead of USDC
-// See: https://github.com/Polymarket/neg-risk-ctf-adapter
+// NegRiskAdapter uses a SIMPLIFIED 2-parameter redeemPositions that:
+// 1. Redeems conditional tokens from CTF using WrappedCollateral as collateral
+// 2. Automatically unwraps WCOL back to USDC
+// 3. Returns USDC to the caller
+// See: https://github.com/Polymarket/neg-risk-ctf-adapter/blob/main/docs/NegRiskAdapter.md
 const NEG_RISK_ADAPTER_ABI = [
   {
     name: "redeemPositions",
     type: "function",
     inputs: [
-      { name: "collateralToken", type: "address" },
-      { name: "parentCollectionId", type: "bytes32" },
-      { name: "conditionId", type: "bytes32" },
-      { name: "indexSets", type: "uint256[]" },
+      { name: "_conditionId", type: "bytes32" },
+      { name: "_amounts", type: "uint256[]" },
     ],
     outputs: [],
   },
@@ -888,24 +889,40 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
         }
 
         // Add NegRisk redeem transactions (winner-take-all markets like soccer 3-way moneylines)
-        // Per successful on-chain transactions, negRisk positions are ALSO redeemed through CTF with USDC
-        // The CTF contract handles both regular and negRisk positions the same way
+        // NegRisk positions are backed by WrappedCollateral (WCOL), NOT USDC
+        // NegRiskAdapter.redeemPositions(conditionId, amounts[]) handles:
+        // 1. Redeeming conditional tokens via CTF with WCOL as collateral
+        // 2. Automatically unwrapping WCOL → USDC
+        // 3. Returning USDC to the caller
         for (const conditionId of negRiskIds) {
-          console.log(`[NegRisk] Redeeming conditionId=${conditionId.slice(0, 10)}... via CTF with USDC (same as regular)`);
+          // Get position size for this condition (passed as human-readable, e.g. 25.0)
+          // Convert to raw token units (6 decimals, same as USDC)
+          const positionSizeHuman = negRiskPositionSizes?.get(conditionId);
+          
+          // amounts array: [yesAmount, noAmount] - pass the position size for both outcomes
+          // The contract will only burn tokens you actually hold
+          // Add 10% buffer to handle any rounding issues
+          const amounts = positionSizeHuman 
+            ? (() => {
+                const rawAmount = BigInt(Math.floor(positionSizeHuman * 1.1 * 1e6)); // 10% buffer
+                return [rawAmount, rawAmount];
+              })()
+            : [BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), 
+               BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")]; // Max (redeem all)
+          
+          console.log(`[NegRisk] Redeeming conditionId=${conditionId.slice(0, 10)}... via NegRiskAdapter (size=${positionSizeHuman?.toFixed(2) || 'max'}, raw=${amounts[0].toString()})`);
           
           const redeemData = encodeFunctionData({
-            abi: CTF_ABI,
+            abi: NEG_RISK_ADAPTER_ABI,
             functionName: "redeemPositions",
             args: [
-              USDC_ADDRESS,
-              parentCollectionId,
               conditionId as `0x${string}`,
-              indexSets.map(BigInt),
+              amounts,
             ],
           });
 
           redeemTxs.push({
-            to: CTF_ADDRESS,
+            to: NEG_RISK_ADAPTER_ADDRESS,
             value: "0",
             data: redeemData,
           });

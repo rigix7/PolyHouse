@@ -264,9 +264,9 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
 
       // STEP 1: Use session Safe address if provided, otherwise derive
       let safeAddress = sessionSafeAddress || safeAddressRef.current;
-      if (!safeAddress) {
-        console.log("[PolymarketClient] Deriving Safe address...");
-        // Use walletClient directly from context
+      
+      // Always initialize RelayClient for fee collection and relay operations
+      if (!relayClientRef.current) {
         const builderConfig = new BuilderConfig({
           remoteBuilderConfig: {
             url: `${window.location.origin}/api/polymarket/sign`,
@@ -282,7 +282,10 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
         );
         
         relayClientRef.current = relayClient;
-        
+      }
+      
+      if (!safeAddress) {
+        console.log("[PolymarketClient] Deriving Safe address...");
         // Derive the Safe address from the EOA using SDK's static contract config
         const config = getContractConfig(137); // Polygon chainId
         const safeFactory = config.SafeContracts.SafeFactory;
@@ -458,8 +461,12 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
 
         // Collect integrator fee after successful order (if enabled)
         // Fee is collected as a separate USDC transfer, does not affect the bet
-        if (isFeeCollectionEnabled && relayClientRef.current) {
+        // Only collect fees on BUY orders where amount = USDC spent (accurate fee basis)
+        // SELL orders would require fill price from order response for accurate calculation
+        // Note: relayClientRef is populated during initializeClient
+        if (isFeeCollectionEnabled && relayClientRef.current && params.side === "BUY") {
           try {
+            // BUY: amount is USDC spent, use directly as fee basis
             const feeResult = await collectFee(relayClientRef.current, amount);
             if (feeResult.success && feeResult.feeAmount > 0n) {
               console.log("[PolymarketClient] Fee collected:", feeResult.feeAmount.toString());

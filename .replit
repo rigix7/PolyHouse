@@ -40,3 +40,9 @@ waitForPort = 5000
 
 [agent]
 integrations = ["javascript_mem_db:1.0.0", "javascript_database:1.0.0"]
+
+[userenv]
+
+[userenv.shared]
+VITE_INTEGRATOR_FEE_ADDRESS = ""
+VITE_INTEGRATOR_FEE_BPS = "0"

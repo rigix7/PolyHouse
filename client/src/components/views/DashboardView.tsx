@@ -53,6 +53,7 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
     isLoadingAssets, 
     getChainOptions,
     createDeposit,
+    createWithdrawal,
     getQuote,
   } = useBridgeApi();
   
@@ -215,13 +216,40 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
   };
 
   const withdrawMutation = useMutation({
-    mutationFn: async ({ amount, toAddress }: { amount: number; toAddress: string }) => {
+    mutationFn: async ({ 
+      amount, 
+      toAddress,
+      chain,
+      tokenAddress 
+    }: { 
+      amount: number; 
+      toAddress: string;
+      chain: string;
+      tokenAddress: string;
+    }) => {
       if (!walletAddress) throw new Error("No wallet connected");
-      const result = await withdrawUSDC(amount, toAddress);
-      if (!result.success) {
-        throw new Error(result.error || "Withdrawal failed");
+      
+      if (chain === "polygon") {
+        const result = await withdrawUSDC(amount, toAddress);
+        if (!result.success) {
+          throw new Error(result.error || "Withdrawal failed");
+        }
+        return result;
+      } else {
+        if (!tokenAddress) {
+          throw new Error("Please select a token to receive");
+        }
+        const result = await createWithdrawal({
+          destinationChainId: chain,
+          destinationTokenAddress: tokenAddress,
+          destinationAddress: toAddress,
+          amount: (amount * 1e6).toString(),
+        });
+        if (!result) {
+          throw new Error("Bridge withdrawal failed");
+        }
+        return { success: true, withdrawalId: result.withdrawalId };
       }
-      return result;
     },
   });
 
@@ -926,10 +954,12 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
               
               <Button
                 className="w-full bg-wild-gold border-wild-gold text-zinc-950"
-                disabled={!withdrawAmount || !withdrawTo || withdrawMutation.isPending || (withdrawChain !== "polygon" && !withdrawQuote)}
+                disabled={!withdrawAmount || !withdrawTo || withdrawMutation.isPending || (withdrawChain !== "polygon" && (!withdrawQuote || !withdrawToken))}
                 onClick={() => withdrawMutation.mutate({ 
                   amount: parseFloat(withdrawAmount), 
-                  toAddress: withdrawTo 
+                  toAddress: withdrawTo,
+                  chain: withdrawChain,
+                  tokenAddress: withdrawToken,
                 })}
                 data-testid="button-withdraw"
               >

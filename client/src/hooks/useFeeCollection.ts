@@ -52,17 +52,28 @@ export default function useFeeCollection() {
       relayClient: RelayClient,
       orderValueUsdc: number
     ): Promise<FeeCollectionResult> => {
+      console.log("[FeeCollection] collectFee called with:", {
+        orderValueUsdc,
+        isFeeCollectionEnabled,
+        feeAddress: INTEGRATOR_FEE_ADDRESS,
+        feeBps: INTEGRATOR_FEE_BPS,
+      });
+      
       if (!isFeeCollectionEnabled) {
+        console.log("[FeeCollection] Skipped - fee collection not enabled");
         return { success: true, feeAmount: BigInt(0) };
       }
 
       if (!INTEGRATOR_FEE_ADDRESS) {
+        console.log("[FeeCollection] Skipped - no fee address configured");
         return { success: true, feeAmount: BigInt(0) };
       }
 
       const feeAmount = calculateFeeAmount(orderValueUsdc);
+      console.log("[FeeCollection] Calculated fee amount:", feeAmount.toString(), "wei (", (Number(feeAmount) / Math.pow(10, USDC_E_DECIMALS)).toFixed(6), "USDC)");
 
       if (feeAmount <= BigInt(0)) {
+        console.log("[FeeCollection] Skipped - fee amount is zero or negative");
         return { success: true, feeAmount: BigInt(0) };
       }
 
@@ -70,6 +81,7 @@ export default function useFeeCollection() {
       setFeeError(null);
 
       try {
+        console.log("[FeeCollection] Building transfer transaction to:", INTEGRATOR_FEE_ADDRESS);
         const transferData = encodeFunctionData({
           abi: ERC20_TRANSFER_ABI,
           functionName: "transfer",
@@ -82,11 +94,14 @@ export default function useFeeCollection() {
           data: transferData,
         };
 
+        console.log("[FeeCollection] Executing relay transaction...");
         const response = await relayClient.execute(
           [feeTransferTx],
           `Collect integrator fee: ${(Number(feeAmount) / Math.pow(10, USDC_E_DECIMALS)).toFixed(2)} USDC`
         );
+        console.log("[FeeCollection] Relay response received, waiting for confirmation...");
         const result = await response.wait();
+        console.log("[FeeCollection] Transaction confirmed:", result?.transactionHash);
 
         return {
           success: true,

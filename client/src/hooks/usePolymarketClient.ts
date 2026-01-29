@@ -464,10 +464,25 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
         // Only collect fees on BUY orders where amount = USDC spent (accurate fee basis)
         // SELL orders would require fill price from order response for accurate calculation
         // Note: relayClientRef is populated during initializeClient
+        console.log("[FeeCollection] Checking fee collection conditions:", {
+          isFeeCollectionEnabled,
+          hasRelayClient: !!relayClientRef.current,
+          side: params.side,
+          amount,
+          orderStatus: result.status,
+          isSuccess,
+        });
+        
         if (isFeeCollectionEnabled && relayClientRef.current && params.side === "BUY") {
+          console.log("[FeeCollection] Conditions met - attempting fee collection for $" + amount);
           try {
             // BUY: amount is USDC spent, use directly as fee basis
             const feeResult = await collectFee(relayClientRef.current, amount);
+            console.log("[FeeCollection] Result:", {
+              success: feeResult.success,
+              feeAmount: feeResult.feeAmount.toString(),
+              txHash: feeResult.txHash,
+            });
             if (feeResult.success && feeResult.feeAmount > 0n) {
               console.log("[PolymarketClient] Fee collected:", feeResult.feeAmount.toString());
             }
@@ -475,6 +490,8 @@ export function usePolymarketClient(props?: PolymarketClientProps) {
             // Fee collection failure should not fail the order
             console.warn("[PolymarketClient] Fee collection failed (order still succeeded):", feeErr);
           }
+        } else {
+          console.log("[FeeCollection] Skipped - conditions not met");
         }
 
         return {

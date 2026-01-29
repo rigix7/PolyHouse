@@ -18,6 +18,7 @@ import useTradingSession from "@/hooks/useTradingSession";
 import useClobClient from "@/hooks/useClobClient";
 import useClobOrder from "@/hooks/useClobOrder";
 import { useLivePrices } from "@/hooks/useLivePrices";
+import useFeeCollection from "@/hooks/useFeeCollection";
 import type { Market, Player, Trade, Bet, Wallet, AdminSettings, WalletRecord, Futures, PolymarketTagRecord, FuturesCategory } from "@shared/schema";
 
 export default function HomePage() {
@@ -38,6 +39,7 @@ export default function HomePage() {
   
   const { clobClient } = useClobClient(tradingSession, isTradingSessionComplete, safeAddress);
   const { submitOrder, isSubmitting: isPolymarketSubmitting, error: polymarketError } = useClobOrder(clobClient, safeAddress);
+  const { collectFee, isFeeCollectionEnabled } = useFeeCollection();
   
   const walletLoading = !isReady;
   const isSafeDeployed = tradingSession?.isSafeDeployed ?? false;
@@ -307,9 +309,31 @@ export default function HomePage() {
           tokenId: data.tokenId,
           side: "BUY",
           size: data.amount, // USDC amount to spend
-          negRisk: selectedBet.negRisk ?? false,
+          negRisk: selectedBet?.negRisk ?? false,
           isMarketOrder: true, // Use FOK market order
         });
+        
+        // Collect integrator fee after successful order (if enabled)
+        // Fee is collected as a separate USDC transfer, does not affect the bet
+        if (result.success && isFeeCollectionEnabled && relayClient) {
+          console.log("[FeeCollection] Order successful, attempting fee collection for $" + data.amount);
+          try {
+            const feeResult = await collectFee(relayClient, data.amount);
+            if (feeResult.success && feeResult.feeAmount > 0n) {
+              console.log("[FeeCollection] Fee collected:", feeResult.feeAmount.toString(), "tx:", feeResult.txHash);
+            } else if (!feeResult.success) {
+              console.warn("[FeeCollection] Fee collection failed (order still succeeded)");
+            }
+          } catch (feeErr) {
+            console.warn("[FeeCollection] Fee collection error (order still succeeded):", feeErr);
+          }
+        } else {
+          console.log("[FeeCollection] Skipped:", { 
+            orderSuccess: result.success, 
+            feeEnabled: isFeeCollectionEnabled, 
+            hasRelayClient: !!relayClient 
+          });
+        }
         
         return result;
       }

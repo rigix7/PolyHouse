@@ -64,6 +64,21 @@ export async function registerRoutes(
     res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  // Fee configuration endpoint - returns runtime fee config for production
+  app.get("/api/config/fees", (req, res) => {
+    const feeAddress = process.env.INTEGRATOR_FEE_ADDRESS || process.env.VITE_INTEGRATOR_FEE_ADDRESS || "";
+    const feeBps = parseInt(process.env.INTEGRATOR_FEE_BPS || process.env.VITE_INTEGRATOR_FEE_BPS || "0", 10);
+    const enabled = !!feeAddress && feeBps > 0;
+    
+    console.log("[FeeConfig API] Returning fee config:", { feeAddress: feeAddress || "(not set)", feeBps, enabled });
+    
+    res.json({
+      feeAddress,
+      feeBps,
+      enabled,
+    });
+  });
+
   // Seed initial data on startup
   await storage.seedInitialData();
 

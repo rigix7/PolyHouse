@@ -1,9 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { RelayClient } from "@polymarket/builder-relayer-client";
-import {
-  INTEGRATOR_FEE_ADDRESS,
-  INTEGRATOR_FEE_BPS,
-} from "@/constants/config";
 import { USDC_E_DECIMALS, USDC_E_CONTRACT_ADDRESS } from "@/constants/tokens";
 import { encodeFunctionData } from "viem";
 
@@ -25,26 +21,59 @@ export type FeeCollectionResult = {
   txHash?: string;
 };
 
+interface FeeConfig {
+  feeAddress: string;
+  feeBps: number;
+  enabled: boolean;
+}
+
 export default function useFeeCollection() {
   const [isCollectingFee, setIsCollectingFee] = useState(false);
   const [feeError, setFeeError] = useState<Error | null>(null);
+  const [feeConfig, setFeeConfig] = useState<FeeConfig>({
+    feeAddress: "",
+    feeBps: 0,
+    enabled: false,
+  });
+  const [configLoaded, setConfigLoaded] = useState(false);
 
-  const isFeeCollectionEnabled =
-    !!INTEGRATOR_FEE_ADDRESS && INTEGRATOR_FEE_BPS > 0;
+  useEffect(() => {
+    async function loadFeeConfig() {
+      try {
+        const response = await fetch("/api/config/fees");
+        if (response.ok) {
+          const config = await response.json();
+          console.log("[FeeCollection] Loaded fee config from API:", config);
+          setFeeConfig({
+            feeAddress: config.feeAddress || "",
+            feeBps: config.feeBps || 0,
+            enabled: config.enabled || false,
+          });
+        } else {
+          console.warn("[FeeCollection] Failed to load fee config from API, using defaults");
+        }
+      } catch (err) {
+        console.warn("[FeeCollection] Error loading fee config:", err);
+      } finally {
+        setConfigLoaded(true);
+      }
+    }
+    loadFeeConfig();
+  }, []);
 
   const calculateFeeAmount = useCallback(
     (orderValueUsdc: number): bigint => {
-      if (!isFeeCollectionEnabled || orderValueUsdc <= 0) {
+      if (!feeConfig.enabled || orderValueUsdc <= 0) {
         return BigInt(0);
       }
 
-      const feeDecimal = orderValueUsdc * (INTEGRATOR_FEE_BPS / 10000);
+      const feeDecimal = orderValueUsdc * (feeConfig.feeBps / 10000);
       const feeAmount = BigInt(
         Math.floor(feeDecimal * Math.pow(10, USDC_E_DECIMALS))
       );
       return feeAmount;
     },
-    [isFeeCollectionEnabled]
+    [feeConfig.enabled, feeConfig.feeBps]
   );
 
   const collectFee = useCallback(
@@ -54,17 +83,18 @@ export default function useFeeCollection() {
     ): Promise<FeeCollectionResult> => {
       console.log("[FeeCollection] collectFee called with:", {
         orderValueUsdc,
-        isFeeCollectionEnabled,
-        feeAddress: INTEGRATOR_FEE_ADDRESS,
-        feeBps: INTEGRATOR_FEE_BPS,
+        feeEnabled: feeConfig.enabled,
+        feeAddress: feeConfig.feeAddress,
+        feeBps: feeConfig.feeBps,
+        configLoaded,
       });
       
-      if (!isFeeCollectionEnabled) {
+      if (!feeConfig.enabled) {
         console.log("[FeeCollection] Skipped - fee collection not enabled");
         return { success: true, feeAmount: BigInt(0) };
       }
 
-      if (!INTEGRATOR_FEE_ADDRESS) {
+      if (!feeConfig.feeAddress) {
         console.log("[FeeCollection] Skipped - no fee address configured");
         return { success: true, feeAmount: BigInt(0) };
       }
@@ -81,11 +111,11 @@ export default function useFeeCollection() {
       setFeeError(null);
 
       try {
-        console.log("[FeeCollection] Building transfer transaction to:", INTEGRATOR_FEE_ADDRESS);
+        console.log("[FeeCollection] Building transfer transaction to:", feeConfig.feeAddress);
         const transferData = encodeFunctionData({
           abi: ERC20_TRANSFER_ABI,
           functionName: "transfer",
-          args: [INTEGRATOR_FEE_ADDRESS as `0x${string}`, feeAmount],
+          args: [feeConfig.feeAddress as `0x${string}`, feeAmount],
         });
 
         const feeTransferTx = {
@@ -119,7 +149,7 @@ export default function useFeeCollection() {
         setIsCollectingFee(false);
       }
     },
-    [isFeeCollectionEnabled, calculateFeeAmount]
+    [feeConfig.enabled, feeConfig.feeAddress, feeConfig.feeBps, configLoaded, calculateFeeAmount]
   );
 
   return {
@@ -127,8 +157,9 @@ export default function useFeeCollection() {
     calculateFeeAmount,
     isCollectingFee,
     feeError,
-    isFeeCollectionEnabled,
-    feeAddressConfigured: !!INTEGRATOR_FEE_ADDRESS,
-    feeBps: INTEGRATOR_FEE_BPS,
+    isFeeCollectionEnabled: feeConfig.enabled,
+    feeAddressConfigured: !!feeConfig.feeAddress,
+    feeBps: feeConfig.feeBps,
+    configLoaded,
   };
 }

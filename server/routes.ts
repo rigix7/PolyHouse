@@ -79,6 +79,109 @@ export async function registerRoutes(
     });
   });
 
+  // ========== Polymarket Bridge API Proxy ==========
+  const BRIDGE_API_BASE = "https://bridge.polymarket.com";
+
+  // Get supported assets for deposits/withdrawals
+  app.get("/api/bridge/supported-assets", async (req, res) => {
+    try {
+      const response = await fetch(`${BRIDGE_API_BASE}/supported-assets`);
+      if (!response.ok) {
+        console.error("[Bridge API] Failed to fetch supported assets:", response.status);
+        return res.status(response.status).json({ error: "Failed to fetch supported assets" });
+      }
+      const data = await response.json();
+      console.log("[Bridge API] Supported assets fetched:", data.supportedAssets?.length || 0, "assets");
+      res.json(data);
+    } catch (error) {
+      console.error("[Bridge API] Error fetching supported assets:", error);
+      res.status(500).json({ error: "Failed to fetch supported assets" });
+    }
+  });
+
+  // Get a quote for deposit or withdrawal
+  app.post("/api/bridge/quote", async (req, res) => {
+    try {
+      const response = await fetch(`${BRIDGE_API_BASE}/quote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("[Bridge API] Quote failed:", response.status, errorData);
+        return res.status(response.status).json({ error: errorData.message || "Failed to get quote" });
+      }
+      const data = await response.json();
+      console.log("[Bridge API] Quote received:", data);
+      res.json(data);
+    } catch (error) {
+      console.error("[Bridge API] Error getting quote:", error);
+      res.status(500).json({ error: "Failed to get quote" });
+    }
+  });
+
+  // Create deposit address
+  app.post("/api/bridge/deposit", async (req, res) => {
+    try {
+      const response = await fetch(`${BRIDGE_API_BASE}/deposit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("[Bridge API] Deposit failed:", response.status, errorData);
+        return res.status(response.status).json({ error: errorData.message || "Failed to create deposit" });
+      }
+      const data = await response.json();
+      console.log("[Bridge API] Deposit address created:", data);
+      res.json(data);
+    } catch (error) {
+      console.error("[Bridge API] Error creating deposit:", error);
+      res.status(500).json({ error: "Failed to create deposit" });
+    }
+  });
+
+  // Create withdrawal
+  app.post("/api/bridge/withdraw", async (req, res) => {
+    try {
+      const response = await fetch(`${BRIDGE_API_BASE}/withdraw`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("[Bridge API] Withdraw failed:", response.status, errorData);
+        return res.status(response.status).json({ error: errorData.message || "Failed to create withdrawal" });
+      }
+      const data = await response.json();
+      console.log("[Bridge API] Withdrawal created:", data);
+      res.json(data);
+    } catch (error) {
+      console.error("[Bridge API] Error creating withdrawal:", error);
+      res.status(500).json({ error: "Failed to create withdrawal" });
+    }
+  });
+
+  // Get transaction status
+  app.get("/api/bridge/status/:address", async (req, res) => {
+    try {
+      const response = await fetch(`${BRIDGE_API_BASE}/status/${req.params.address}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("[Bridge API] Status check failed:", response.status, errorData);
+        return res.status(response.status).json({ error: errorData.message || "Failed to get status" });
+      }
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error("[Bridge API] Error getting status:", error);
+      res.status(500).json({ error: "Failed to get status" });
+    }
+  });
+
   // Seed initial data on startup
   await storage.seedInitialData();
 

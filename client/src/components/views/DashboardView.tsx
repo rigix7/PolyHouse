@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { TrendingUp, TrendingDown, Award, Activity, Wallet, History, Package, Coins, ArrowDownToLine, ArrowUpFromLine, RefreshCw, CheckCircle2, Copy, Check, HelpCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { TrendingUp, TrendingDown, Award, Activity, Wallet, History, Package, Coins, ArrowDownToLine, ArrowUpFromLine, RefreshCw, CheckCircle2, Copy, Check, HelpCircle, ChevronDown, ChevronUp, Loader2, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { fetchPositions, fetchActivity, type PolymarketPosition, type PolymarketActivity } from "@/lib/polymarketOrder";
 import { usePolymarketClient } from "@/hooks/usePolymarketClient";
+import { useBridgeApi, type SupportedAsset } from "@/hooks/useBridgeApi";
 import { DepositInstructions } from "@/components/terminal/DepositInstructions";
 import type { Wallet as WalletType, Bet, Trade } from "@shared/schema";
 
@@ -30,11 +32,105 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
   const [copied, setCopied] = useState(false);
   const [showDepositInstructions, setShowDepositInstructions] = useState(false);
   
+  const [depositChain, setDepositChain] = useState<string>("polygon");
+  const [depositToken, setDepositToken] = useState<string>("");
+  const [bridgeDepositAddress, setBridgeDepositAddress] = useState<string | null>(null);
+  const [isCreatingDeposit, setIsCreatingDeposit] = useState(false);
+  
+  const [withdrawChain, setWithdrawChain] = useState<string>("polygon");
+  const [withdrawToken, setWithdrawToken] = useState<string>("");
+  const [withdrawQuote, setWithdrawQuote] = useState<{ fee: string; output: string } | null>(null);
+  const [isGettingQuote, setIsGettingQuote] = useState(false);
+  
   const { 
     withdrawUSDC, 
     redeemPositions,
     batchRedeemPositions,
   } = usePolymarketClient();
+  
+  const { 
+    supportedAssets, 
+    isLoadingAssets, 
+    getChainOptions,
+    createDeposit,
+    getQuote,
+  } = useBridgeApi();
+  
+  const chainOptions = getChainOptions();
+  
+  const getTokensForChain = (chainId: string): SupportedAsset[] => {
+    return supportedAssets.filter(a => a.chainId === chainId);
+  };
+  
+  const handleDepositChainChange = async (chain: string) => {
+    setDepositChain(chain);
+    setBridgeDepositAddress(null);
+    setDepositToken("");
+    
+    if (chain === "polygon") {
+      return;
+    }
+    
+    const tokens = getTokensForChain(chain);
+    if (tokens.length > 0) {
+      const usdcToken = tokens.find(t => t.token.symbol === "USDC") || tokens[0];
+      setDepositToken(usdcToken.token.address);
+    }
+  };
+  
+  const handleCreateBridgeDeposit = async () => {
+    if (!safeAddress || depositChain === "polygon" || !depositToken) return;
+    
+    setIsCreatingDeposit(true);
+    try {
+      const result = await createDeposit({
+        chainId: depositChain,
+        tokenAddress: depositToken,
+        destinationAddress: safeAddress,
+      });
+      if (result?.depositAddress) {
+        setBridgeDepositAddress(result.depositAddress);
+      }
+    } finally {
+      setIsCreatingDeposit(false);
+    }
+  };
+  
+  const handleWithdrawChainChange = async (chain: string) => {
+    setWithdrawChain(chain);
+    setWithdrawQuote(null);
+    setWithdrawToken("");
+    
+    if (chain === "polygon") {
+      return;
+    }
+    
+    const tokens = getTokensForChain(chain);
+    if (tokens.length > 0) {
+      const usdcToken = tokens.find(t => t.token.symbol === "USDC") || tokens[0];
+      setWithdrawToken(usdcToken.token.address);
+    }
+  };
+  
+  const handleGetWithdrawQuote = async () => {
+    if (!withdrawAmount || !withdrawTo || withdrawChain === "polygon") return;
+    
+    setIsGettingQuote(true);
+    try {
+      const result = await getQuote({
+        type: "withdraw",
+        toChainId: withdrawChain,
+        toToken: withdrawToken,
+        amount: withdrawAmount,
+        destinationAddress: withdrawTo,
+      });
+      if (result) {
+        setWithdrawQuote({ fee: result.fee, output: result.estimatedOutput });
+      }
+    } finally {
+      setIsGettingQuote(false);
+    }
+  };
   
   useEffect(() => {
     if (walletAddress) {
@@ -305,36 +401,140 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
         <div className="bg-zinc-900 border border-zinc-800 rounded-md overflow-hidden">
           <div className="p-3 border-b border-zinc-800 flex items-center gap-2">
             <ArrowUpFromLine className="w-4 h-4 text-wild-trade" />
-            <h3 className="text-xs font-bold text-zinc-400 tracking-wider">DEPOSIT USDC</h3>
+            <h3 className="text-xs font-bold text-zinc-400 tracking-wider">DEPOSIT</h3>
           </div>
           <div className="p-3 space-y-3">
             {isSafeDeployed && safeAddress ? (
               <>
-                <div className="flex items-center justify-between bg-zinc-950 rounded p-2 border border-zinc-800">
-                  <div className="flex flex-col flex-1 min-w-0">
-                    <span className="text-[10px] text-zinc-500 mb-0.5">Deposit Address</span>
-                    <span className="text-[11px] font-mono text-zinc-300 truncate" data-testid="text-deposit-address">
-                      {safeAddress}
-                    </span>
-                  </div>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="shrink-0 w-7 h-7"
-                    onClick={() => {
-                      navigator.clipboard.writeText(safeAddress);
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 2000);
-                    }}
-                    data-testid="button-copy-address"
-                  >
-                    {copied ? (
-                      <Check className="w-3 h-3 text-wild-scout" />
-                    ) : (
-                      <Copy className="w-3 h-3 text-zinc-400" />
-                    )}
-                  </Button>
+                <div>
+                  <label className="text-[10px] text-zinc-500 block mb-1">Deposit From</label>
+                  <Select value={depositChain} onValueChange={handleDepositChainChange}>
+                    <SelectTrigger className="w-full bg-zinc-950 border-zinc-800 text-sm" data-testid="select-deposit-chain">
+                      <SelectValue placeholder="Select chain" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="polygon">
+                        <span className="flex items-center gap-2">
+                          <span className="w-4 h-4 rounded-full bg-purple-500 flex items-center justify-center text-[8px] font-bold text-white">P</span>
+                          Polygon (Native)
+                        </span>
+                      </SelectItem>
+                      {chainOptions.map((chain) => (
+                        <SelectItem key={chain.chainId} value={chain.chainId}>
+                          <span className="flex items-center gap-2">
+                            <span className="w-4 h-4 rounded-full bg-zinc-600 flex items-center justify-center text-[8px] font-bold text-white">
+                              {chain.chainName.charAt(0)}
+                            </span>
+                            {chain.chainName}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
+                
+                {depositChain !== "polygon" && (
+                  <div>
+                    <label className="text-[10px] text-zinc-500 block mb-1">Token</label>
+                    <Select value={depositToken} onValueChange={setDepositToken}>
+                      <SelectTrigger className="w-full bg-zinc-950 border-zinc-800 text-sm" data-testid="select-deposit-token">
+                        <SelectValue placeholder="Select token" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getTokensForChain(depositChain).map((asset) => (
+                          <SelectItem key={asset.token.address} value={asset.token.address}>
+                            <span className="flex items-center gap-2">
+                              {asset.token.symbol} - {asset.token.name}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[10px] text-zinc-600 mt-1">
+                      Min: ${getTokensForChain(depositChain).find(t => t.token.address === depositToken)?.minCheckoutUsd || 7} USD
+                    </p>
+                  </div>
+                )}
+                
+                {depositChain === "polygon" ? (
+                  <>
+                    <div className="flex items-center justify-between bg-zinc-950 rounded p-2 border border-zinc-800">
+                      <div className="flex flex-col flex-1 min-w-0">
+                        <span className="text-[10px] text-zinc-500 mb-0.5">Deposit Address (Polygon)</span>
+                        <span className="text-[11px] font-mono text-zinc-300 truncate" data-testid="text-deposit-address">
+                          {safeAddress}
+                        </span>
+                      </div>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="shrink-0 w-7 h-7"
+                        onClick={() => {
+                          navigator.clipboard.writeText(safeAddress);
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 2000);
+                        }}
+                        data-testid="button-copy-address"
+                      >
+                        {copied ? (
+                          <Check className="w-3 h-3 text-wild-scout" />
+                        ) : (
+                          <Copy className="w-3 h-3 text-zinc-400" />
+                        )}
+                      </Button>
+                    </div>
+                    <p className="text-[10px] text-amber-400">
+                      Send USDC.e only. Other tokens will be lost.
+                    </p>
+                  </>
+                ) : bridgeDepositAddress ? (
+                  <>
+                    <div className="flex items-center justify-between bg-zinc-950 rounded p-2 border border-zinc-800">
+                      <div className="flex flex-col flex-1 min-w-0">
+                        <span className="text-[10px] text-zinc-500 mb-0.5">Bridge Deposit Address</span>
+                        <span className="text-[11px] font-mono text-zinc-300 truncate" data-testid="text-bridge-deposit-address">
+                          {bridgeDepositAddress}
+                        </span>
+                      </div>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="shrink-0 w-7 h-7"
+                        onClick={() => {
+                          navigator.clipboard.writeText(bridgeDepositAddress);
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 2000);
+                        }}
+                        data-testid="button-copy-bridge-address"
+                      >
+                        {copied ? (
+                          <Check className="w-3 h-3 text-wild-scout" />
+                        ) : (
+                          <Copy className="w-3 h-3 text-zinc-400" />
+                        )}
+                      </Button>
+                    </div>
+                    <div className="bg-wild-scout/10 border border-wild-scout/30 rounded p-2">
+                      <p className="text-[10px] text-wild-scout">
+                        Funds will be automatically bridged to USDC.e on Polygon.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <Button
+                    size="sm"
+                    className="w-full bg-wild-trade border-wild-trade text-white"
+                    onClick={handleCreateBridgeDeposit}
+                    disabled={isCreatingDeposit || !depositToken}
+                    data-testid="button-get-bridge-address"
+                  >
+                    {isCreatingDeposit ? (
+                      <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                    ) : null}
+                    Get Deposit Address
+                  </Button>
+                )}
+                
                 <Button
                   size="sm"
                   variant="outline"
@@ -621,13 +821,63 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
             </div>
             <div className="p-3 space-y-3">
               <div>
+                <label className="text-[10px] text-zinc-500 block mb-1">Withdraw To</label>
+                <Select value={withdrawChain} onValueChange={handleWithdrawChainChange}>
+                  <SelectTrigger className="w-full bg-zinc-950 border-zinc-800 text-sm" data-testid="select-withdraw-chain">
+                    <SelectValue placeholder="Select destination" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="polygon">
+                      <span className="flex items-center gap-2">
+                        <span className="w-4 h-4 rounded-full bg-purple-500 flex items-center justify-center text-[8px] font-bold text-white">P</span>
+                        Polygon (USDC.e)
+                      </span>
+                    </SelectItem>
+                    {chainOptions.map((chain) => (
+                      <SelectItem key={chain.chainId} value={chain.chainId}>
+                        <span className="flex items-center gap-2">
+                          <span className="w-4 h-4 rounded-full bg-zinc-600 flex items-center justify-center text-[8px] font-bold text-white">
+                            {chain.chainName.charAt(0)}
+                          </span>
+                          {chain.chainName}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {withdrawChain !== "polygon" && (
+                <div>
+                  <label className="text-[10px] text-zinc-500 block mb-1">Receive Token</label>
+                  <Select value={withdrawToken} onValueChange={setWithdrawToken}>
+                    <SelectTrigger className="w-full bg-zinc-950 border-zinc-800 text-sm" data-testid="select-withdraw-token">
+                      <SelectValue placeholder="Select token" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getTokensForChain(withdrawChain).map((asset) => (
+                        <SelectItem key={asset.token.address} value={asset.token.address}>
+                          <span className="flex items-center gap-2">
+                            {asset.token.symbol} - {asset.token.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              
+              <div>
                 <label className="text-[10px] text-zinc-500 block mb-1">Amount (USDC)</label>
                 <input
                   type="number"
                   placeholder="0.00"
                   value={withdrawAmount}
-                  onChange={(e) => setWithdrawAmount(e.target.value)}
-                  className="w-full bg-zinc-850 border border-zinc-800 rounded px-3 py-2 text-sm font-mono text-white placeholder:text-zinc-600 focus:outline-none focus:border-wild-gold"
+                  onChange={(e) => {
+                    setWithdrawAmount(e.target.value);
+                    setWithdrawQuote(null);
+                  }}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm font-mono text-white placeholder:text-zinc-600 focus:outline-none focus:border-wild-gold"
                   data-testid="input-withdraw-amount"
                 />
               </div>
@@ -638,13 +888,45 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
                   placeholder="0x..."
                   value={withdrawTo}
                   onChange={(e) => setWithdrawTo(e.target.value)}
-                  className="w-full bg-zinc-850 border border-zinc-800 rounded px-3 py-2 text-sm font-mono text-white placeholder:text-zinc-600 focus:outline-none focus:border-wild-gold"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm font-mono text-white placeholder:text-zinc-600 focus:outline-none focus:border-wild-gold"
                   data-testid="input-withdraw-address"
                 />
               </div>
+              
+              {withdrawChain !== "polygon" && withdrawAmount && withdrawTo && (
+                <>
+                  {withdrawQuote ? (
+                    <div className="bg-zinc-950 border border-zinc-800 rounded p-2 space-y-1">
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-zinc-500">Network Fee</span>
+                        <span className="text-zinc-300">${withdrawQuote.fee}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-zinc-400">You'll Receive</span>
+                        <span className="text-wild-scout font-mono">{withdrawQuote.output}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full text-xs border-zinc-700"
+                      onClick={handleGetWithdrawQuote}
+                      disabled={isGettingQuote}
+                      data-testid="button-get-quote"
+                    >
+                      {isGettingQuote ? (
+                        <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                      ) : null}
+                      Get Quote
+                    </Button>
+                  )}
+                </>
+              )}
+              
               <Button
                 className="w-full bg-wild-gold border-wild-gold text-zinc-950"
-                disabled={!withdrawAmount || !withdrawTo || withdrawMutation.isPending}
+                disabled={!withdrawAmount || !withdrawTo || withdrawMutation.isPending || (withdrawChain !== "polygon" && !withdrawQuote)}
                 onClick={() => withdrawMutation.mutate({ 
                   amount: parseFloat(withdrawAmount), 
                   toAddress: withdrawTo 
@@ -653,8 +935,10 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
               >
                 {withdrawMutation.isPending ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : withdrawChain === "polygon" ? (
+                  "Withdraw USDC.e"
                 ) : (
-                  "Withdraw USDC"
+                  "Withdraw via Bridge"
                 )}
               </Button>
               {withdrawMutation.isSuccess && (

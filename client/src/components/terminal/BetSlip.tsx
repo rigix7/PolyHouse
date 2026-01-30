@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { OrderBookData } from "@/hooks/usePolymarketClient";
 import { categorizeError, type CategorizedError } from "@/lib/polymarketErrors";
+import useFeeCollection from "@/hooks/useFeeCollection";
 
 type SubmissionStatus = "idle" | "pending" | "success" | "error";
 
@@ -197,6 +198,11 @@ export function BetSlip({
   
   const stakeNum = parseFloat(stake) || 0;
   
+  // Fee calculation - fee is deducted from user's stake
+  const { isFeeCollectionEnabled, feeBps } = useFeeCollection();
+  const feeAmountUsdc = isFeeCollectionEnabled && feeBps > 0 ? stakeNum * (feeBps / 10000) : 0;
+  const effectiveBetAmount = stakeNum - feeAmountUsdc;
+  
   // For match-winner markets, each outcome has its own token
   // Query the order book for the selected outcome's token
   const currentTokenId = betDirection === "yes" ? yesTokenId : noTokenId;
@@ -267,7 +273,8 @@ export function BetSlip({
   const executionPrice = getExecutionPrice();
   const effectiveOdds = executionPrice > 0 ? 1 / executionPrice : 2;
   
-  const potentialWin = stakeNum * effectiveOdds;
+  // Potential win is based on effective bet (stake minus fee)
+  const potentialWin = effectiveBetAmount * effectiveOdds;
   const wildPoints = Math.floor(stakeNum);
   const insufficientBalance = stakeNum > maxBalance;
   
@@ -652,6 +659,23 @@ export function BetSlip({
           </div>
 
           <div className="bg-zinc-800/50 rounded-lg p-3 space-y-2">
+            {feeAmountUsdc > 0 && (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span className="text-zinc-400">Bet Amount</span>
+                  <span className="font-mono text-white">
+                    ${effectiveBetAmount.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-zinc-400">Platform Fee ({(feeBps / 100).toFixed(1)}%)</span>
+                  <span className="font-mono text-zinc-400">
+                    ${feeAmountUsdc.toFixed(4)}
+                  </span>
+                </div>
+                <div className="border-t border-zinc-700 pt-2 mt-1" />
+              </>
+            )}
             <div className="flex justify-between text-sm">
               <span className="text-zinc-400">Potential Win</span>
               <span className="font-mono font-bold text-white">

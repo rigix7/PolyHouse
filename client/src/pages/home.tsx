@@ -37,7 +37,7 @@ export default function HomePage() {
   
   const { clobClient } = useClobClient(tradingSession, isTradingSessionComplete, safeAddress);
   const { submitOrder, isSubmitting: isPolymarketSubmitting, error: polymarketError } = useClobOrder(clobClient, safeAddress);
-  const { collectFee, isFeeCollectionEnabled } = useFeeCollection();
+  const { collectFee, isFeeCollectionEnabled, feeBps } = useFeeCollection();
   
   const walletLoading = !isReady;
   const isSafeDeployed = tradingSession?.isSafeDeployed ?? false;
@@ -304,17 +304,26 @@ export default function HomePage() {
         // Pre-collection fee flow: Collect fee BEFORE order placement
         // This prevents users from rejecting fees after their bet is placed
         // 
-        // NOTE: Fee design choice - We collect fees as a separate USDC transfer rather than
-        // reducing the bet amount. This means:
-        // - User's full stake goes to the order
-        // - Fee is collected separately via relay transaction
-        // - If feeBps > 0, displayed odds could optionally be adjusted to show effective returns
-        // - Current config: feeBps=0 (disabled), so no UI adjustment needed
+        // Fee is DEDUCTED from user's stake, not added on top:
+        // - User wants to spend: $X total
+        // - Fee = $X × (feeBps / 10000)
+        // - Effective bet = $X - Fee
+        // This ensures total spent (bet + fee) never exceeds user's intended stake
         let feeWasCollected = false;
+        let effectiveBetAmount = data.amount; // Default to full amount if no fee
         
-        if (isFeeCollectionEnabled && relayClient) {
-          console.log("[FeeCollection] Pre-collection: attempting fee collection for $" + data.amount);
+        if (isFeeCollectionEnabled && relayClient && feeBps > 0) {
+          // Calculate fee from user's total stake
+          const feeAmountUsdc = data.amount * (feeBps / 10000);
+          effectiveBetAmount = data.amount - feeAmountUsdc;
+          
+          console.log("[FeeCollection] Pre-collection: user stake $" + data.amount + 
+            ", fee $" + feeAmountUsdc.toFixed(6) + 
+            ", effective bet $" + effectiveBetAmount.toFixed(6));
+          
           try {
+            // collectFee calculates and collects fee from orderValueUsdc (full stake)
+            // It internally computes: fee = stake * (feeBps / 10000)
             const feeResult = await collectFee(relayClient, data.amount);
             
             if (!feeResult.success) {
@@ -325,6 +334,7 @@ export default function HomePage() {
             if (feeResult.skipped) {
               console.log("[FeeCollection] Fee was skipped (disabled or zero amount)");
               feeWasCollected = false;
+              effectiveBetAmount = data.amount; // Revert to full amount
             } else {
               console.log("[FeeCollection] Fee collected:", feeResult.feeAmount.toString(), "tx:", feeResult.txHash);
               feeWasCollected = true;
@@ -336,19 +346,30 @@ export default function HomePage() {
         } else {
           console.log("[FeeCollection] Skipped pre-collection:", { 
             feeEnabled: isFeeCollectionEnabled, 
-            hasRelayClient: !!relayClient 
+            hasRelayClient: !!relayClient,
+            feeBps: feeBps
           });
         }
         
         // Use FOK (Fill-or-Kill) market order via official useClobOrder hook
         // negRisk is true for winner-take-all markets like soccer 3-way moneylines
+        console.log("[Order] Submitting with effective bet amount:", effectiveBetAmount.toFixed(6), 
+          "USDC (user stake:", data.amount, "- fee:", (data.amount - effectiveBetAmount).toFixed(6), ")");
+        
         const result = await submitOrder({
           tokenId: data.tokenId,
           side: "BUY",
-          size: data.amount, // USDC amount to spend
+          size: effectiveBetAmount, // Bet amount AFTER fee deduction
           negRisk: selectedBet?.negRisk ?? false,
           isMarketOrder: true, // Use FOK market order
         });
+        
+        if (result.success) {
+          console.log("[Order] Success! Total spend breakdown:", 
+            "bet:", effectiveBetAmount.toFixed(6), 
+            "+ fee:", (data.amount - effectiveBetAmount).toFixed(6), 
+            "= total:", data.amount.toFixed(6));
+        }
         
         // If order fails after fee was collected, show helpful message
         if (!result.success && feeWasCollected) {

@@ -417,6 +417,115 @@ export const polymarketOrderSchema = z.object({
   updatedAt: z.string(),
 });
 
+// ============ WHITE-LABEL THEME CONFIGURATION ============
+
+// Theme colors for each component area
+export const themeColorSchema = z.object({
+  primary: z.string().optional(),
+  secondary: z.string().optional(),
+  background: z.string().optional(),
+  foreground: z.string().optional(),
+  accent: z.string().optional(),
+  border: z.string().optional(),
+  muted: z.string().optional(),
+});
+
+export type ThemeColors = z.infer<typeof themeColorSchema>;
+
+// Full theme configuration with component-specific settings
+export const themeConfigSchema = z.object({
+  // Brand settings
+  brand: z.object({
+    name: z.string().default("POLYHOUSE"),
+    logoUrl: z.string().optional(),
+    primaryColor: z.string().default("#f43f5e"), // rose-500
+    accentColor: z.string().default("#fbbf24"), // amber-400
+  }).default({}),
+  
+  // Header component
+  header: z.object({
+    backgroundColor: z.string().default("#09090b"), // zinc-950
+    textColor: z.string().default("#fafafa"), // zinc-50
+    accentColor: z.string().default("#fbbf24"), // amber-400
+  }).default({}),
+  
+  // BetSlip component
+  betSlip: z.object({
+    backgroundColor: z.string().default("#18181b"), // zinc-900
+    cardColor: z.string().default("#27272a"), // zinc-800
+    primaryButtonColor: z.string().default("#f43f5e"), // rose-500
+    successColor: z.string().default("#10b981"), // emerald-500
+    textColor: z.string().default("#fafafa"), // zinc-50
+  }).default({}),
+  
+  // Market cards
+  marketCards: z.object({
+    backgroundColor: z.string().default("#18181b"), // zinc-900
+    hoverColor: z.string().default("#27272a"), // zinc-800
+    borderColor: z.string().default("#3f3f46"), // zinc-700
+    oddsBadgeColor: z.string().default("#fbbf24"), // amber-400
+    textColor: z.string().default("#fafafa"), // zinc-50
+  }).default({}),
+  
+  // Sorting/filter bar
+  sortingBar: z.object({
+    backgroundColor: z.string().default("#09090b"), // zinc-950
+    activeTabColor: z.string().default("#f43f5e"), // rose-500
+    inactiveTabColor: z.string().default("#71717a"), // zinc-500
+  }).default({}),
+  
+  // Bottom navigation
+  bottomNav: z.object({
+    backgroundColor: z.string().default("#09090b"), // zinc-950
+    activeColor: z.string().default("#fbbf24"), // amber-400
+    inactiveColor: z.string().default("#71717a"), // zinc-500
+  }).default({}),
+  
+  // Global colors
+  global: z.object({
+    successColor: z.string().default("#10b981"), // emerald-500
+    errorColor: z.string().default("#ef4444"), // red-500
+    warningColor: z.string().default("#f59e0b"), // amber-500
+  }).default({}),
+});
+
+export type ThemeConfig = z.infer<typeof themeConfigSchema>;
+
+// API credentials configuration (stored encrypted)
+export const apiCredentialsSchema = z.object({
+  apiKey: z.string().optional(),
+  apiSecret: z.string().optional(),
+  passphrase: z.string().optional(),
+});
+
+export type ApiCredentials = z.infer<typeof apiCredentialsSchema>;
+
+// Fee configuration
+export const feeConfigSchema = z.object({
+  feeBps: z.number().min(0).max(1000).default(0), // 0-10% in basis points
+  feeWalletAddress: z.string().optional(),
+});
+
+export type FeeConfig = z.infer<typeof feeConfigSchema>;
+
+// White-label configuration table
+export const whiteLabelConfig = pgTable("white_label_config", {
+  id: serial("id").primaryKey(),
+  // Theme settings (colors, branding)
+  themeConfig: jsonb("theme_config").notNull().$type<ThemeConfig>(),
+  // API credentials (encrypted storage recommended)
+  apiCredentials: jsonb("api_credentials").$type<ApiCredentials>(),
+  // Fee settings
+  feeConfig: jsonb("fee_config").$type<FeeConfig>(),
+  // Metadata
+  updatedAt: text("updated_at").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+export const insertWhiteLabelConfigSchema = createInsertSchema(whiteLabelConfig).omit({ id: true });
+export type InsertWhiteLabelConfig = z.infer<typeof insertWhiteLabelConfigSchema>;
+export type WhiteLabelConfig = typeof whiteLabelConfig.$inferSelect;
+
 // ============ LEGACY USER SCHEMA (keep for compatibility) ============
 
 export const users = pgTable("users", {

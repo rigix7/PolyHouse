@@ -5,9 +5,15 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import WalletProvider from "@/providers/WalletProvider";
 import { GeoblockBanner } from "@/components/GeoblockBanner";
+import { useWhiteLabelTheme } from "@/hooks/useWhiteLabelTheme";
 import NotFound from "@/pages/not-found";
 import HomePage from "@/pages/home";
 import AdminPage from "@/pages/admin";
+
+function ThemeInitializer({ children }: { children: React.ReactNode }) {
+  useWhiteLabelTheme();
+  return <>{children}</>;
+}
 
 function Router() {
   return (
@@ -27,8 +33,10 @@ function App() {
     return (
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <Toaster />
-          <Router />
+          <ThemeInitializer>
+            <Toaster />
+            <Router />
+          </ThemeInitializer>
         </TooltipProvider>
       </QueryClientProvider>
     );
@@ -37,11 +45,13 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WalletProvider appId={privyAppId}>
-          <GeoblockBanner />
-          <Toaster />
-          <Router />
-        </WalletProvider>
+        <ThemeInitializer>
+          <WalletProvider appId={privyAppId}>
+            <GeoblockBanner />
+            <Toaster />
+            <Router />
+          </WalletProvider>
+        </ThemeInitializer>
       </TooltipProvider>
     </QueryClientProvider>
   );

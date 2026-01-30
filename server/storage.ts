@@ -16,6 +16,8 @@ import {
   polymarketOrders,
   polymarketTags,
   bridgeTransactions,
+  whiteLabelConfig,
+  themeConfigSchema,
   type Market,
   type InsertMarket,
   type Player,
@@ -43,6 +45,10 @@ import {
   type InsertPolymarketTag,
   type BridgeTransaction,
   type InsertBridgeTransaction,
+  type WhiteLabelConfig,
+  type ThemeConfig,
+  type ApiCredentials,
+  type FeeConfig,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -125,6 +131,12 @@ export interface IStorage {
 
   getBridgeTransactions(userAddress: string): Promise<BridgeTransaction[]>;
   createBridgeTransaction(tx: InsertBridgeTransaction): Promise<BridgeTransaction>;
+
+  // White-label configuration
+  getWhiteLabelConfig(): Promise<WhiteLabelConfig | null>;
+  updateWhiteLabelTheme(themeConfig: ThemeConfig): Promise<WhiteLabelConfig>;
+  updateWhiteLabelApiCredentials(credentials: ApiCredentials): Promise<WhiteLabelConfig>;
+  updateWhiteLabelFeeConfig(feeConfig: FeeConfig): Promise<WhiteLabelConfig>;
 
   seedInitialData(): Promise<void>;
 }
@@ -855,6 +867,65 @@ export class DatabaseStorage implements IStorage {
       createdAt: new Date().toISOString(),
     }).returning();
     return newTx;
+  }
+
+  // White-label configuration methods
+  async getWhiteLabelConfig(): Promise<WhiteLabelConfig | null> {
+    const configs = await db.select().from(whiteLabelConfig).limit(1);
+    return configs[0] || null;
+  }
+
+  private async getOrCreateWhiteLabelConfig(): Promise<WhiteLabelConfig> {
+    let config = await this.getWhiteLabelConfig();
+    if (!config) {
+      const now = new Date().toISOString();
+      const defaultTheme = themeConfigSchema.parse({});
+      const [newConfig] = await db.insert(whiteLabelConfig).values({
+        themeConfig: defaultTheme,
+        apiCredentials: {},
+        feeConfig: { feeBps: 0 },
+        createdAt: now,
+        updatedAt: now,
+      }).returning();
+      config = newConfig;
+    }
+    return config;
+  }
+
+  async updateWhiteLabelTheme(theme: ThemeConfig): Promise<WhiteLabelConfig> {
+    const existing = await this.getOrCreateWhiteLabelConfig();
+    const [updated] = await db.update(whiteLabelConfig)
+      .set({
+        themeConfig: theme,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(whiteLabelConfig.id, existing.id))
+      .returning();
+    return updated;
+  }
+
+  async updateWhiteLabelApiCredentials(credentials: ApiCredentials): Promise<WhiteLabelConfig> {
+    const existing = await this.getOrCreateWhiteLabelConfig();
+    const [updated] = await db.update(whiteLabelConfig)
+      .set({
+        apiCredentials: credentials,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(whiteLabelConfig.id, existing.id))
+      .returning();
+    return updated;
+  }
+
+  async updateWhiteLabelFeeConfig(feeConfig: FeeConfig): Promise<WhiteLabelConfig> {
+    const existing = await this.getOrCreateWhiteLabelConfig();
+    const [updated] = await db.update(whiteLabelConfig)
+      .set({
+        feeConfig: feeConfig,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(whiteLabelConfig.id, existing.id))
+      .returning();
+    return updated;
   }
 }
 

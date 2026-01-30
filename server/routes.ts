@@ -2213,5 +2213,66 @@ export async function registerRoutes(
     }
   });
 
+  // ============ WHITE-LABEL CONFIGURATION ENDPOINTS ============
+  
+  // Get current white-label configuration
+  app.get("/api/admin/white-label", async (req, res) => {
+    try {
+      const config = await storage.getWhiteLabelConfig();
+      res.json(config || { 
+        themeConfig: {},
+        apiCredentials: {},
+        feeConfig: { feeBps: 0 }
+      });
+    } catch (error) {
+      console.error("Error fetching white-label config:", error);
+      res.status(500).json({ error: "Failed to fetch configuration" });
+    }
+  });
+
+  // Update theme configuration
+  app.patch("/api/admin/white-label/theme", async (req, res) => {
+    try {
+      const themeConfig = req.body;
+      const updated = await storage.updateWhiteLabelTheme(themeConfig);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating theme config:", error);
+      res.status(500).json({ error: "Failed to update theme" });
+    }
+  });
+
+  // Update API credentials (sensitive - should be encrypted in production)
+  app.patch("/api/admin/white-label/credentials", async (req, res) => {
+    try {
+      const credentials = req.body;
+      const updated = await storage.updateWhiteLabelApiCredentials(credentials);
+      // Return masked credentials for security
+      res.json({
+        ...updated,
+        apiCredentials: {
+          apiKey: credentials.apiKey ? "***configured***" : undefined,
+          apiSecret: credentials.apiSecret ? "***configured***" : undefined,
+          passphrase: credentials.passphrase ? "***configured***" : undefined,
+        }
+      });
+    } catch (error) {
+      console.error("Error updating API credentials:", error);
+      res.status(500).json({ error: "Failed to update credentials" });
+    }
+  });
+
+  // Update fee configuration
+  app.patch("/api/admin/white-label/fees", async (req, res) => {
+    try {
+      const feeConfig = req.body;
+      const updated = await storage.updateWhiteLabelFeeConfig(feeConfig);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating fee config:", error);
+      res.status(500).json({ error: "Failed to update fee configuration" });
+    }
+  });
+
   return httpServer;
 }

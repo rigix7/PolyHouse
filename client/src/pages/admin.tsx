@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Plus, Trash2, RefreshCw, Check, X, Link2, Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, RefreshCw, Check, X, Link2, Loader2, ChevronDown, ChevronRight, Palette, Key, DollarSign, Eye } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,7 +20,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { fetchSportsWithMarketTypes, type SportWithMarketTypes } from "@/lib/polymarket";
-import type { Market, Player, InsertMarket, InsertPlayer, AdminSettings, Futures, SportFieldConfig, SportMarketConfig, PolymarketTagRecord, FuturesCategory } from "@shared/schema";
+import type { Market, Player, InsertMarket, InsertPlayer, AdminSettings, Futures, SportFieldConfig, SportMarketConfig, PolymarketTagRecord, FuturesCategory, WhiteLabelConfig, ThemeConfig, ApiCredentials, FeeConfig } from "@shared/schema";
+import { themeConfigSchema } from "@shared/schema";
 
 const playerFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -49,7 +50,7 @@ function extractSlugFromInput(input: string): string {
 
 export default function AdminPage() {
   const { toast } = useToast();
-  const [activeSection, setActiveSection] = useState<"tags" | "matchday" | "futures" | "players" | "wild">("tags");
+  const [activeSection, setActiveSection] = useState<"tags" | "matchday" | "futures" | "players" | "wild" | "theme">("tags");
   const [sportsData, setSportsData] = useState<SportWithMarketTypes[]>([]);
   const [loadingLeagues, setLoadingLeagues] = useState(false);
   const [showPlayerForm, setShowPlayerForm] = useState(false);
@@ -537,6 +538,14 @@ export default function AdminPage() {
             data-testid="button-section-wild"
           >
             $WILD Points
+          </Button>
+          <Button
+            variant={activeSection === "theme" ? "default" : "secondary"}
+            onClick={() => setActiveSection("theme")}
+            data-testid="button-section-theme"
+          >
+            <Palette className="w-4 h-4 mr-2" />
+            White Label
           </Button>
         </div>
 
@@ -1147,6 +1156,10 @@ export default function AdminPage() {
 
         {activeSection === "wild" && (
           <WildPointsManager />
+        )}
+        
+        {activeSection === "theme" && (
+          <WhiteLabelSection />
         )}
       </div>
     </div>
@@ -1807,6 +1820,801 @@ function SportConfigEditor({
               </div>
             ))}
           </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// White-label configuration component
+function WhiteLabelSection() {
+  const { toast } = useToast();
+  const [activeThemeTab, setActiveThemeTab] = useState<"brand" | "header" | "betslip" | "marketCards" | "sortingBar" | "bottomNav" | "credentials" | "fees">("brand");
+  
+  // Local state for theme config (for live preview)
+  const [localTheme, setLocalTheme] = useState<ThemeConfig>(themeConfigSchema.parse({}));
+  const [credentials, setCredentials] = useState<ApiCredentials>({});
+  const [feeConfig, setFeeConfig] = useState<FeeConfig>({ feeBps: 0 });
+  
+  // Fetch existing config
+  const { data: whiteLabelData, isLoading } = useQuery<WhiteLabelConfig>({
+    queryKey: ["/api/admin/white-label"],
+  });
+  
+  // Load saved config into local state
+  useEffect(() => {
+    if (whiteLabelData?.themeConfig) {
+      setLocalTheme(whiteLabelData.themeConfig);
+    }
+    if (whiteLabelData?.feeConfig) {
+      setFeeConfig(whiteLabelData.feeConfig);
+    }
+  }, [whiteLabelData]);
+  
+  // Save theme mutation
+  const saveThemeMutation = useMutation({
+    mutationFn: async (theme: ThemeConfig) => {
+      return apiRequest("PATCH", "/api/admin/white-label/theme", theme);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/white-label"] });
+      toast({ title: "Theme saved successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save theme", variant: "destructive" });
+    },
+  });
+  
+  // Save credentials mutation
+  const saveCredentialsMutation = useMutation({
+    mutationFn: async (creds: ApiCredentials) => {
+      return apiRequest("PATCH", "/api/admin/white-label/credentials", creds);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/white-label"] });
+      toast({ title: "API credentials saved" });
+      setCredentials({}); // Clear form after save for security
+    },
+    onError: () => {
+      toast({ title: "Failed to save credentials", variant: "destructive" });
+    },
+  });
+  
+  // Save fee config mutation
+  const saveFeesMutation = useMutation({
+    mutationFn: async (fees: FeeConfig) => {
+      return apiRequest("PATCH", "/api/admin/white-label/fees", fees);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/white-label"] });
+      toast({ title: "Fee settings saved" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save fee settings", variant: "destructive" });
+    },
+  });
+  
+  // Color picker helper
+  const ColorPicker = ({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) => (
+    <div className="flex items-center gap-3">
+      <div className="flex-1">
+        <Label className="text-xs text-zinc-400">{label}</Label>
+        <div className="flex items-center gap-2 mt-1">
+          <input
+            type="color"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-10 h-10 rounded cursor-pointer border border-zinc-700"
+            data-testid={`color-${label.toLowerCase().replace(/\s+/g, "-")}`}
+          />
+          <Input
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="font-mono text-sm"
+            placeholder="#000000"
+            data-testid={`input-${label.toLowerCase().replace(/\s+/g, "-")}`}
+          />
+        </div>
+      </div>
+    </div>
+  );
+  
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
+      </div>
+    );
+  }
+  
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold">White Label Configuration</h2>
+        <p className="text-sm text-zinc-500">
+          Customize the look and feel of your betting platform
+        </p>
+      </div>
+      
+      {/* Section tabs */}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant={activeThemeTab === "brand" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveThemeTab("brand")}
+          data-testid="tab-brand"
+        >
+          <Palette className="w-4 h-4 mr-2" />
+          Brand
+        </Button>
+        <Button
+          variant={activeThemeTab === "header" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveThemeTab("header")}
+          data-testid="tab-header"
+        >
+          Header
+        </Button>
+        <Button
+          variant={activeThemeTab === "betslip" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveThemeTab("betslip")}
+          data-testid="tab-betslip"
+        >
+          Bet Slip
+        </Button>
+        <Button
+          variant={activeThemeTab === "marketCards" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveThemeTab("marketCards")}
+          data-testid="tab-marketcards"
+        >
+          Market Cards
+        </Button>
+        <Button
+          variant={activeThemeTab === "sortingBar" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveThemeTab("sortingBar")}
+          data-testid="tab-sortingbar"
+        >
+          Sorting Bar
+        </Button>
+        <Button
+          variant={activeThemeTab === "bottomNav" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveThemeTab("bottomNav")}
+          data-testid="tab-bottomnav"
+        >
+          Bottom Nav
+        </Button>
+        <div className="border-l border-zinc-700 mx-2" />
+        <Button
+          variant={activeThemeTab === "credentials" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveThemeTab("credentials")}
+          data-testid="tab-credentials"
+        >
+          <Key className="w-4 h-4 mr-2" />
+          API Keys
+        </Button>
+        <Button
+          variant={activeThemeTab === "fees" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveThemeTab("fees")}
+          data-testid="tab-fees"
+        >
+          <DollarSign className="w-4 h-4 mr-2" />
+          Fees
+        </Button>
+      </div>
+      
+      {/* Brand section */}
+      {activeThemeTab === "brand" && (
+        <Card className="p-4 space-y-4">
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="font-bold">Brand Settings</h3>
+              <p className="text-sm text-zinc-500">Configure your platform branding</p>
+            </div>
+            {/* Preview */}
+            <div className="bg-zinc-900 rounded-lg p-4 border border-zinc-700">
+              <div className="text-xs text-zinc-500 mb-2">Preview</div>
+              <div className="flex items-center gap-2">
+                <div 
+                  className="w-8 h-8 rounded flex items-center justify-center font-bold"
+                  style={{ backgroundColor: localTheme.brand?.primaryColor }}
+                >
+                  P
+                </div>
+                <span className="font-bold" style={{ color: localTheme.brand?.accentColor }}>
+                  {localTheme.brand?.name || "POLYHOUSE"}
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label className="text-xs text-zinc-400">Platform Name</Label>
+              <Input
+                value={localTheme.brand?.name || ""}
+                onChange={(e) => setLocalTheme({
+                  ...localTheme,
+                  brand: { ...localTheme.brand, name: e.target.value }
+                })}
+                placeholder="POLYHOUSE"
+                className="mt-1"
+                data-testid="input-brand-name"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-zinc-400">Logo URL</Label>
+              <Input
+                value={localTheme.brand?.logoUrl || ""}
+                onChange={(e) => setLocalTheme({
+                  ...localTheme,
+                  brand: { ...localTheme.brand, logoUrl: e.target.value }
+                })}
+                placeholder="https://..."
+                className="mt-1"
+                data-testid="input-logo-url"
+              />
+            </div>
+            <ColorPicker
+              label="Primary Color"
+              value={localTheme.brand?.primaryColor || "#f43f5e"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                brand: { ...localTheme.brand, primaryColor: v }
+              })}
+            />
+            <ColorPicker
+              label="Accent Color"
+              value={localTheme.brand?.accentColor || "#fbbf24"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                brand: { ...localTheme.brand, accentColor: v }
+              })}
+            />
+          </div>
+          
+          <Button 
+            onClick={() => saveThemeMutation.mutate(localTheme)}
+            disabled={saveThemeMutation.isPending}
+            data-testid="button-save-brand"
+          >
+            {saveThemeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+            Save Brand Settings
+          </Button>
+        </Card>
+      )}
+      
+      {/* Header section */}
+      {activeThemeTab === "header" && (
+        <Card className="p-4 space-y-4">
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="font-bold">Header Customization</h3>
+              <p className="text-sm text-zinc-500">Style the top navigation bar</p>
+            </div>
+            {/* Preview */}
+            <div 
+              className="rounded-lg p-3 border border-zinc-700 min-w-[200px]"
+              style={{ backgroundColor: localTheme.header?.backgroundColor }}
+            >
+              <div className="text-xs text-zinc-500 mb-2">Preview</div>
+              <div className="flex items-center justify-between">
+                <span 
+                  className="font-bold text-sm"
+                  style={{ color: localTheme.header?.accentColor }}
+                >
+                  {localTheme.brand?.name || "POLYHOUSE"}
+                </span>
+                <div 
+                  className="w-6 h-6 rounded-full bg-zinc-700"
+                  style={{ borderColor: localTheme.header?.textColor, borderWidth: 2 }}
+                />
+              </div>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <ColorPicker
+              label="Background Color"
+              value={localTheme.header?.backgroundColor || "#09090b"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                header: { ...localTheme.header, backgroundColor: v }
+              })}
+            />
+            <ColorPicker
+              label="Text Color"
+              value={localTheme.header?.textColor || "#fafafa"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                header: { ...localTheme.header, textColor: v }
+              })}
+            />
+            <ColorPicker
+              label="Accent Color"
+              value={localTheme.header?.accentColor || "#fbbf24"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                header: { ...localTheme.header, accentColor: v }
+              })}
+            />
+          </div>
+          
+          <Button 
+            onClick={() => saveThemeMutation.mutate(localTheme)}
+            disabled={saveThemeMutation.isPending}
+            data-testid="button-save-header"
+          >
+            {saveThemeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+            Save Header Settings
+          </Button>
+        </Card>
+      )}
+      
+      {/* BetSlip section */}
+      {activeThemeTab === "betslip" && (
+        <Card className="p-4 space-y-4">
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="font-bold">Bet Slip Customization</h3>
+              <p className="text-sm text-zinc-500">Style the betting interface</p>
+            </div>
+            {/* Preview */}
+            <div 
+              className="rounded-lg p-3 border border-zinc-700 min-w-[180px]"
+              style={{ backgroundColor: localTheme.betSlip?.backgroundColor }}
+            >
+              <div className="text-xs text-zinc-500 mb-2">Preview</div>
+              <div 
+                className="rounded p-2 mb-2"
+                style={{ backgroundColor: localTheme.betSlip?.cardColor }}
+              >
+                <div style={{ color: localTheme.betSlip?.textColor }} className="text-xs">
+                  Bet Amount
+                </div>
+                <div style={{ color: localTheme.betSlip?.textColor }} className="font-bold">
+                  $10.00
+                </div>
+              </div>
+              <button
+                className="w-full py-2 rounded text-white text-sm font-bold"
+                style={{ backgroundColor: localTheme.betSlip?.primaryButtonColor }}
+              >
+                Place Bet
+              </button>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <ColorPicker
+              label="Background Color"
+              value={localTheme.betSlip?.backgroundColor || "#18181b"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                betSlip: { ...localTheme.betSlip, backgroundColor: v }
+              })}
+            />
+            <ColorPicker
+              label="Card Color"
+              value={localTheme.betSlip?.cardColor || "#27272a"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                betSlip: { ...localTheme.betSlip, cardColor: v }
+              })}
+            />
+            <ColorPicker
+              label="Primary Button"
+              value={localTheme.betSlip?.primaryButtonColor || "#f43f5e"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                betSlip: { ...localTheme.betSlip, primaryButtonColor: v }
+              })}
+            />
+            <ColorPicker
+              label="Success Color"
+              value={localTheme.betSlip?.successColor || "#10b981"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                betSlip: { ...localTheme.betSlip, successColor: v }
+              })}
+            />
+            <ColorPicker
+              label="Text Color"
+              value={localTheme.betSlip?.textColor || "#fafafa"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                betSlip: { ...localTheme.betSlip, textColor: v }
+              })}
+            />
+          </div>
+          
+          <Button 
+            onClick={() => saveThemeMutation.mutate(localTheme)}
+            disabled={saveThemeMutation.isPending}
+            data-testid="button-save-betslip"
+          >
+            {saveThemeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+            Save Bet Slip Settings
+          </Button>
+        </Card>
+      )}
+      
+      {/* Market Cards section */}
+      {activeThemeTab === "marketCards" && (
+        <Card className="p-4 space-y-4">
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="font-bold">Market Cards Customization</h3>
+              <p className="text-sm text-zinc-500">Style the betting market cards</p>
+            </div>
+            {/* Preview */}
+            <div 
+              className="rounded-lg p-3 min-w-[200px]"
+              style={{ 
+                backgroundColor: localTheme.marketCards?.backgroundColor,
+                borderColor: localTheme.marketCards?.borderColor,
+                borderWidth: 1
+              }}
+            >
+              <div className="text-xs text-zinc-500 mb-2">Preview</div>
+              <div style={{ color: localTheme.marketCards?.textColor }} className="text-sm font-medium mb-2">
+                Team A vs Team B
+              </div>
+              <div className="flex gap-2">
+                <span 
+                  className="px-2 py-1 rounded text-xs font-bold"
+                  style={{ backgroundColor: localTheme.marketCards?.oddsBadgeColor, color: "#000" }}
+                >
+                  2.50
+                </span>
+                <span 
+                  className="px-2 py-1 rounded text-xs font-bold"
+                  style={{ backgroundColor: localTheme.marketCards?.oddsBadgeColor, color: "#000" }}
+                >
+                  1.80
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <ColorPicker
+              label="Background Color"
+              value={localTheme.marketCards?.backgroundColor || "#18181b"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                marketCards: { ...localTheme.marketCards, backgroundColor: v }
+              })}
+            />
+            <ColorPicker
+              label="Hover Color"
+              value={localTheme.marketCards?.hoverColor || "#27272a"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                marketCards: { ...localTheme.marketCards, hoverColor: v }
+              })}
+            />
+            <ColorPicker
+              label="Border Color"
+              value={localTheme.marketCards?.borderColor || "#3f3f46"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                marketCards: { ...localTheme.marketCards, borderColor: v }
+              })}
+            />
+            <ColorPicker
+              label="Odds Badge Color"
+              value={localTheme.marketCards?.oddsBadgeColor || "#fbbf24"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                marketCards: { ...localTheme.marketCards, oddsBadgeColor: v }
+              })}
+            />
+            <ColorPicker
+              label="Text Color"
+              value={localTheme.marketCards?.textColor || "#fafafa"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                marketCards: { ...localTheme.marketCards, textColor: v }
+              })}
+            />
+          </div>
+          
+          <Button 
+            onClick={() => saveThemeMutation.mutate(localTheme)}
+            disabled={saveThemeMutation.isPending}
+            data-testid="button-save-marketcards"
+          >
+            {saveThemeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+            Save Market Card Settings
+          </Button>
+        </Card>
+      )}
+      
+      {/* Sorting Bar section */}
+      {activeThemeTab === "sortingBar" && (
+        <Card className="p-4 space-y-4">
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="font-bold">Sorting Bar Customization</h3>
+              <p className="text-sm text-zinc-500">Style the filter and sorting tabs</p>
+            </div>
+            {/* Preview */}
+            <div 
+              className="rounded-lg p-3 min-w-[200px]"
+              style={{ backgroundColor: localTheme.sortingBar?.backgroundColor }}
+            >
+              <div className="text-xs text-zinc-500 mb-2">Preview</div>
+              <div className="flex gap-2">
+                <span 
+                  className="px-3 py-1 rounded text-xs font-bold"
+                  style={{ backgroundColor: localTheme.sortingBar?.activeTabColor, color: "#fff" }}
+                >
+                  All
+                </span>
+                <span 
+                  className="px-3 py-1 rounded text-xs"
+                  style={{ color: localTheme.sortingBar?.inactiveTabColor }}
+                >
+                  Soccer
+                </span>
+                <span 
+                  className="px-3 py-1 rounded text-xs"
+                  style={{ color: localTheme.sortingBar?.inactiveTabColor }}
+                >
+                  NBA
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <ColorPicker
+              label="Background Color"
+              value={localTheme.sortingBar?.backgroundColor || "#09090b"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                sortingBar: { ...localTheme.sortingBar, backgroundColor: v }
+              })}
+            />
+            <ColorPicker
+              label="Active Tab Color"
+              value={localTheme.sortingBar?.activeTabColor || "#f43f5e"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                sortingBar: { ...localTheme.sortingBar, activeTabColor: v }
+              })}
+            />
+            <ColorPicker
+              label="Inactive Tab Color"
+              value={localTheme.sortingBar?.inactiveTabColor || "#71717a"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                sortingBar: { ...localTheme.sortingBar, inactiveTabColor: v }
+              })}
+            />
+          </div>
+          
+          <Button 
+            onClick={() => saveThemeMutation.mutate(localTheme)}
+            disabled={saveThemeMutation.isPending}
+            data-testid="button-save-sortingbar"
+          >
+            {saveThemeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+            Save Sorting Bar Settings
+          </Button>
+        </Card>
+      )}
+      
+      {/* Bottom Nav section */}
+      {activeThemeTab === "bottomNav" && (
+        <Card className="p-4 space-y-4">
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="font-bold">Bottom Navigation Customization</h3>
+              <p className="text-sm text-zinc-500">Style the bottom navigation bar</p>
+            </div>
+            {/* Preview */}
+            <div 
+              className="rounded-lg p-3 min-w-[200px]"
+              style={{ backgroundColor: localTheme.bottomNav?.backgroundColor }}
+            >
+              <div className="text-xs text-zinc-500 mb-2">Preview</div>
+              <div className="flex justify-around">
+                <div className="flex flex-col items-center">
+                  <div 
+                    className="w-5 h-5 rounded"
+                    style={{ backgroundColor: localTheme.bottomNav?.activeColor }}
+                  />
+                  <span className="text-[10px] mt-1" style={{ color: localTheme.bottomNav?.activeColor }}>
+                    Predict
+                  </span>
+                </div>
+                <div className="flex flex-col items-center">
+                  <div 
+                    className="w-5 h-5 rounded"
+                    style={{ backgroundColor: localTheme.bottomNav?.inactiveColor }}
+                  />
+                  <span className="text-[10px] mt-1" style={{ color: localTheme.bottomNav?.inactiveColor }}>
+                    Dashboard
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <ColorPicker
+              label="Background Color"
+              value={localTheme.bottomNav?.backgroundColor || "#09090b"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                bottomNav: { ...localTheme.bottomNav, backgroundColor: v }
+              })}
+            />
+            <ColorPicker
+              label="Active Color"
+              value={localTheme.bottomNav?.activeColor || "#fbbf24"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                bottomNav: { ...localTheme.bottomNav, activeColor: v }
+              })}
+            />
+            <ColorPicker
+              label="Inactive Color"
+              value={localTheme.bottomNav?.inactiveColor || "#71717a"}
+              onChange={(v) => setLocalTheme({
+                ...localTheme,
+                bottomNav: { ...localTheme.bottomNav, inactiveColor: v }
+              })}
+            />
+          </div>
+          
+          <Button 
+            onClick={() => saveThemeMutation.mutate(localTheme)}
+            disabled={saveThemeMutation.isPending}
+            data-testid="button-save-bottomnav"
+          >
+            {saveThemeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+            Save Bottom Nav Settings
+          </Button>
+        </Card>
+      )}
+      
+      {/* API Credentials section */}
+      {activeThemeTab === "credentials" && (
+        <Card className="p-4 space-y-4">
+          <div>
+            <h3 className="font-bold flex items-center gap-2">
+              <Key className="w-5 h-5" />
+              API Credentials
+            </h3>
+            <p className="text-sm text-zinc-500">
+              Configure your Polymarket Builder API credentials for order execution
+            </p>
+          </div>
+          
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-amber-400 text-sm">
+            These credentials are stored securely. Once saved, they will be masked for security.
+          </div>
+          
+          <div className="grid grid-cols-1 gap-4">
+            <div>
+              <Label className="text-sm">API Key</Label>
+              <Input
+                value={credentials.apiKey || ""}
+                onChange={(e) => setCredentials({ ...credentials, apiKey: e.target.value })}
+                placeholder="Enter your API key"
+                className="mt-1 font-mono"
+                data-testid="input-api-key"
+              />
+            </div>
+            <div>
+              <Label className="text-sm">API Secret</Label>
+              <Input
+                type="password"
+                value={credentials.apiSecret || ""}
+                onChange={(e) => setCredentials({ ...credentials, apiSecret: e.target.value })}
+                placeholder="Enter your API secret"
+                className="mt-1 font-mono"
+                data-testid="input-api-secret"
+              />
+            </div>
+            <div>
+              <Label className="text-sm">Passphrase</Label>
+              <Input
+                type="password"
+                value={credentials.passphrase || ""}
+                onChange={(e) => setCredentials({ ...credentials, passphrase: e.target.value })}
+                placeholder="Enter your passphrase"
+                className="mt-1 font-mono"
+                data-testid="input-passphrase"
+              />
+            </div>
+          </div>
+          
+          <Button 
+            onClick={() => saveCredentialsMutation.mutate(credentials)}
+            disabled={saveCredentialsMutation.isPending || (!credentials.apiKey && !credentials.apiSecret && !credentials.passphrase)}
+            data-testid="button-save-credentials"
+          >
+            {saveCredentialsMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+            Save Credentials
+          </Button>
+        </Card>
+      )}
+      
+      {/* Fee Settings section */}
+      {activeThemeTab === "fees" && (
+        <Card className="p-4 space-y-4">
+          <div>
+            <h3 className="font-bold flex items-center gap-2">
+              <DollarSign className="w-5 h-5" />
+              Fee Configuration
+            </h3>
+            <p className="text-sm text-zinc-500">
+              Configure platform fees collected on successful bets
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label className="text-sm">Fee Rate (Basis Points)</Label>
+              <div className="flex items-center gap-2 mt-1">
+                <Input
+                  type="number"
+                  min={0}
+                  max={1000}
+                  value={feeConfig.feeBps}
+                  onChange={(e) => setFeeConfig({ ...feeConfig, feeBps: parseInt(e.target.value) || 0 })}
+                  className="font-mono"
+                  data-testid="input-fee-bps"
+                />
+                <span className="text-zinc-400 text-sm whitespace-nowrap">
+                  = {((feeConfig.feeBps || 0) / 100).toFixed(2)}%
+                </span>
+              </div>
+              <p className="text-xs text-zinc-500 mt-1">
+                100 bps = 1%. Max 1000 bps (10%)
+              </p>
+            </div>
+            <div>
+              <Label className="text-sm">Fee Receiving Wallet</Label>
+              <Input
+                value={feeConfig.feeWalletAddress || ""}
+                onChange={(e) => setFeeConfig({ ...feeConfig, feeWalletAddress: e.target.value })}
+                placeholder="0x..."
+                className="mt-1 font-mono"
+                data-testid="input-fee-wallet"
+              />
+              <p className="text-xs text-zinc-500 mt-1">
+                USDC fees will be sent to this wallet address
+              </p>
+            </div>
+          </div>
+          
+          {feeConfig.feeBps > 0 && (
+            <div className="bg-zinc-800 rounded-lg p-3">
+              <div className="text-sm text-zinc-400">Fee Preview</div>
+              <div className="text-sm mt-1">
+                On a $100 bet, platform fee would be: <span className="font-bold text-wild-gold">${(100 * feeConfig.feeBps / 10000).toFixed(2)}</span>
+              </div>
+            </div>
+          )}
+          
+          <Button 
+            onClick={() => saveFeesMutation.mutate(feeConfig)}
+            disabled={saveFeesMutation.isPending}
+            data-testid="button-save-fees"
+          >
+            {saveFeesMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+            Save Fee Settings
+          </Button>
         </Card>
       )}
     </div>

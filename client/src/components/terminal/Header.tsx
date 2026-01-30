@@ -1,5 +1,6 @@
 import { Zap, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useWhiteLabelTheme } from "@/hooks/useWhiteLabelTheme";
 
 interface HeaderProps {
   usdcBalance: number;
@@ -9,6 +10,8 @@ interface HeaderProps {
 }
 
 export function Header({ usdcBalance, wildBalance, onWalletClick, isConnected = false }: HeaderProps) {
+  const { brandName, logoUrl } = useWhiteLabelTheme();
+  
   const formatBalance = (value: number) => {
     return new Intl.NumberFormat("en-US", {
       minimumFractionDigits: 2,
@@ -17,10 +20,22 @@ export function Header({ usdcBalance, wildBalance, onWalletClick, isConnected = 
   };
 
   return (
-    <header className="h-14 shrink-0 flex items-center justify-between px-4 bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-800/50 z-30">
-      <div className="flex items-center gap-2 text-wild-brand">
-        <Zap className="w-5 h-5 fill-current" />
-        <span className="font-black italic tracking-tighter text-lg text-white">POLYHOUSE</span>
+    <header 
+      className="h-14 shrink-0 flex items-center justify-between px-4 bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-800/50 z-30" 
+      style={{ backgroundColor: "var(--wl-header-bg, rgba(24, 24, 27, 0.8))" }}
+    >
+      <div className="flex items-center gap-2" style={{ color: "var(--wl-header-accent, var(--wl-brand-accent, #f43f5e))" }}>
+        {logoUrl ? (
+          <img src={logoUrl} alt={brandName} className="h-6 w-auto" />
+        ) : (
+          <Zap className="w-5 h-5 fill-current" />
+        )}
+        <span 
+          className="font-black italic tracking-tighter text-lg" 
+          style={{ color: "var(--wl-header-text, #ffffff)" }}
+        >
+          {brandName}
+        </span>
       </div>
       {isConnected ? (
         <Button

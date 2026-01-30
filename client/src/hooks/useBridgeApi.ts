@@ -20,7 +20,7 @@ export interface QuoteRequest {
   type: "deposit" | "withdraw";
   fromChainId?: string;
   toChainId?: string;
-  fromToken?: string;
+  fromTokenAddress?: string;
   toToken?: string;
   fromAmountBaseUnit: string;  // Amount in base units (smallest denomination)
   destinationAddress: string;

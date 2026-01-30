@@ -136,7 +136,7 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
       const result = await getQuote({
         type: "withdraw",
         fromChainId: "137",  // Polygon - source chain for withdrawals
-        fromToken: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",  // USDC.e on Polygon
+        fromTokenAddress: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",  // USDC.e on Polygon
         toChainId: withdrawChain,
         toToken: withdrawToken,
         fromAmountBaseUnit: amountInBaseUnits,

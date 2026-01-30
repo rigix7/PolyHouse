@@ -659,23 +659,6 @@ export function BetSlip({
           </div>
 
           <div className="bg-zinc-800/50 rounded-lg p-3 space-y-2">
-            {feeAmountUsdc > 0 && (
-              <>
-                <div className="flex justify-between text-sm">
-                  <span className="text-zinc-400">Bet Amount</span>
-                  <span className="font-mono text-white">
-                    ${effectiveBetAmount.toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-zinc-400">Platform Fee ({(feeBps / 100).toFixed(1)}%)</span>
-                  <span className="font-mono text-zinc-400">
-                    ${feeAmountUsdc.toFixed(4)}
-                  </span>
-                </div>
-                <div className="border-t border-zinc-700 pt-2 mt-1" />
-              </>
-            )}
             <div className="flex justify-between text-sm">
               <span className="text-zinc-400">Potential Win</span>
               <span className="font-mono font-bold text-white">

@@ -134,13 +134,12 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
       // USDC.e on Polygon has 6 decimals
       const amountInBaseUnits = (parseFloat(withdrawAmount) * 1e6).toString();
       const result = await getQuote({
-        type: "withdraw",
         fromChainId: "137",  // Polygon - source chain for withdrawals
         fromTokenAddress: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",  // USDC.e on Polygon
         toChainId: withdrawChain,
-        toToken: withdrawToken,
+        toTokenAddress: withdrawToken,  // Bridge API requires toTokenAddress
         fromAmountBaseUnit: amountInBaseUnits,
-        recipientAddress: withdrawTo,  // Bridge API requires recipientAddress
+        recipientAddress: withdrawTo,
       });
       if (result) {
         setWithdrawQuote({ fee: result.fee, output: result.estimatedOutput });

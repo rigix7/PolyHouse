@@ -17,20 +17,37 @@ export interface SupportedAssetsResponse {
 }
 
 export interface QuoteRequest {
-  type: "deposit" | "withdraw";
-  fromChainId?: string;
-  toChainId?: string;
-  fromTokenAddress?: string;
-  toToken?: string;
+  fromChainId: string;
+  toChainId: string;
+  fromTokenAddress: string;
+  toTokenAddress: string;  // Bridge API requires toTokenAddress, not toToken
   fromAmountBaseUnit: string;  // Amount in base units (smallest denomination)
   recipientAddress: string;  // Bridge API requires this field name
 }
 
 export interface QuoteResponse {
+  estCheckoutTimeMs: number;
+  estFeeBreakdown: {
+    appFeeLabel: string;
+    appFeePercent: number;
+    appFeeUsd: number;
+    fillCostPercent: number;
+    fillCostUsd: number;
+    gasUsd: number;
+    maxSlippage: number;
+    minReceived: number;
+    swapImpact: number;
+    swapImpactUsd: number;
+    totalImpact: number;
+    totalImpactUsd: number;
+  };
+  estInputUsd: number;
+  estOutputUsd: number;
+  estToTokenBaseUnit: string;
+  quoteId: string;
+  // Computed fields for backward compatibility
   estimatedOutput: string;
   fee: string;
-  exchangeRate: string;
-  estimatedTime: string;
 }
 
 export interface DepositRequest {
@@ -153,7 +170,14 @@ export function useBridgeApi() {
         console.error("[BridgeApi] Quote failed - Full error:", errorData);
         throw new Error(errorData.error || errorData.message || "Failed to get quote");
       }
-      const data: QuoteResponse = JSON.parse(responseText);
+      const rawData = JSON.parse(responseText);
+      // Map API response to our QuoteResponse interface with computed fields
+      const data: QuoteResponse = {
+        ...rawData,
+        // Compute backward-compatible fields
+        estimatedOutput: `$${rawData.estOutputUsd?.toFixed(2) || '0.00'}`,
+        fee: `$${rawData.estFeeBreakdown?.gasUsd?.toFixed(4) || '0.00'}`,
+      };
       console.log("[BridgeApi] Quote received:", data);
       return data;
     } catch (error) {

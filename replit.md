@@ -39,7 +39,12 @@ The user prefers a dark-themed interface with neon accents.
 - **Team Abbreviation Parsing**: Team and player abbreviations are consistently derived from Polymarket event slugs for display across the application.
 - **Wild Points System**: $WILD points are calculated from Polymarket Activity API data, with an admin panel for auditing and management.
 - **Position Status**: Enhanced position statuses in the Dashboard, distinguishing between "WON", "LOST", and "PENDING" (won but not yet redeemable) based on Polymarket Data API.
-- **Integrator Fee System**: Supports optional fee collection on successful orders via the Polymarket Builder Program. Fees are collected as a separate USDC transfer after order fills (not deducted upfront). Configured via environment variables `VITE_INTEGRATOR_FEE_ADDRESS` (wallet to receive fees) and `VITE_INTEGRATOR_FEE_BPS` (fee in basis points, e.g., 50 = 0.5%). Currently set to 0% (disabled).
+- **Integrator Fee System**: Supports optional fee collection on successful orders via the Polymarket Builder Program. Fees are collected as a separate USDC transfer after order fills (not deducted upfront). Supports **multi-wallet fee distribution** - fees can be split across multiple wallets with configurable percentages (e.g., 50% to Platform, 30% to Operator, 20% to Referrer). All transfers are batched into a single transaction for gas efficiency. Configured via Admin Panel (`/admin` → Fees tab) or legacy environment variables `VITE_INTEGRATOR_FEE_ADDRESS` and `VITE_INTEGRATOR_FEE_BPS`.
+- **White-Label Configuration**: The `/admin` route includes a White Label Configuration section with:
+    - **Brand Settings**: Custom brand name, logo URL, primary/accent colors
+    - **Component Theming**: Per-component color customization (Header, BetSlip, Market Cards, Sorting Bar, Bottom Nav)
+    - **API Credentials**: Builder API credentials storage (API Key, Secret, Passphrase)
+    - **Fee Configuration**: Multi-wallet fee distribution with percentage splits and batched transfers
 
 ## External Dependencies
 - **Polymarket**: Core platform for betting markets, including its CLOB API and Data API.

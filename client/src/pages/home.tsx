@@ -6,8 +6,6 @@ import { WalletDrawer } from "@/components/terminal/WalletDrawer";
 import { BetSlip } from "@/components/terminal/BetSlip";
 import { useTerminalToast } from "@/components/terminal/Toast";
 import { PredictView } from "@/components/views/PredictView";
-import { ScoutView } from "@/components/views/ScoutView";
-import { TradeView } from "@/components/views/TradeView";
 import { DashboardView } from "@/components/views/DashboardView";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { fetchGammaEvents, gammaEventToMarket, gammaEventToDisplayEvent, type DisplayEvent } from "@/lib/polymarket";
@@ -644,21 +642,6 @@ export default function HomePage() {
               livePrices={livePrices}
               enabledTags={enabledTags}
               futuresCategories={futuresCategories}
-            />
-          )}
-          {activeTab === "scout" && (
-            <ScoutView
-              players={players}
-              isLoading={playersLoading}
-              onFund={handleFundPlayer}
-              onTrade={handleTrade}
-            />
-          )}
-          {activeTab === "trade" && (
-            <TradeView
-              trades={trades}
-              players={players}
-              isLoading={tradesLoading || playersLoading}
             />
           )}
           {activeTab === "dash" && (

@@ -20,7 +20,7 @@ export function Header({ usdcBalance, wildBalance, onWalletClick, isConnected = 
     <header className="h-14 shrink-0 flex items-center justify-between px-4 bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-800/50 z-30">
       <div className="flex items-center gap-2 text-wild-brand">
         <Zap className="w-5 h-5 fill-current" />
-        <span className="font-black italic tracking-tighter text-lg text-white">WILDCARD</span>
+        <span className="font-black italic tracking-tighter text-lg text-white">POLYHOUSE</span>
       </div>
       {isConnected ? (
         <Button

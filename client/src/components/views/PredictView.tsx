@@ -45,12 +45,11 @@ function buildConfigMap(configs: SportMarketConfig[]): Map<string, SportMarketCo
   return map;
 }
 
-type PredictSubTab = "matchday" | "futures" | "fantasy";
+type PredictSubTab = "matchday" | "futures";
 
 const subTabs = [
   { id: "matchday" as const, label: "MATCH DAY" },
   { id: "futures" as const, label: "FUTURES" },
-  { id: "fantasy" as const, label: "FANTASY" },
 ];
 
 interface PredictViewProps {
@@ -1869,13 +1868,6 @@ export function PredictView({
           </div>
         )}
 
-        {activeSubTab === "fantasy" && (
-          <EmptyState
-            icon={Shield}
-            title="Fantasy Squads"
-            description="Coming Q3 2026"
-          />
-        )}
         </div>
         
         {/* Powered by Polymarket attribution */}

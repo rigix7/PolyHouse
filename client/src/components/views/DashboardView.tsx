@@ -135,6 +135,7 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
       const amountInBaseUnits = (parseFloat(withdrawAmount) * 1e6).toString();
       const result = await getQuote({
         type: "withdraw",
+        fromChainId: "137",  // Polygon - source chain for withdrawals
         toChainId: withdrawChain,
         toToken: withdrawToken,
         fromAmountBaseUnit: amountInBaseUnits,

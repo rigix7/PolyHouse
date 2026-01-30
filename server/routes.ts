@@ -7,9 +7,9 @@ import { buildHmacSignature, type BuilderApiKeyCreds } from "@polymarket/builder
 
 // Polymarket Builder credentials (server-side only)
 const BUILDER_CREDENTIALS: BuilderApiKeyCreds = {
-  key: process.env.POLYMARKET_BUILDER_API_KEY || "",
-  secret: process.env.POLYMARKET_BUILDER_SECRET || "",
-  passphrase: process.env.POLYMARKET_BUILDER_PASSPHRASE || "",
+  key: process.env.DBOOK_BUILDER_API_KEY || "",
+  secret: process.env.DBOOK_BUILDER_SECRET || "",
+  passphrase: process.env.DBOOK_BUILDER_PASSPHRASE || "",
 };
 
 const GAMMA_API_BASE = "https://gamma-api.polymarket.com";

@@ -72,45 +72,34 @@ export interface TransactionStatus {
 // Only chains that map to these types are supported for deposits
 type AddressType = "evm" | "svm" | "btc";
 
+// Numeric chainIds from the Bridge API mapped to address types
+// Note: Tron (728126428) is in supported-assets but no Tron address type exists in the deposit response
 const CHAIN_ADDRESS_TYPE_MAP: Record<string, AddressType> = {
-  // EVM-compatible chains use evm address (0x format)
-  "ethereum": "evm",
-  "eth": "evm",
-  "arbitrum": "evm",
-  "arb": "evm",
-  "base": "evm",
+  // Special case: "polygon" is used as default in the UI
   "polygon": "evm",
-  "optimism": "evm",
-  "op": "evm",
-  "avalanche": "evm",
-  "avax": "evm",
-  "bnb": "evm",
-  "bsc": "evm",
-  // Solana uses svm address (base58 format)
-  "solana": "svm",
-  "sol": "svm",
-  // Bitcoin uses btc address (bech32/legacy format)
-  "bitcoin": "btc",
-  "btc": "btc",
+  // EVM-compatible chains (use 0x format address)
+  "1": "evm",        // Ethereum
+  "10": "evm",       // Optimism
+  "42161": "evm",    // Arbitrum
+  "8453": "evm",     // Base
+  "137": "evm",      // Polygon
+  "56": "evm",       // BNB Smart Chain
+  "143": "evm",      // Monad
+  "2741": "evm",     // Abstract
+  "3586256": "evm",  // Lighter
+  "5064014": "evm",  // Ethereal
+  "747474": "evm",   // Katana
+  "999": "evm",      // HyperEVM
+  // Solana (uses base58 format address)
+  "1151111081099710": "svm",  // Solana
+  // Bitcoin (uses bech32/legacy format address)
+  "8253038": "btc",  // Bitcoin
+  // Note: Tron (728126428) is NOT supported - Bridge API doesn't provide Tron address type
 };
 
 // Get the address type for a chain. Returns null if chain is not supported.
 export function getAddressTypeForChain(chainId: string): AddressType | null {
-  const normalizedChainId = chainId.toLowerCase().trim();
-  
-  // Direct match
-  if (CHAIN_ADDRESS_TYPE_MAP[normalizedChainId]) {
-    return CHAIN_ADDRESS_TYPE_MAP[normalizedChainId];
-  }
-  
-  // Partial match for variations like "ethereum-mainnet", "arbitrum-one", etc.
-  for (const [key, addressType] of Object.entries(CHAIN_ADDRESS_TYPE_MAP)) {
-    if (normalizedChainId.includes(key)) {
-      return addressType;
-    }
-  }
-  
-  return null;
+  return CHAIN_ADDRESS_TYPE_MAP[chainId] || null;
 }
 
 export function useBridgeApi() {

@@ -131,12 +131,13 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
     
     setIsGettingQuote(true);
     try {
-      const amountInMicros = (parseFloat(withdrawAmount) * 1e6).toString();
+      // USDC.e on Polygon has 6 decimals
+      const amountInBaseUnits = (parseFloat(withdrawAmount) * 1e6).toString();
       const result = await getQuote({
         type: "withdraw",
         toChainId: withdrawChain,
         toToken: withdrawToken,
-        amount: amountInMicros,
+        fromAmountBaseUnit: amountInBaseUnits,
         destinationAddress: withdrawTo,
       });
       if (result) {
@@ -485,14 +486,17 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
                       <SelectContent>
                         {getTokensForChain(depositChain).map((asset) => (
                           <SelectItem key={asset.token.address} value={asset.token.address}>
-                            <span className="flex items-center gap-2">
-                              {asset.token.symbol} - {asset.token.name}
+                            <span className="flex flex-col">
+                              <span>{asset.token.symbol} - {asset.token.name}</span>
+                              <span className="text-[9px] text-zinc-500 font-mono">
+                                {asset.token.address.slice(0, 10)}...{asset.token.address.slice(-6)}
+                              </span>
                             </span>
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-[10px] text-zinc-600 mt-1">
+                    <p className="text-[10px] text-rose-400 mt-1 font-medium">
                       Min: ${getTokensForChain(depositChain).find(t => t.token.address === depositToken)?.minCheckoutUsd || 7} USD
                     </p>
                   </div>
@@ -573,6 +577,14 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
                 ) : (
                   <div className="text-center py-3">
                     <p className="text-xs text-zinc-400">Select a chain to get deposit address</p>
+                  </div>
+                )}
+                
+                {depositChain !== "polygon" && (
+                  <div className="bg-rose-950/30 border border-rose-500/50 rounded p-2 mb-2">
+                    <p className="text-[10px] text-rose-400 font-medium text-center">
+                      Deposits below the minimum amount will NOT be credited to your wallet.
+                    </p>
                   </div>
                 )}
                 
@@ -898,15 +910,18 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
                     <SelectContent>
                       {getTokensForChain(withdrawChain).map((asset) => (
                         <SelectItem key={asset.token.address} value={asset.token.address}>
-                          <span className="flex items-center gap-2">
-                            {asset.token.symbol} - {asset.token.name}
+                          <span className="flex flex-col">
+                            <span>{asset.token.symbol} - {asset.token.name}</span>
+                            <span className="text-[9px] text-zinc-500 font-mono">
+                              {asset.token.address.slice(0, 10)}...{asset.token.address.slice(-6)}
+                            </span>
                           </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   {withdrawToken && (
-                    <p className="text-[10px] text-zinc-600 mt-1">
+                    <p className="text-[10px] text-rose-400 mt-1 font-medium">
                       Min: ${getTokensForChain(withdrawChain).find(t => t.token.address === withdrawToken)?.minCheckoutUsd || 7} USD
                     </p>
                   )}

@@ -22,7 +22,7 @@ export interface QuoteRequest {
   toChainId?: string;
   fromToken?: string;
   toToken?: string;
-  amount: string;
+  fromAmountBaseUnit: string;  // Amount in base units (smallest denomination)
   destinationAddress: string;
 }
 

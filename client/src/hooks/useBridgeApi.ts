@@ -135,16 +135,25 @@ export function useBridgeApi() {
 
   const getQuote = useCallback(async (request: QuoteRequest): Promise<QuoteResponse | null> => {
     try {
+      console.log("[BridgeApi] Sending quote request:", JSON.stringify(request, null, 2));
       const response = await fetch("/api/bridge/quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(request),
       });
+      const responseText = await response.text();
+      console.log("[BridgeApi] Quote response status:", response.status, "body:", responseText);
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to get quote");
+        let errorData;
+        try {
+          errorData = JSON.parse(responseText);
+        } catch {
+          errorData = { error: responseText };
+        }
+        console.error("[BridgeApi] Quote failed - Full error:", errorData);
+        throw new Error(errorData.error || errorData.message || "Failed to get quote");
       }
-      const data: QuoteResponse = await response.json();
+      const data: QuoteResponse = JSON.parse(responseText);
       console.log("[BridgeApi] Quote received:", data);
       return data;
     } catch (error) {

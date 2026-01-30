@@ -924,7 +924,7 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
                   </Select>
                   {withdrawToken && (
                     <p className="text-[10px] text-rose-400 mt-1 font-medium">
-                      Min: ${getTokensForChain(withdrawChain).find(t => t.token.address === withdrawToken)?.minCheckoutUsd || 7} USD
+                      Min: ${getTokensForChain(withdrawChain).find(t => t.token.address === withdrawToken)?.minCheckoutUsd || 2} USD
                     </p>
                   )}
                 </div>
@@ -932,17 +932,34 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
               
               <div>
                 <label className="text-[10px] text-zinc-500 block mb-1">Amount (USDC)</label>
-                <input
-                  type="number"
-                  placeholder="0.00"
-                  value={withdrawAmount}
-                  onChange={(e) => {
-                    setWithdrawAmount(e.target.value);
-                    setWithdrawQuote(null);
-                  }}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm font-mono text-white placeholder:text-zinc-600 focus:outline-none focus:border-wild-gold"
-                  data-testid="input-withdraw-amount"
-                />
+                {(() => {
+                  const minAmount = withdrawChain === "polygon" 
+                    ? 1 
+                    : (getTokensForChain(withdrawChain).find(t => t.token.address === withdrawToken)?.minCheckoutUsd || 2);
+                  const isAmountBelowMin = withdrawAmount && parseFloat(withdrawAmount) > 0 && parseFloat(withdrawAmount) < minAmount;
+                  return (
+                    <>
+                      <input
+                        type="number"
+                        placeholder="0.00"
+                        min={minAmount}
+                        step="0.01"
+                        value={withdrawAmount}
+                        onChange={(e) => {
+                          setWithdrawAmount(e.target.value);
+                          setWithdrawQuote(null);
+                        }}
+                        className={`w-full bg-zinc-950 border rounded px-3 py-2 text-sm font-mono text-white placeholder:text-zinc-600 focus:outline-none ${isAmountBelowMin ? 'border-rose-500 focus:border-rose-500' : 'border-zinc-800 focus:border-wild-gold'}`}
+                        data-testid="input-withdraw-amount"
+                      />
+                      {isAmountBelowMin && (
+                        <p className="text-[10px] text-rose-400 mt-1">
+                          Minimum withdrawal: ${minAmount} USD
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
               <div>
                 <label className="text-[10px] text-zinc-500 block mb-1">To Address</label>
@@ -975,7 +992,7 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
                       variant="outline"
                       className="w-full text-xs border-zinc-700"
                       onClick={handleGetWithdrawQuote}
-                      disabled={isGettingQuote || !withdrawToken}
+                      disabled={isGettingQuote || !withdrawToken || parseFloat(withdrawAmount) < (getTokensForChain(withdrawChain).find(t => t.token.address === withdrawToken)?.minCheckoutUsd || 2)}
                       data-testid="button-get-quote"
                     >
                       {isGettingQuote ? (
@@ -989,7 +1006,7 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
               
               <Button
                 className="w-full bg-wild-gold border-wild-gold text-zinc-950"
-                disabled={!withdrawAmount || !withdrawTo || withdrawMutation.isPending || (withdrawChain !== "polygon" && (!withdrawQuote || !withdrawToken))}
+                disabled={!withdrawAmount || !withdrawTo || withdrawMutation.isPending || (withdrawChain !== "polygon" && (!withdrawQuote || !withdrawToken)) || parseFloat(withdrawAmount || "0") < (withdrawChain === "polygon" ? 1 : (getTokensForChain(withdrawChain).find(t => t.token.address === withdrawToken)?.minCheckoutUsd || 2))}
                 onClick={() => withdrawMutation.mutate({ 
                   amount: parseFloat(withdrawAmount), 
                   toAddress: withdrawTo,

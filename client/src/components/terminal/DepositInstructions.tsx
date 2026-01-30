@@ -1,4 +1,4 @@
-import { AlertTriangle, Copy, Check, ExternalLink } from "lucide-react";
+import { AlertTriangle, Copy, Check, ExternalLink, Info, Clock, Shield, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
@@ -9,6 +9,7 @@ interface DepositInstructionsProps {
 
 export function DepositInstructions({ safeAddress, onClose }: DepositInstructionsProps) {
   const [copied, setCopied] = useState(false);
+  const [activeTab, setActiveTab] = useState<"polygon" | "bridge">("polygon");
 
   const copyAddress = async () => {
     await navigator.clipboard.writeText(safeAddress);
@@ -18,105 +19,245 @@ export function DepositInstructions({ safeAddress, onClose }: DepositInstruction
 
   return (
     <div className="space-y-4">
-      <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
-        <div className="flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-          <div>
-            <p className="text-xs font-medium text-amber-400">Important: Polygon Network Only</p>
-            <p className="text-[10px] text-amber-400/80 mt-1">
-              Only send USDC.e on the Polygon network. Sending funds via any other network (Ethereum, Arbitrum, etc.) will result in permanent loss of funds.
-            </p>
-          </div>
-        </div>
+      <div className="flex gap-1 p-1 bg-zinc-950 rounded-lg">
+        <button
+          className={`flex-1 text-xs py-1.5 px-2 rounded transition-colors ${
+            activeTab === "polygon" 
+              ? "bg-wild-trade text-white font-medium" 
+              : "text-zinc-400 hover:text-zinc-300"
+          }`}
+          onClick={() => setActiveTab("polygon")}
+          data-testid="tab-polygon-deposit"
+        >
+          Polygon Direct
+        </button>
+        <button
+          className={`flex-1 text-xs py-1.5 px-2 rounded transition-colors ${
+            activeTab === "bridge" 
+              ? "bg-wild-trade text-white font-medium" 
+              : "text-zinc-400 hover:text-zinc-300"
+          }`}
+          onClick={() => setActiveTab("bridge")}
+          data-testid="tab-bridge-deposit"
+        >
+          Bridge (Multi-Chain)
+        </button>
       </div>
 
-      <div className="bg-zinc-900 rounded-lg p-3 space-y-3">
-        <div>
-          <p className="text-[10px] text-zinc-500 mb-1">Your Deposit Address (Polygon)</p>
-          <div className="flex items-center gap-2 bg-zinc-950 rounded p-2 border border-zinc-800">
-            <code className="text-[11px] font-mono text-zinc-300 flex-1 break-all">
-              {safeAddress}
-            </code>
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={copyAddress}
-              className="w-7 h-7 flex-shrink-0"
-              data-testid="button-copy-deposit-address"
-            >
-              {copied ? (
-                <Check className="w-3 h-3 text-wild-scout" />
-              ) : (
-                <Copy className="w-3 h-3 text-zinc-400" />
-              )}
-            </Button>
-          </div>
-        </div>
-
-        <div className="border-t border-zinc-800 pt-3">
-          <p className="text-xs font-medium text-white mb-2">Recommended Deposit Methods</p>
-          
-          <div className="space-y-2">
-            <div className="flex items-start gap-2 text-[10px]">
-              <div className="w-4 h-4 rounded-full bg-wild-scout/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <span className="text-wild-scout font-bold text-[8px]">1</span>
+      {activeTab === "polygon" ? (
+        <>
+          <div className="bg-zinc-900 rounded-lg p-3 space-y-3">
+            <div>
+              <p className="text-[10px] text-zinc-500 mb-1">Your Deposit Address (Polygon)</p>
+              <div className="flex items-center gap-2 bg-zinc-950 rounded p-2 border border-zinc-800">
+                <code className="text-[11px] font-mono text-zinc-300 flex-1 break-all">
+                  {safeAddress}
+                </code>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={copyAddress}
+                  className="w-7 h-7 flex-shrink-0"
+                  data-testid="button-copy-deposit-address"
+                >
+                  {copied ? (
+                    <Check className="w-3 h-3 text-wild-scout" />
+                  ) : (
+                    <Copy className="w-3 h-3 text-zinc-400" />
+                  )}
+                </Button>
               </div>
+            </div>
+
+            <div className="border-t border-zinc-800 pt-3">
+              <p className="text-xs font-medium text-white mb-2">How to Deposit</p>
+              
+              <div className="space-y-2">
+                <div className="flex items-start gap-2 text-[10px]">
+                  <div className="w-4 h-4 rounded-full bg-wild-scout/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-wild-scout font-bold text-[8px]">1</span>
+                  </div>
+                  <div>
+                    <p className="text-zinc-300 font-medium">Exchange Withdrawal (Recommended)</p>
+                    <p className="text-zinc-500">
+                      Withdraw USDC from Coinbase, Binance, or Kraken. Select "Polygon" network.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2 text-[10px]">
+                  <div className="w-4 h-4 rounded-full bg-wild-trade/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-wild-trade font-bold text-[8px]">2</span>
+                  </div>
+                  <div>
+                    <p className="text-zinc-300 font-medium">Wallet Transfer</p>
+                    <p className="text-zinc-500">
+                      Send USDC.e from any Polygon wallet directly to your deposit address.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-zinc-800 pt-3">
+              <p className="text-xs font-medium text-white mb-2">Accepted Token</p>
+              <div className="flex items-center gap-2 bg-zinc-950 rounded p-2 border border-zinc-800">
+                <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-white">$</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-white font-medium">USDC.e (Bridged USDC)</p>
+                  <p className="text-[10px] text-zinc-500 font-mono break-all">
+                    0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-[10px] text-zinc-500">
+              <Clock className="w-3 h-3" />
+              <span>Processing time: 1-5 minutes</span>
+            </div>
+          </div>
+
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
               <div>
-                <p className="text-zinc-300 font-medium">Exchange Withdrawal (Easiest)</p>
-                <p className="text-zinc-500">
-                  Withdraw USDC from Coinbase, Binance, or Kraken. Select "Polygon" as the network.
+                <p className="text-xs font-medium text-amber-400">Important: Polygon Network Only</p>
+                <p className="text-[10px] text-amber-400/80 mt-1">
+                  Only send USDC.e on the Polygon network. Funds sent on other networks cannot be recovered.
+                </p>
+              </div>
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="bg-zinc-900 rounded-lg p-3 space-y-3">
+            <div className="flex items-start gap-2">
+              <Zap className="w-4 h-4 text-wild-trade flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-medium text-white">Multi-Chain Bridge</p>
+                <p className="text-[10px] text-zinc-400 mt-0.5">
+                  Deposit from Ethereum, Solana, Arbitrum, Base, or Bitcoin. Funds are automatically converted to USDC.e on Polygon.
                 </p>
               </div>
             </div>
 
-            <div className="flex items-start gap-2 text-[10px]">
-              <div className="w-4 h-4 rounded-full bg-wild-trade/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <span className="text-wild-trade font-bold text-[8px]">2</span>
+            <div className="border-t border-zinc-800 pt-3">
+              <p className="text-xs font-medium text-white mb-2">How It Works</p>
+              
+              <div className="space-y-2">
+                <div className="flex items-start gap-2 text-[10px]">
+                  <div className="w-4 h-4 rounded-full bg-wild-scout/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-wild-scout font-bold text-[8px]">1</span>
+                  </div>
+                  <div>
+                    <p className="text-zinc-300 font-medium">Select Your Chain</p>
+                    <p className="text-zinc-500">
+                      Choose the blockchain you want to deposit from in the deposit section.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2 text-[10px]">
+                  <div className="w-4 h-4 rounded-full bg-wild-trade/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-wild-trade font-bold text-[8px]">2</span>
+                  </div>
+                  <div>
+                    <p className="text-zinc-300 font-medium">Get Your Deposit Address</p>
+                    <p className="text-zinc-500">
+                      A unique bridge address will be generated for your wallet.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2 text-[10px]">
+                  <div className="w-4 h-4 rounded-full bg-wild-gold/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-wild-gold font-bold text-[8px]">3</span>
+                  </div>
+                  <div>
+                    <p className="text-zinc-300 font-medium">Send Funds</p>
+                    <p className="text-zinc-500">
+                      Send USDC (or supported token) to the bridge address. Funds are automatically bridged and credited to your Prediction Wallet.
+                    </p>
+                  </div>
+                </div>
               </div>
+            </div>
+
+            <div className="border-t border-zinc-800 pt-3">
+              <p className="text-xs font-medium text-white mb-2">Supported Chains</p>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { name: "Ethereum", color: "bg-blue-500" },
+                  { name: "Arbitrum", color: "bg-blue-400" },
+                  { name: "Base", color: "bg-blue-600" },
+                  { name: "Solana", color: "bg-purple-500" },
+                  { name: "Bitcoin", color: "bg-orange-500" },
+                  { name: "Optimism", color: "bg-red-500" },
+                ].map((chain) => (
+                  <div key={chain.name} className="flex items-center gap-1.5 bg-zinc-950 rounded px-2 py-1.5 border border-zinc-800">
+                    <div className={`w-2 h-2 rounded-full ${chain.color}`} />
+                    <span className="text-[10px] text-zinc-300">{chain.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-zinc-800 pt-3 space-y-2">
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="text-zinc-500 flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  Processing Time
+                </span>
+                <span className="text-zinc-300">5-20 minutes (varies by chain)</span>
+              </div>
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="text-zinc-500 flex items-center gap-1">
+                  <Info className="w-3 h-3" />
+                  Minimum Deposit
+                </span>
+                <span className="text-zinc-300">Varies by asset (see deposit section)</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-wild-scout/10 border border-wild-scout/30 rounded-lg p-3">
+            <div className="flex items-start gap-2">
+              <Shield className="w-4 h-4 text-wild-scout mt-0.5 flex-shrink-0" />
               <div>
-                <p className="text-zinc-300 font-medium">Bridge from Ethereum</p>
-                <p className="text-zinc-500">
-                  Use bridges like Hop, Across, or the official Polygon Bridge to move USDC from Ethereum.
+                <p className="text-xs font-medium text-wild-scout">Bridge Security</p>
+                <p className="text-[10px] text-wild-scout/80 mt-1">
+                  The bridge is powered by Polymarket's official Bridge API, using battle-tested cross-chain infrastructure.
                 </p>
               </div>
             </div>
           </div>
-        </div>
-
-        <div className="border-t border-zinc-800 pt-3">
-          <p className="text-xs font-medium text-white mb-2">Accepted Token</p>
-          <div className="flex items-center gap-2 bg-zinc-950 rounded p-2 border border-zinc-800">
-            <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center">
-              <span className="text-[10px] font-bold text-white">$</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-white font-medium">USDC.e (Bridged USDC)</p>
-              <p className="text-[10px] text-zinc-500 font-mono break-all">
-                0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174
-              </p>
-            </div>
-          </div>
-          <div className="mt-2 bg-amber-500/10 border border-amber-500/20 rounded p-2">
-            <p className="text-[10px] text-amber-400">
-              <span className="font-bold">This is the token contract address</span> - use it to add USDC.e to your wallet or verify on exchanges. Do NOT send funds to this address.
-            </p>
-          </div>
-        </div>
-      </div>
+        </>
+      )}
 
       <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
         <div className="flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
           <div>
-            <p className="text-xs font-medium text-red-400">Do NOT Send</p>
+            <p className="text-xs font-medium text-red-400">Important Warnings</p>
             <ul className="text-[10px] text-red-400/80 mt-1 space-y-0.5 list-disc list-inside">
-              <li>Funds to the USDC.e token contract address above</li>
-              <li>ETH, MATIC, or any other cryptocurrency</li>
-              <li>USDC on Ethereum mainnet (use bridge first)</li>
-              <li>USDT, DAI, or other stablecoins</li>
+              <li>Only send supported tokens on their correct networks</li>
+              <li>Verify the network before sending - funds sent to wrong networks cannot be recovered</li>
+              <li>We cannot recover lost or misdirected funds</li>
+              <li>You are solely responsible for verifying addresses and network selection</li>
+              <li>Check minimum deposit amounts before sending</li>
             </ul>
           </div>
         </div>
+      </div>
+
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3">
+        <p className="text-[10px] text-zinc-500 leading-relaxed">
+          <span className="font-medium text-zinc-400">Disclaimer:</span> By using this deposit service, you acknowledge that you understand the risks involved in cryptocurrency transactions. Wildcard is not responsible for any loss of funds due to user error, including but not limited to: sending unsupported tokens, using incorrect networks, sending to wrong addresses, or failing to meet minimum deposit requirements. All transactions are final and irreversible.
+        </p>
       </div>
 
       <Button

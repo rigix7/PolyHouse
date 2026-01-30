@@ -324,6 +324,9 @@ export function WalletDrawer({
                             <p className="text-[10px] text-wild-scout">
                               Funds bridged automatically to Polygon.
                             </p>
+                            <p className="text-[10px] text-zinc-500">
+                              Min deposit varies by asset. See "How to Deposit" for details.
+                            </p>
                           </div>
                         ) : null}
                         

@@ -904,6 +904,11 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
                       ))}
                     </SelectContent>
                   </Select>
+                  {withdrawToken && (
+                    <p className="text-[10px] text-zinc-600 mt-1">
+                      Min: ${getTokensForChain(withdrawChain).find(t => t.token.address === withdrawToken)?.minCheckoutUsd || 7} USD
+                    </p>
+                  )}
                 </div>
               )}
               

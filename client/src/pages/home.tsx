@@ -301,6 +301,45 @@ export default function HomePage() {
           orderMinSize: data.orderMinSize,
         });
         
+        // Pre-collection fee flow: Collect fee BEFORE order placement
+        // This prevents users from rejecting fees after their bet is placed
+        // 
+        // NOTE: Fee design choice - We collect fees as a separate USDC transfer rather than
+        // reducing the bet amount. This means:
+        // - User's full stake goes to the order
+        // - Fee is collected separately via relay transaction
+        // - If feeBps > 0, displayed odds could optionally be adjusted to show effective returns
+        // - Current config: feeBps=0 (disabled), so no UI adjustment needed
+        let feeWasCollected = false;
+        
+        if (isFeeCollectionEnabled && relayClient) {
+          console.log("[FeeCollection] Pre-collection: attempting fee collection for $" + data.amount);
+          try {
+            const feeResult = await collectFee(relayClient, data.amount);
+            
+            if (!feeResult.success) {
+              console.error("[FeeCollection] Pre-collection failed - aborting order");
+              return { success: false, error: "Fee collection failed. Please try again." };
+            }
+            
+            if (feeResult.skipped) {
+              console.log("[FeeCollection] Fee was skipped (disabled or zero amount)");
+              feeWasCollected = false;
+            } else {
+              console.log("[FeeCollection] Fee collected:", feeResult.feeAmount.toString(), "tx:", feeResult.txHash);
+              feeWasCollected = true;
+            }
+          } catch (feeErr) {
+            console.error("[FeeCollection] Pre-collection error - aborting order:", feeErr);
+            return { success: false, error: "Fee collection failed. Please try again." };
+          }
+        } else {
+          console.log("[FeeCollection] Skipped pre-collection:", { 
+            feeEnabled: isFeeCollectionEnabled, 
+            hasRelayClient: !!relayClient 
+          });
+        }
+        
         // Use FOK (Fill-or-Kill) market order via official useClobOrder hook
         // negRisk is true for winner-take-all markets like soccer 3-way moneylines
         const result = await submitOrder({
@@ -311,26 +350,12 @@ export default function HomePage() {
           isMarketOrder: true, // Use FOK market order
         });
         
-        // Collect integrator fee after successful order (if enabled)
-        // Fee is collected as a separate USDC transfer, does not affect the bet
-        if (result.success && isFeeCollectionEnabled && relayClient) {
-          console.log("[FeeCollection] Order successful, attempting fee collection for $" + data.amount);
-          try {
-            const feeResult = await collectFee(relayClient, data.amount);
-            if (feeResult.success && feeResult.feeAmount > 0n) {
-              console.log("[FeeCollection] Fee collected:", feeResult.feeAmount.toString(), "tx:", feeResult.txHash);
-            } else if (!feeResult.success) {
-              console.warn("[FeeCollection] Fee collection failed (order still succeeded)");
-            }
-          } catch (feeErr) {
-            console.warn("[FeeCollection] Fee collection error (order still succeeded):", feeErr);
-          }
-        } else {
-          console.log("[FeeCollection] Skipped:", { 
-            orderSuccess: result.success, 
-            feeEnabled: isFeeCollectionEnabled, 
-            hasRelayClient: !!relayClient 
-          });
+        // If order fails after fee was collected, show helpful message
+        if (!result.success && feeWasCollected) {
+          return {
+            ...result,
+            error: (result.error || "Order failed") + " (Fee was collected - contact support if needed)"
+          };
         }
         
         return result;

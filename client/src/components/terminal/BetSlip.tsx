@@ -167,6 +167,20 @@ export function BetSlip({
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<CategorizedError | null>(null);
   const [confirmedStake, setConfirmedStake] = useState<number>(0);
+  const [currentTime, setCurrentTime] = useState(Date.now());
+  
+  // Stale odds detection: 30 seconds threshold
+  const STALE_THRESHOLD_MS = 30000;
+  
+  // Update currentTime every 10 seconds to check staleness
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+  
+  const isOddsStale = lastFetchTime > 0 && (currentTime - lastFetchTime) > STALE_THRESHOLD_MS;
   
   // Safety guard: track last fetched token to prevent duplicate fetches
   const lastFetchedTokenRef = useRef<string | null>(null);
@@ -174,10 +188,12 @@ export function BetSlip({
   const [retryCounter, setRetryCounter] = useState(0);
   
   // Allow manual retry by resetting the ref AND triggering a re-render
+  // Guard against concurrent fetches
   const retryOrderBook = useCallback(() => {
+    if (isLoadingBook) return; // Prevent concurrent fetch
     lastFetchedTokenRef.current = null;
     setRetryCounter(c => c + 1);
-  }, []);
+  }, [isLoadingBook]);
   
   const stakeNum = parseFloat(stake) || 0;
   
@@ -310,13 +326,42 @@ export function BetSlip({
   const handleConfirm = async () => {
     if (stakeNum <= 0) return;
     
+    // Calculate fresh execution price from current order book
+    let finalExecutionPrice = executionPrice;
+    let finalEffectiveOdds = effectiveOdds;
+    
+    // Auto-refresh stale odds before placing bet
+    if (isOddsStale && getOrderBook && currentTokenId) {
+      console.log("[BetSlip] Odds are stale, refreshing before bet...");
+      setIsLoadingBook(true);
+      try {
+        const freshBook = await getOrderBook(currentTokenId);
+        if (freshBook) {
+          setOrderBook(freshBook);
+          setLastFetchTime(Date.now());
+          lastFetchedTokenRef.current = currentTokenId;
+          
+          // Recalculate execution price from fresh book
+          if (freshBook.bestAsk > 0 && freshBook.bestAsk < 0.99) {
+            finalExecutionPrice = Math.min(freshBook.bestAsk + PRICE_BUFFER, 0.99);
+            finalEffectiveOdds = finalExecutionPrice > 0 ? 1 / finalExecutionPrice : 2;
+            console.log("[BetSlip] Updated prices from fresh book:", { finalExecutionPrice, finalEffectiveOdds });
+          }
+        }
+      } catch (err) {
+        console.warn("[BetSlip] Failed to refresh stale odds:", err);
+      } finally {
+        setIsLoadingBook(false);
+      }
+    }
+    
     setSubmissionStatus("pending");
     setSubmissionError(null);
     setErrorDetails(null);
     setConfirmedStake(stakeNum);
     
     try {
-      const result = await onConfirm(stakeNum, betDirection, effectiveOdds, executionPrice);
+      const result = await onConfirm(stakeNum, betDirection, finalEffectiveOdds, finalExecutionPrice);
       
       if (result.success) {
         setSubmissionStatus("success");
@@ -555,9 +600,27 @@ export function BetSlip({
                 data-testid="input-stake"
               />
             </div>
-            <div className="text-right">
-              <p className="text-xs text-zinc-500">Odds</p>
-              <p className="text-2xl font-black font-mono text-wild-gold">{effectiveOdds.toFixed(2)}</p>
+            <div className="text-right flex flex-col items-end">
+              <div className="flex items-center gap-1">
+                <p className="text-xs text-zinc-500">Odds</p>
+                {isOddsStale && !isLoadingBook && (
+                  <span className="text-[10px] text-amber-400 animate-pulse">stale</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <p className={`text-2xl font-black font-mono ${isOddsStale ? 'text-wild-gold/70' : 'text-wild-gold'}`}>{effectiveOdds.toFixed(2)}</p>
+                <Button
+                  size="icon"
+                  variant={isOddsStale ? "outline" : "ghost"}
+                  onClick={retryOrderBook}
+                  disabled={isLoadingBook || submissionStatus === "pending"}
+                  className={isOddsStale ? 'border-amber-500/30 text-amber-400' : 'text-zinc-400'}
+                  title={isOddsStale ? "Refresh stale odds" : "Refresh odds"}
+                  data-testid="button-refresh-odds"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isLoadingBook ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
               {orderBook && (
                 <p className="text-[10px] text-zinc-500">
                   @ ${executionPrice.toFixed(2)}

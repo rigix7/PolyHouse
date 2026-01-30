@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Plus, Trash2, RefreshCw, Check, X, Link2, Loader2, ChevronDown, ChevronRight, Palette, Key, DollarSign, Eye } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, RefreshCw, Check, X, Link2, Loader2, ChevronDown, ChevronRight, Palette, Key, DollarSign, Eye, AlertTriangle } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,7 +20,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { fetchSportsWithMarketTypes, type SportWithMarketTypes } from "@/lib/polymarket";
-import type { Market, Player, InsertMarket, InsertPlayer, AdminSettings, Futures, SportFieldConfig, SportMarketConfig, PolymarketTagRecord, FuturesCategory, WhiteLabelConfig, ThemeConfig, ApiCredentials, FeeConfig } from "@shared/schema";
+import type { Market, Player, InsertMarket, InsertPlayer, AdminSettings, Futures, SportFieldConfig, SportMarketConfig, PolymarketTagRecord, FuturesCategory, WhiteLabelConfig, ThemeConfig, ApiCredentials, FeeConfig, FeeWallet } from "@shared/schema";
 import { themeConfigSchema } from "@shared/schema";
 
 const playerFormSchema = z.object({
@@ -2562,54 +2562,166 @@ function WhiteLabelSection() {
             </p>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label className="text-sm">Fee Rate (Basis Points)</Label>
-              <div className="flex items-center gap-2 mt-1">
-                <Input
-                  type="number"
-                  min={0}
-                  max={1000}
-                  value={feeConfig.feeBps}
-                  onChange={(e) => setFeeConfig({ ...feeConfig, feeBps: parseInt(e.target.value) || 0 })}
-                  className="font-mono"
-                  data-testid="input-fee-bps"
-                />
-                <span className="text-zinc-400 text-sm whitespace-nowrap">
-                  = {((feeConfig.feeBps || 0) / 100).toFixed(2)}%
-                </span>
-              </div>
-              <p className="text-xs text-zinc-500 mt-1">
-                100 bps = 1%. Max 1000 bps (10%)
-              </p>
-            </div>
-            <div>
-              <Label className="text-sm">Fee Receiving Wallet</Label>
+          <div>
+            <Label className="text-sm">Fee Rate (Basis Points)</Label>
+            <div className="flex items-center gap-2 mt-1">
               <Input
-                value={feeConfig.feeWalletAddress || ""}
-                onChange={(e) => setFeeConfig({ ...feeConfig, feeWalletAddress: e.target.value })}
-                placeholder="0x..."
-                className="mt-1 font-mono"
-                data-testid="input-fee-wallet"
+                type="number"
+                min={0}
+                max={1000}
+                value={feeConfig.feeBps}
+                onChange={(e) => setFeeConfig({ ...feeConfig, feeBps: parseInt(e.target.value) || 0 })}
+                className="font-mono w-32"
+                data-testid="input-fee-bps"
               />
-              <p className="text-xs text-zinc-500 mt-1">
-                USDC fees will be sent to this wallet address
-              </p>
+              <span className="text-zinc-400 text-sm whitespace-nowrap">
+                = {((feeConfig.feeBps || 0) / 100).toFixed(2)}%
+              </span>
             </div>
+            <p className="text-xs text-zinc-500 mt-1">
+              100 bps = 1%. Max 1000 bps (10%)
+            </p>
           </div>
           
-          {feeConfig.feeBps > 0 && (
-            <div className="bg-zinc-800 rounded-lg p-3">
-              <div className="text-sm text-zinc-400">Fee Preview</div>
-              <div className="text-sm mt-1">
-                On a $100 bet, platform fee would be: <span className="font-bold text-wild-gold">${(100 * feeConfig.feeBps / 10000).toFixed(2)}</span>
+          {/* Multi-wallet configuration */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Fee Recipients</Label>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const currentWallets = feeConfig.wallets || [];
+                  setFeeConfig({
+                    ...feeConfig,
+                    wallets: [...currentWallets, { address: "", percentage: 0, label: "" }]
+                  });
+                }}
+                data-testid="button-add-wallet"
+              >
+                <Plus className="w-4 h-4 mr-1" />
+                Add Wallet
+              </Button>
+            </div>
+            
+            {(!feeConfig.wallets || feeConfig.wallets.length === 0) && (
+              <div className="text-sm text-zinc-500 bg-zinc-800/50 rounded-lg p-3">
+                No fee recipients configured. Add wallets to split fees between multiple addresses.
+              </div>
+            )}
+            
+            {feeConfig.wallets && feeConfig.wallets.map((wallet, index) => (
+              <div key={index} className="flex items-start gap-2 bg-zinc-800/50 rounded-lg p-3">
+                <div className="flex-1 space-y-2">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <div>
+                      <Label className="text-xs text-zinc-500">Label</Label>
+                      <Input
+                        value={wallet.label || ""}
+                        onChange={(e) => {
+                          const newWallets = [...(feeConfig.wallets || [])];
+                          newWallets[index] = { ...wallet, label: e.target.value };
+                          setFeeConfig({ ...feeConfig, wallets: newWallets });
+                        }}
+                        placeholder="Platform, Operator..."
+                        className="text-sm"
+                        data-testid={`input-wallet-label-${index}`}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-zinc-500">Wallet Address</Label>
+                      <Input
+                        value={wallet.address}
+                        onChange={(e) => {
+                          const newWallets = [...(feeConfig.wallets || [])];
+                          newWallets[index] = { ...wallet, address: e.target.value };
+                          setFeeConfig({ ...feeConfig, wallets: newWallets });
+                        }}
+                        placeholder="0x..."
+                        className="font-mono text-sm"
+                        data-testid={`input-wallet-address-${index}`}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-zinc-500">Share (%)</Label>
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={wallet.percentage}
+                          onChange={(e) => {
+                            const newWallets = [...(feeConfig.wallets || [])];
+                            newWallets[index] = { ...wallet, percentage: parseFloat(e.target.value) || 0 };
+                            setFeeConfig({ ...feeConfig, wallets: newWallets });
+                          }}
+                          className="font-mono text-sm"
+                          data-testid={`input-wallet-percentage-${index}`}
+                        />
+                        <span className="text-zinc-400">%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="text-zinc-500 hover:text-red-400"
+                  onClick={() => {
+                    const newWallets = [...(feeConfig.wallets || [])];
+                    newWallets.splice(index, 1);
+                    setFeeConfig({ ...feeConfig, wallets: newWallets });
+                  }}
+                  data-testid={`button-remove-wallet-${index}`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            ))}
+            
+            {/* Validation warning */}
+            {feeConfig.wallets && feeConfig.wallets.length > 0 && (() => {
+              const totalPercentage = feeConfig.wallets.reduce((sum, w) => sum + (w.percentage || 0), 0);
+              if (Math.abs(totalPercentage - 100) > 0.01) {
+                return (
+                  <div className="flex items-center gap-2 text-amber-400 text-sm bg-amber-400/10 rounded-lg p-2">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span>Wallet shares must total 100% (currently {totalPercentage.toFixed(1)}%)</span>
+                  </div>
+                );
+              }
+              return (
+                <div className="flex items-center gap-2 text-emerald-400 text-sm bg-emerald-400/10 rounded-lg p-2">
+                  <Check className="w-4 h-4" />
+                  <span>Shares total 100% - configuration valid</span>
+                </div>
+              );
+            })()}
+          </div>
+          
+          {/* Fee Preview */}
+          {feeConfig.feeBps > 0 && feeConfig.wallets && feeConfig.wallets.length > 0 && (
+            <div className="bg-zinc-800 rounded-lg p-3 space-y-2">
+              <div className="text-sm text-zinc-400">Fee Distribution Preview (on $100 bet)</div>
+              <div className="text-sm">
+                Total fee: <span className="font-bold text-wild-gold">${(100 * feeConfig.feeBps / 10000).toFixed(2)}</span>
+              </div>
+              <div className="space-y-1">
+                {feeConfig.wallets.map((wallet, index) => (
+                  <div key={index} className="flex justify-between text-xs text-zinc-400">
+                    <span>{wallet.label || `Wallet ${index + 1}`}</span>
+                    <span className="font-mono">
+                      ${((100 * feeConfig.feeBps / 10000) * (wallet.percentage / 100)).toFixed(4)} ({wallet.percentage}%)
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
           
           <Button 
             onClick={() => saveFeesMutation.mutate(feeConfig)}
-            disabled={saveFeesMutation.isPending}
+            disabled={saveFeesMutation.isPending || (feeConfig.wallets && feeConfig.wallets.length > 0 && Math.abs(feeConfig.wallets.reduce((sum, w) => sum + (w.percentage || 0), 0) - 100) > 0.01)}
             data-testid="button-save-fees"
           >
             {saveFeesMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}

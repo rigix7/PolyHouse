@@ -65,17 +65,47 @@ export async function registerRoutes(
   });
 
   // Fee configuration endpoint - returns runtime fee config for production
-  app.get("/api/config/fees", (req, res) => {
+  app.get("/api/config/fees", async (req, res) => {
+    try {
+      // First try to get config from database (white-label config)
+      const dbConfig = await storage.getWhiteLabelConfig();
+      
+      if (dbConfig?.feeConfig) {
+        const feeConfig = dbConfig.feeConfig;
+        const hasWallets = feeConfig.wallets && feeConfig.wallets.length > 0;
+        const hasLegacyAddress = !!feeConfig.feeWalletAddress;
+        const enabled = feeConfig.feeBps > 0 && (hasWallets || hasLegacyAddress);
+        
+        console.log("[FeeConfig API] Returning DB fee config:", { 
+          feeBps: feeConfig.feeBps, 
+          walletsCount: feeConfig.wallets?.length || 0,
+          hasLegacyAddress,
+          enabled 
+        });
+        
+        return res.json({
+          feeAddress: feeConfig.feeWalletAddress || "",
+          feeBps: feeConfig.feeBps,
+          enabled,
+          wallets: feeConfig.wallets || [],
+        });
+      }
+    } catch (err) {
+      console.warn("[FeeConfig API] Failed to load from database, falling back to env vars:", err);
+    }
+    
+    // Fallback to environment variables
     const feeAddress = process.env.INTEGRATOR_FEE_ADDRESS || process.env.VITE_INTEGRATOR_FEE_ADDRESS || "";
     const feeBps = parseInt(process.env.INTEGRATOR_FEE_BPS || process.env.VITE_INTEGRATOR_FEE_BPS || "0", 10);
     const enabled = !!feeAddress && feeBps > 0;
     
-    console.log("[FeeConfig API] Returning fee config:", { feeAddress: feeAddress || "(not set)", feeBps, enabled });
+    console.log("[FeeConfig API] Returning env fee config:", { feeAddress: feeAddress || "(not set)", feeBps, enabled });
     
     res.json({
       feeAddress,
       feeBps,
       enabled,
+      wallets: [],
     });
   });
 
@@ -2266,6 +2296,29 @@ export async function registerRoutes(
   app.patch("/api/admin/white-label/fees", async (req, res) => {
     try {
       const feeConfig = req.body;
+      
+      // Server-side validation: ensure wallet percentages sum to 100%
+      if (feeConfig.wallets && feeConfig.wallets.length > 0) {
+        const totalPercentage = feeConfig.wallets.reduce(
+          (sum: number, w: { percentage?: number }) => sum + (w.percentage || 0), 
+          0
+        );
+        if (Math.abs(totalPercentage - 100) > 0.01) {
+          return res.status(400).json({ 
+            error: `Wallet percentages must sum to 100% (currently ${totalPercentage.toFixed(1)}%)` 
+          });
+        }
+        
+        // Validate wallet addresses
+        for (const wallet of feeConfig.wallets) {
+          if (!wallet.address || !wallet.address.startsWith("0x")) {
+            return res.status(400).json({ 
+              error: "Invalid wallet address. Must be a valid Ethereum address starting with 0x" 
+            });
+          }
+        }
+      }
+      
       const updated = await storage.updateWhiteLabelFeeConfig(feeConfig);
       res.json(updated);
     } catch (error) {

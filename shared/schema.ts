@@ -500,10 +500,20 @@ export const apiCredentialsSchema = z.object({
 
 export type ApiCredentials = z.infer<typeof apiCredentialsSchema>;
 
-// Fee configuration
+// Fee wallet recipient
+export const feeWalletSchema = z.object({
+  address: z.string(),
+  percentage: z.number().min(0).max(100), // Percentage of total fee (must sum to 100)
+  label: z.string().optional(), // e.g., "Platform", "Operator", "Referrer"
+});
+
+export type FeeWallet = z.infer<typeof feeWalletSchema>;
+
+// Fee configuration with multiple wallets
 export const feeConfigSchema = z.object({
   feeBps: z.number().min(0).max(1000).default(0), // 0-10% in basis points
-  feeWalletAddress: z.string().optional(),
+  feeWalletAddress: z.string().optional(), // Legacy single wallet (backwards compatible)
+  wallets: z.array(feeWalletSchema).optional(), // Multi-wallet configuration
 });
 
 export type FeeConfig = z.infer<typeof feeConfigSchema>;

@@ -526,18 +526,11 @@ export default function AdminPage() {
             Futures ({futuresList.length})
           </Button>
           <Button
-            variant={activeSection === "players" ? "default" : "secondary"}
-            onClick={() => setActiveSection("players")}
-            data-testid="button-section-players"
-          >
-            Demo Players ({players.length})
-          </Button>
-          <Button
             variant={activeSection === "wild" ? "default" : "secondary"}
             onClick={() => setActiveSection("wild")}
             data-testid="button-section-wild"
           >
-            $WILD Points
+            Points
           </Button>
           <Button
             variant={activeSection === "theme" ? "default" : "secondary"}
@@ -974,186 +967,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        {activeSection === "players" && (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center gap-2 flex-wrap">
-              <h2 className="text-lg font-bold">Demo Players</h2>
-              <Button
-                onClick={() => setShowPlayerForm(!showPlayerForm)}
-                data-testid="button-toggle-player-form"
-              >
-                {showPlayerForm ? (
-                  <>
-                    <X className="w-4 h-4 mr-2" />
-                    Cancel
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Player
-                  </>
-                )}
-              </Button>
-            </div>
-
-            {showPlayerForm && (
-              <Card className="p-4 space-y-4">
-                <h3 className="font-bold text-zinc-300">Create New Player</h3>
-                <form onSubmit={playerForm.handleSubmit(onSubmitPlayer)} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Player Name</Label>
-                      <Input
-                        id="name"
-                        placeholder="e.g. LeBron James"
-                        {...playerForm.register("name")}
-                        data-testid="input-player-name"
-                      />
-                      {playerForm.formState.errors.name && (
-                        <p className="text-xs text-red-500">{playerForm.formState.errors.name.message}</p>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="symbol">Symbol (Token)</Label>
-                      <Input
-                        id="symbol"
-                        placeholder="e.g. LBJ"
-                        maxLength={6}
-                        {...playerForm.register("symbol")}
-                        data-testid="input-player-symbol"
-                      />
-                      {playerForm.formState.errors.symbol && (
-                        <p className="text-xs text-red-500">{playerForm.formState.errors.symbol.message}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="team">Team</Label>
-                      <Input
-                        id="team"
-                        placeholder="e.g. Los Angeles Lakers"
-                        {...playerForm.register("team")}
-                        data-testid="input-player-team"
-                      />
-                      {playerForm.formState.errors.team && (
-                        <p className="text-xs text-red-500">{playerForm.formState.errors.team.message}</p>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="sport">Sport</Label>
-                      <Select
-                        value={playerForm.watch("sport")}
-                        onValueChange={(value) => playerForm.setValue("sport", value)}
-                      >
-                        <SelectTrigger data-testid="select-player-sport">
-                          <SelectValue placeholder="Select sport" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Basketball">Basketball</SelectItem>
-                          <SelectItem value="Football">Football</SelectItem>
-                          <SelectItem value="Soccer">Soccer</SelectItem>
-                          <SelectItem value="Baseball">Baseball</SelectItem>
-                          <SelectItem value="Hockey">Hockey</SelectItem>
-                          <SelectItem value="Tennis">Tennis</SelectItem>
-                          <SelectItem value="Golf">Golf</SelectItem>
-                          <SelectItem value="MMA">MMA</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="fundingTarget">Funding Target ($)</Label>
-                      <Input
-                        id="fundingTarget"
-                        type="number"
-                        {...playerForm.register("fundingTarget", { valueAsNumber: true })}
-                        data-testid="input-funding-target"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="fundingCurrent">Current Funding ($)</Label>
-                      <Input
-                        id="fundingCurrent"
-                        type="number"
-                        {...playerForm.register("fundingCurrent", { valueAsNumber: true })}
-                        data-testid="input-funding-current"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="status">Status</Label>
-                      <Select
-                        value={playerForm.watch("status")}
-                        onValueChange={(value: "offering" | "available" | "closed") => 
-                          playerForm.setValue("status", value)
-                        }
-                      >
-                        <SelectTrigger data-testid="select-player-status">
-                          <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="offering">Offering (Funding)</SelectItem>
-                          <SelectItem value="available">Available (Trading)</SelectItem>
-                          <SelectItem value="closed">Closed</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <Button
-                    type="submit"
-                    disabled={createPlayerMutation.isPending}
-                    className="w-full"
-                    data-testid="button-submit-player"
-                  >
-                    {createPlayerMutation.isPending ? "Creating..." : "Create Player"}
-                  </Button>
-                </form>
-              </Card>
-            )}
-
-            {playersLoading ? (
-              <div className="text-zinc-500">Loading...</div>
-            ) : players.length === 0 ? (
-              <Card className="p-8 text-center text-zinc-500">
-                No players yet. Click "Add Player" to create one.
-              </Card>
-            ) : (
-              <div className="space-y-2">
-                {players.map((player) => (
-                  <Card
-                    key={player.id}
-                    className="p-4 flex justify-between items-center gap-2"
-                    data-testid={`admin-player-${player.id}`}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="font-bold truncate">{player.name}</div>
-                      <div className="text-sm text-zinc-500">
-                        ${player.symbol} | {player.team} | {player.sport} | {player.status}
-                      </div>
-                      <div className="text-xs text-zinc-600">
-                        Funding: ${player.fundingCurrent.toLocaleString()} / ${player.fundingTarget.toLocaleString()} ({player.fundingPercentage}%)
-                      </div>
-                    </div>
-                    <Button
-                      variant="destructive"
-                      size="icon"
-                      onClick={() => deletePlayerMutation.mutate(player.id)}
-                      disabled={deletePlayerMutation.isPending}
-                      data-testid={`button-delete-player-${player.id}`}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
         {activeSection === "wild" && (
           <WildPointsManager />
         )}
@@ -1202,7 +1015,7 @@ function WildPointsManager() {
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <h2 className="text-lg font-bold">$WILD Points Management</h2>
+        <h2 className="text-lg font-bold">Points Management</h2>
         <div className="text-zinc-500">Loading wallets...</div>
       </div>
     );
@@ -1211,7 +1024,7 @@ function WildPointsManager() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-bold">$WILD Points Management</h2>
+        <h2 className="text-lg font-bold">Points Management</h2>
         <p className="text-sm text-zinc-500">
           Track WILD points for all users. 1 USDC spent = 1 WILD point. Data sourced from Polymarket Activity API.
         </p>

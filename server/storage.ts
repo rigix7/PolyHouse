@@ -49,6 +49,7 @@ import {
   type ThemeConfig,
   type ApiCredentials,
   type FeeConfig,
+  type PointsConfig,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -137,6 +138,16 @@ export interface IStorage {
   updateWhiteLabelTheme(themeConfig: ThemeConfig): Promise<WhiteLabelConfig>;
   updateWhiteLabelApiCredentials(credentials: ApiCredentials): Promise<WhiteLabelConfig>;
   updateWhiteLabelFeeConfig(feeConfig: FeeConfig): Promise<WhiteLabelConfig>;
+  updateWhiteLabelPointsConfig(pointsConfig: PointsConfig): Promise<WhiteLabelConfig>;
+  
+  // Referral methods
+  setReferralCode(address: string, referralCode: string): Promise<WalletRecord | undefined>;
+  applyReferralCode(address: string, referrerCode: string): Promise<{ success: boolean; error?: string }>;
+  getReferralStats(address: string): Promise<{ referralsCount: number; pointsEarned: number }>;
+  getReferrals(address: string): Promise<WalletRecord[]>;
+  
+  // Store Polymarket-derived points for referral calculations
+  updateStoredWildPoints(address: string, wildPoints: number): Promise<void>;
 
   seedInitialData(): Promise<void>;
 }
@@ -321,6 +332,17 @@ export class DatabaseStorage implements IStorage {
       .where(eq(walletRecords.address, record.address))
       .returning();
     return updated;
+  }
+
+  async updateStoredWildPoints(address: string, wildPoints: number): Promise<void> {
+    const normalizedAddress = address.toLowerCase();
+    const updatedAt = new Date().toISOString();
+    await db.update(walletRecords)
+      .set({
+        wildPoints,
+        updatedAt,
+      })
+      .where(eq(walletRecords.address, normalizedAddress));
   }
 
   async updateWalletSafeStatus(address: string, safeAddress: string, isSafeDeployed: boolean): Promise<WalletRecord> {
@@ -926,6 +948,125 @@ export class DatabaseStorage implements IStorage {
       .where(eq(whiteLabelConfig.id, existing.id))
       .returning();
     return updated;
+  }
+
+  async updateWhiteLabelPointsConfig(pointsConfig: PointsConfig): Promise<WhiteLabelConfig> {
+    const existing = await this.getOrCreateWhiteLabelConfig();
+    const [updated] = await db.update(whiteLabelConfig)
+      .set({
+        pointsConfig: pointsConfig,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(whiteLabelConfig.id, existing.id))
+      .returning();
+    return updated;
+  }
+
+  async setReferralCode(address: string, referralCode: string): Promise<WalletRecord | undefined> {
+    const normalizedAddress = address.toLowerCase();
+    const code = referralCode.toUpperCase();
+    
+    // Check if code is already taken
+    const existing = await db.select()
+      .from(walletRecords)
+      .where(eq(walletRecords.referralCode, code))
+      .limit(1);
+    
+    if (existing.length > 0 && existing[0].address !== normalizedAddress) {
+      return undefined; // Code already taken
+    }
+    
+    const [updated] = await db.update(walletRecords)
+      .set({
+        referralCode: code,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(walletRecords.address, normalizedAddress))
+      .returning();
+    
+    return updated;
+  }
+
+  async applyReferralCode(address: string, referrerCode: string): Promise<{ success: boolean; error?: string }> {
+    const normalizedAddress = address.toLowerCase();
+    const code = referrerCode.toUpperCase();
+    
+    // Get the user's wallet record
+    const userRecords = await db.select()
+      .from(walletRecords)
+      .where(eq(walletRecords.address, normalizedAddress))
+      .limit(1);
+    
+    if (!userRecords.length) {
+      return { success: false, error: "Wallet not found" };
+    }
+    
+    const user = userRecords[0];
+    
+    // Check if user already has a referrer
+    if (user.referredBy) {
+      return { success: false, error: "You already have a referrer" };
+    }
+    
+    // Find the referrer by their code
+    const referrerRecords = await db.select()
+      .from(walletRecords)
+      .where(eq(walletRecords.referralCode, code))
+      .limit(1);
+    
+    if (!referrerRecords.length) {
+      return { success: false, error: "Invalid referral code" };
+    }
+    
+    const referrer = referrerRecords[0];
+    
+    // Can't refer yourself
+    if (referrer.address === normalizedAddress) {
+      return { success: false, error: "Cannot use your own referral code" };
+    }
+    
+    // Apply the referral
+    await db.update(walletRecords)
+      .set({
+        referredBy: referrer.address,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(walletRecords.address, normalizedAddress));
+    
+    return { success: true };
+  }
+
+  async getReferralStats(address: string): Promise<{ referralsCount: number; pointsEarned: number }> {
+    const normalizedAddress = address.toLowerCase();
+    
+    // Get all users referred by this address
+    const referrals = await db.select()
+      .from(walletRecords)
+      .where(eq(walletRecords.referredBy, normalizedAddress));
+    
+    // Get points config to get referral percentage
+    const whiteLabelConfig = await this.getWhiteLabelConfig();
+    const referralPercentage = whiteLabelConfig?.pointsConfig?.referralPercentage || 10;
+    
+    // Calculate referral points as percentage of referred users' stored points
+    const totalReferredPoints = referrals.reduce((sum, r) => sum + (r.wildPoints || 0), 0);
+    const pointsEarned = Math.floor(totalReferredPoints * (referralPercentage / 100));
+    
+    return {
+      referralsCount: referrals.length,
+      pointsEarned,
+    };
+  }
+
+  async getReferrals(address: string): Promise<WalletRecord[]> {
+    const normalizedAddress = address.toLowerCase();
+    
+    // Get all users referred by this address
+    const referrals = await db.select()
+      .from(walletRecords)
+      .where(eq(walletRecords.referredBy, normalizedAddress));
+    
+    return referrals;
   }
 }
 

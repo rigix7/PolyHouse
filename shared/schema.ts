@@ -68,6 +68,9 @@ export const walletRecords = pgTable("wallet_records", {
   totalBetAmount: real("total_bet_amount").notNull().default(0),
   safeAddress: varchar("safe_address", { length: 42 }),
   isSafeDeployed: boolean("is_safe_deployed").notNull().default(false),
+  referralCode: varchar("referral_code", { length: 20 }), // User's own referral code
+  referredBy: varchar("referred_by", { length: 42 }), // Address of the referrer
+  referralPointsEarned: real("referral_points_earned").notNull().default(0), // Points earned from referrals
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -518,6 +521,17 @@ export const feeConfigSchema = z.object({
 
 export type FeeConfig = z.infer<typeof feeConfigSchema>;
 
+// Points system configuration
+export const pointsConfigSchema = z.object({
+  enabled: z.boolean().default(false), // Points system disabled by default
+  name: z.string().default("$WILD"), // Customizable points name
+  resetSchedule: z.enum(["never", "weekly", "monthly"]).default("never"), // When to reset points
+  referralEnabled: z.boolean().default(false), // Enable referral system
+  referralPercentage: z.number().min(0).max(100).default(10), // % of referred user's points given to referrer
+});
+
+export type PointsConfig = z.infer<typeof pointsConfigSchema>;
+
 // White-label configuration table
 export const whiteLabelConfig = pgTable("white_label_config", {
   id: serial("id").primaryKey(),
@@ -527,6 +541,8 @@ export const whiteLabelConfig = pgTable("white_label_config", {
   apiCredentials: jsonb("api_credentials").$type<ApiCredentials>(),
   // Fee settings
   feeConfig: jsonb("fee_config").$type<FeeConfig>(),
+  // Points system settings
+  pointsConfig: jsonb("points_config").$type<PointsConfig>(),
   // Metadata
   updatedAt: text("updated_at").notNull(),
   createdAt: text("created_at").notNull(),

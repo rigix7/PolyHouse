@@ -1,15 +1,18 @@
 import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { TrendingUp, TrendingDown, Award, Activity, Wallet, History, Package, Coins, ArrowDownToLine, ArrowUpFromLine, RefreshCw, CheckCircle2, Copy, Check, HelpCircle, ChevronDown, ChevronUp, Loader2, ExternalLink } from "lucide-react";
+import { TrendingUp, TrendingDown, Award, Activity, Wallet, History, Package, Coins, ArrowDownToLine, ArrowUpFromLine, RefreshCw, CheckCircle2, Copy, Check, HelpCircle, ChevronDown, ChevronUp, Loader2, ExternalLink, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { fetchPositions, fetchActivity, type PolymarketPosition, type PolymarketActivity } from "@/lib/polymarketOrder";
 import { usePolymarketClient } from "@/hooks/usePolymarketClient";
 import { useBridgeApi, getAddressTypeForChain, type SupportedAsset, type Transaction as BridgeTransaction } from "@/hooks/useBridgeApi";
 import { DepositInstructions } from "@/components/terminal/DepositInstructions";
+import { useWhiteLabelTheme } from "@/hooks/useWhiteLabelTheme";
+import { useToast } from "@/hooks/use-toast";
 import type { Wallet as WalletType, Bet, Trade } from "@shared/schema";
 
 interface DashboardViewProps {
@@ -23,11 +26,21 @@ interface DashboardViewProps {
 }
 
 export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, safeAddress, isSafeDeployed }: DashboardViewProps) {
+  const { pointsConfig } = useWhiteLabelTheme();
+  const { toast } = useToast();
+  
   const [positions, setPositions] = useState<PolymarketPosition[]>([]);
   const [activity, setActivity] = useState<PolymarketActivity[]>([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
   const [activityLoading, setActivityLoading] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
+  
+  const [referralCode, setReferralCode] = useState("");
+  const [isApplyingReferral, setIsApplyingReferral] = useState(false);
+  
+  const pointsName = pointsConfig?.name?.replace("$", "") || "WILD";
+  const showPoints = pointsConfig?.enabled ?? false;
+  const showReferrals = pointsConfig?.referralEnabled ?? false;
   const [withdrawTo, setWithdrawTo] = useState("");
   const [copied, setCopied] = useState(false);
   const [showDepositInstructions, setShowDepositInstructions] = useState(false);
@@ -476,22 +489,83 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
                 ${formatBalance(wallet?.usdcBalance || 0)}
               </span>
             </div>
-            <div className="flex justify-between items-center p-3">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-wild-scout flex items-center justify-center text-[10px] font-bold text-zinc-950">
-                  W
+            {showPoints && (
+              <div className="flex justify-between items-center p-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-wild-scout flex items-center justify-center text-[10px] font-bold text-zinc-950">
+                    {pointsName.charAt(0)}
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-white">{pointsName}</div>
+                    <div className="text-[10px] text-zinc-500 font-mono">Points</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-sm font-medium text-white">WILD</div>
-                  <div className="text-[10px] text-zinc-500 font-mono">Wildcard Token</div>
-                </div>
+                <span className="font-mono font-bold text-white" data-testid="text-dash-wild">
+                  {formatBalance(wallet?.wildBalance || 0)}
+                </span>
               </div>
-              <span className="font-mono font-bold text-white" data-testid="text-dash-wild">
-                {formatBalance(wallet?.wildBalance || 0)}
-              </span>
-            </div>
+            )}
           </div>
         </div>
+        
+        {showReferrals && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-md overflow-hidden">
+            <div className="p-3 border-b border-zinc-800 flex items-center gap-2">
+              <Users className="w-4 h-4 text-wild-scout" />
+              <h3 className="text-xs font-bold text-zinc-400 tracking-wider">REFERRAL</h3>
+            </div>
+            <div className="p-3 space-y-3">
+              <div>
+                <label className="text-[10px] text-zinc-500 block mb-1">Enter Referral Code</label>
+                <div className="flex gap-2">
+                  <Input
+                    value={referralCode}
+                    onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                    placeholder="Enter code..."
+                    className="flex-1 bg-zinc-950 border-zinc-800 text-sm font-mono uppercase"
+                    maxLength={20}
+                    data-testid="input-referral-code"
+                  />
+                  <Button
+                    size="sm"
+                    disabled={!referralCode || referralCode.length < 4 || isApplyingReferral || !safeAddress}
+                    onClick={async () => {
+                      if (!safeAddress || !referralCode) return;
+                      setIsApplyingReferral(true);
+                      try {
+                        const res = await fetch("/api/referral/apply", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            address: safeAddress,
+                            referrerCode: referralCode,
+                          }),
+                        });
+                        const data = await res.json();
+                        if (res.ok) {
+                          toast({ title: "Referral code applied successfully!" });
+                          setReferralCode("");
+                        } else {
+                          toast({ title: data.error || "Failed to apply referral code", variant: "destructive" });
+                        }
+                      } catch {
+                        toast({ title: "Failed to apply referral code", variant: "destructive" });
+                      } finally {
+                        setIsApplyingReferral(false);
+                      }
+                    }}
+                    data-testid="button-apply-referral"
+                  >
+                    {isApplyingReferral ? <Loader2 className="w-4 h-4 animate-spin" /> : "Apply"}
+                  </Button>
+                </div>
+                <p className="text-[10px] text-zinc-600 mt-1">
+                  Enter a friend's referral code to earn bonus {pointsName} points
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-md overflow-hidden">
           <div className="p-3 border-b border-zinc-800 flex items-center gap-2">

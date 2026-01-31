@@ -1,4 +1,4 @@
-import { Zap, Wallet } from "lucide-react";
+import { Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWhiteLabelTheme } from "@/hooks/useWhiteLabelTheme";
 
@@ -10,7 +10,7 @@ interface HeaderProps {
 }
 
 export function Header({ usdcBalance, wildBalance, onWalletClick, isConnected = false }: HeaderProps) {
-  const { brandName, logoUrl } = useWhiteLabelTheme();
+  const { brandName, logoUrl, pointsConfig } = useWhiteLabelTheme();
   
   const formatBalance = (value: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -19,16 +19,17 @@ export function Header({ usdcBalance, wildBalance, onWalletClick, isConnected = 
     }).format(value);
   };
 
+  const pointsName = pointsConfig?.name?.replace("$", "") || "WILD";
+  const showPoints = pointsConfig?.enabled ?? false;
+
   return (
     <header 
       className="h-14 shrink-0 flex items-center justify-between px-4 bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-800/50 z-30" 
       style={{ backgroundColor: "var(--wl-header-bg, rgba(24, 24, 27, 0.8))" }}
     >
       <div className="flex items-center gap-2" style={{ color: "var(--wl-header-accent, var(--wl-brand-accent, #f43f5e))" }}>
-        {logoUrl ? (
+        {logoUrl && (
           <img src={logoUrl} alt={brandName} className="h-6 w-auto" />
-        ) : (
-          <Zap className="w-5 h-5 fill-current" />
         )}
         <span 
           className="font-black italic tracking-tighter text-lg" 
@@ -46,9 +47,11 @@ export function Header({ usdcBalance, wildBalance, onWalletClick, isConnected = 
         >
           <div className="text-[10px] font-mono text-right leading-tight text-zinc-400 group-hover:text-white">
             <div data-testid="text-usdc-balance">${formatBalance(usdcBalance)}</div>
-            <div className="text-wild-scout" data-testid="text-wild-balance">
-              {formatBalance(wildBalance)} WILD
-            </div>
+            {showPoints && (
+              <div className="text-wild-scout" data-testid="text-wild-balance">
+                {formatBalance(wildBalance)} {pointsName}
+              </div>
+            )}
           </div>
           <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center">
             <Wallet className="w-3 h-3 text-zinc-400 group-hover:text-white" />

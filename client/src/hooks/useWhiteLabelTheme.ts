@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { WhiteLabelConfig, ThemeConfig } from "@shared/schema";
+import type { WhiteLabelConfig, ThemeConfig, PointsConfig } from "@shared/schema";
 
 const CSS_VARIABLES = [
   "--wl-brand-primary",
@@ -131,11 +131,20 @@ export function useWhiteLabelTheme() {
     }
   }, [config]);
 
+  const pointsConfig: PointsConfig = config?.pointsConfig || {
+    enabled: false,
+    name: "$WILD",
+    resetSchedule: "never",
+    referralEnabled: false,
+    referralPercentage: 10,
+  };
+
   return {
     config,
     isLoading,
     brandName: (config?.themeConfig as ThemeConfig)?.brand?.name || "POLYHOUSE",
     logoUrl: (config?.themeConfig as ThemeConfig)?.brand?.logoUrl,
+    pointsConfig,
   };
 }
 

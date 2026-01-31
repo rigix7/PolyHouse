@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Plus, Trash2, RefreshCw, Check, X, Link2, Loader2, ChevronDown, ChevronRight, Palette, Key, DollarSign, Eye, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, RefreshCw, Check, X, Link2, Loader2, ChevronDown, ChevronRight, Palette, Key, DollarSign, Eye, AlertTriangle, Star, Users } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,7 +20,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { fetchSportsWithMarketTypes, type SportWithMarketTypes } from "@/lib/polymarket";
-import type { Market, Player, InsertMarket, InsertPlayer, AdminSettings, Futures, SportFieldConfig, SportMarketConfig, PolymarketTagRecord, FuturesCategory, WhiteLabelConfig, ThemeConfig, ApiCredentials, FeeConfig, FeeWallet } from "@shared/schema";
+import type { Market, Player, InsertMarket, InsertPlayer, AdminSettings, Futures, SportFieldConfig, SportMarketConfig, PolymarketTagRecord, FuturesCategory, WhiteLabelConfig, ThemeConfig, ApiCredentials, FeeConfig, FeeWallet, PointsConfig } from "@shared/schema";
 import { themeConfigSchema } from "@shared/schema";
 
 const playerFormSchema = z.object({
@@ -1829,12 +1829,19 @@ function SportConfigEditor({
 // White-label configuration component
 function WhiteLabelSection() {
   const { toast } = useToast();
-  const [activeThemeTab, setActiveThemeTab] = useState<"brand" | "header" | "betslip" | "marketCards" | "sortingBar" | "bottomNav" | "credentials" | "fees">("brand");
+  const [activeThemeTab, setActiveThemeTab] = useState<"brand" | "header" | "betslip" | "marketCards" | "sortingBar" | "bottomNav" | "credentials" | "fees" | "points">("brand");
   
   // Local state for theme config (for live preview)
   const [localTheme, setLocalTheme] = useState<ThemeConfig>(themeConfigSchema.parse({}));
   const [credentials, setCredentials] = useState<ApiCredentials>({});
   const [feeConfig, setFeeConfig] = useState<FeeConfig>({ feeBps: 0 });
+  const [pointsConfig, setPointsConfig] = useState<PointsConfig>({
+    enabled: false,
+    name: "$WILD",
+    resetSchedule: "never",
+    referralEnabled: false,
+    referralPercentage: 10,
+  });
   
   // Fetch existing config
   const { data: whiteLabelData, isLoading } = useQuery<WhiteLabelConfig>({
@@ -1848,6 +1855,9 @@ function WhiteLabelSection() {
     }
     if (whiteLabelData?.feeConfig) {
       setFeeConfig(whiteLabelData.feeConfig);
+    }
+    if (whiteLabelData?.pointsConfig) {
+      setPointsConfig(whiteLabelData.pointsConfig);
     }
   }, [whiteLabelData]);
   
@@ -1891,6 +1901,20 @@ function WhiteLabelSection() {
     },
     onError: () => {
       toast({ title: "Failed to save fee settings", variant: "destructive" });
+    },
+  });
+  
+  // Save points config mutation
+  const savePointsMutation = useMutation({
+    mutationFn: async (points: PointsConfig) => {
+      return apiRequest("PATCH", "/api/admin/white-label/points", points);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/white-label"] });
+      toast({ title: "Points settings saved" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save points settings", variant: "destructive" });
     },
   });
   
@@ -2005,6 +2029,15 @@ function WhiteLabelSection() {
         >
           <DollarSign className="w-4 h-4 mr-2" />
           Fees
+        </Button>
+        <Button
+          variant={activeThemeTab === "points" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveThemeTab("points")}
+          data-testid="tab-points"
+        >
+          <Star className="w-4 h-4 mr-2" />
+          Points
         </Button>
       </div>
       
@@ -2726,6 +2759,134 @@ function WhiteLabelSection() {
           >
             {saveFeesMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
             Save Fee Settings
+          </Button>
+        </Card>
+      )}
+      
+      {/* Points Settings section */}
+      {activeThemeTab === "points" && (
+        <Card className="p-4 space-y-4">
+          <div>
+            <h3 className="font-bold flex items-center gap-2">
+              <Star className="w-5 h-5" />
+              Points System Configuration
+            </h3>
+            <p className="text-sm text-zinc-500">
+              Configure the optional points/rewards system
+            </p>
+          </div>
+          
+          {/* Enable Toggle */}
+          <div className="flex items-center justify-between bg-zinc-800/50 rounded-lg p-4">
+            <div>
+              <Label className="text-sm font-medium">Enable Points System</Label>
+              <p className="text-xs text-zinc-500 mt-1">
+                When disabled, points will be hidden throughout the app
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={pointsConfig.enabled}
+                onChange={(e) => setPointsConfig({ ...pointsConfig, enabled: e.target.checked })}
+                className="sr-only peer"
+                data-testid="toggle-points-enabled"
+              />
+              <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+            </label>
+          </div>
+          
+          {/* Points Name */}
+          <div>
+            <Label className="text-sm">Points Name</Label>
+            <Input
+              value={pointsConfig.name}
+              onChange={(e) => setPointsConfig({ ...pointsConfig, name: e.target.value })}
+              placeholder="$WILD"
+              className="mt-1 font-mono"
+              data-testid="input-points-name"
+            />
+            <p className="text-xs text-zinc-500 mt-1">
+              The name displayed for points (e.g., "$WILD", "Points", "Rewards")
+            </p>
+          </div>
+          
+          {/* Reset Schedule */}
+          <div>
+            <Label className="text-sm">Reset Schedule</Label>
+            <Select
+              value={pointsConfig.resetSchedule}
+              onValueChange={(value: "never" | "weekly" | "monthly") => 
+                setPointsConfig({ ...pointsConfig, resetSchedule: value })
+              }
+            >
+              <SelectTrigger className="mt-1" data-testid="select-reset-schedule">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="never">Never reset</SelectItem>
+                <SelectItem value="weekly">Reset weekly</SelectItem>
+                <SelectItem value="monthly">Reset monthly</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-zinc-500 mt-1">
+              When to reset user points to zero
+            </p>
+          </div>
+          
+          {/* Referral System */}
+          <div className="border-t border-zinc-700 pt-4">
+            <div className="flex items-center justify-between bg-zinc-800/50 rounded-lg p-4 mb-4">
+              <div>
+                <Label className="text-sm font-medium flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  Enable Referral System
+                </Label>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Allow users to earn points from referrals
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pointsConfig.referralEnabled}
+                  onChange={(e) => setPointsConfig({ ...pointsConfig, referralEnabled: e.target.checked })}
+                  className="sr-only peer"
+                  data-testid="toggle-referral-enabled"
+                />
+                <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+              </label>
+            </div>
+            
+            {pointsConfig.referralEnabled && (
+              <div>
+                <Label className="text-sm">Referral Percentage</Label>
+                <div className="flex items-center gap-2 mt-1">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={pointsConfig.referralPercentage}
+                    onChange={(e) => setPointsConfig({ ...pointsConfig, referralPercentage: parseInt(e.target.value) || 0 })}
+                    className="font-mono w-24"
+                    data-testid="input-referral-percentage"
+                  />
+                  <span className="text-zinc-400">%</span>
+                </div>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Percentage of referred user's earned points that go to the referrer
+                </p>
+              </div>
+            )}
+          </div>
+          
+          <Button 
+            onClick={() => savePointsMutation.mutate(pointsConfig)}
+            disabled={savePointsMutation.isPending}
+            data-testid="button-save-points"
+          >
+            {savePointsMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+            Save Points Settings
           </Button>
         </Card>
       )}

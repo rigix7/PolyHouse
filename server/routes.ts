@@ -601,16 +601,36 @@ export async function registerRoutes(
         wildPoints = polyResult.wildPoints;
         activityCount = polyResult.activityCount;
         partial = polyResult.partial;
+        
+        // Store the Polymarket-derived points so referral calculations can use them
+        await storage.updateStoredWildPoints(record.address, wildPoints);
       } else {
         // Fall back to database calculation if Polymarket API fails
         wildPoints = await storage.getCalculatedWildPoints(address);
         usedFallback = true;
       }
       
+      // Get referral stats and points config to calculate referral bonus
+      const referralStats = await storage.getReferralStats(record.address);
+      const whiteLabelConfig = await storage.getWhiteLabelConfig();
+      const pointsConfig = whiteLabelConfig?.pointsConfig;
+      
+      let referralPoints = 0;
+      if (pointsConfig?.enabled && pointsConfig?.referralEnabled && referralStats.referralsCount > 0) {
+        // Calculate referral points as percentage of referred users' points
+        referralPoints = Math.floor(referralStats.pointsEarned);
+      }
+      
+      // Total points = trading points + referral bonus
+      const totalPoints = wildPoints + referralPoints;
+      
       // Return record with Polymarket-calculated WILD points as source of truth
       res.json({
         ...record,
-        wildPoints,
+        wildPoints: totalPoints,
+        tradingPoints: wildPoints,
+        referralPoints,
+        referralsCount: referralStats.referralsCount,
         activityCount,
         usedFallback,
         partial, // true if data may be incomplete (hit API limit)
@@ -2324,6 +2344,92 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating fee config:", error);
       res.status(500).json({ error: "Failed to update fee configuration" });
+    }
+  });
+
+  // Update points configuration
+  app.patch("/api/admin/white-label/points", async (req, res) => {
+    try {
+      const pointsConfig = req.body;
+      const updated = await storage.updateWhiteLabelPointsConfig(pointsConfig);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating points config:", error);
+      res.status(500).json({ error: "Failed to update points configuration" });
+    }
+  });
+
+  // Referral routes
+  app.post("/api/referral/set-code", async (req, res) => {
+    try {
+      const { address, referralCode } = req.body;
+      if (!address || !referralCode) {
+        return res.status(400).json({ error: "Address and referral code required" });
+      }
+      if (referralCode.length < 4 || referralCode.length > 20) {
+        return res.status(400).json({ error: "Referral code must be 4-20 characters" });
+      }
+      const updated = await storage.setReferralCode(address, referralCode);
+      if (!updated) {
+        return res.status(409).json({ error: "Referral code already taken" });
+      }
+      res.json({ success: true, referralCode: updated.referralCode });
+    } catch (error) {
+      console.error("Error setting referral code:", error);
+      res.status(500).json({ error: "Failed to set referral code" });
+    }
+  });
+
+  app.post("/api/referral/apply", async (req, res) => {
+    try {
+      const { address, referrerCode } = req.body;
+      if (!address || !referrerCode) {
+        return res.status(400).json({ error: "Address and referrer code required" });
+      }
+      const result = await storage.applyReferralCode(address, referrerCode);
+      if (!result.success) {
+        return res.status(400).json({ error: result.error });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error applying referral code:", error);
+      res.status(500).json({ error: "Failed to apply referral code" });
+    }
+  });
+
+  app.get("/api/referral/stats/:address", async (req, res) => {
+    try {
+      const { address } = req.params;
+      
+      // Get basic stats and list of referred users
+      const basicStats = await storage.getReferralStats(address);
+      
+      // If there are referrals, fetch fresh points for each referred user from Polymarket
+      // and update their stored points for accurate referral bonus calculation
+      if (basicStats.referralsCount > 0) {
+        const referrals = await storage.getReferrals(address);
+        
+        // Fetch fresh points for each referred user (in parallel, max 5 at a time)
+        const refreshPromises = referrals.map(async (referral) => {
+          const queryAddress = referral.safeAddress || referral.address;
+          const polyResult = await fetchWildPointsFromPolymarket(queryAddress);
+          if (polyResult.success) {
+            await storage.updateStoredWildPoints(referral.address, polyResult.wildPoints);
+          }
+        });
+        
+        // Wait for all refreshes to complete
+        await Promise.all(refreshPromises);
+        
+        // Re-fetch stats with updated points
+        const updatedStats = await storage.getReferralStats(address);
+        return res.json(updatedStats);
+      }
+      
+      res.json(basicStats);
+    } catch (error) {
+      console.error("Error getting referral stats:", error);
+      res.status(500).json({ error: "Failed to get referral stats" });
     }
   });
 

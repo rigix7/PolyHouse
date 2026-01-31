@@ -469,6 +469,10 @@ export const themeConfigSchema = z.object({
     borderColor: z.string().default("#3f3f46"), // zinc-700
     oddsBadgeColor: z.string().default("#fbbf24"), // amber-400
     textColor: z.string().default("#fafafa"), // zinc-50
+    // Market type accent colors
+    moneylineAccent: z.string().default("#f43f5e"), // rose-500 for moneyline markets
+    totalsAccent: z.string().default("#3b82f6"), // blue-500 for totals/over-under markets
+    moreMarketsAccent: z.string().default("#8b5cf6"), // violet-500 for more markets section
   }).default({}),
   
   // Sorting/filter bar

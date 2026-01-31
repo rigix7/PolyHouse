@@ -46,8 +46,15 @@ export function MarketCard({ market, onPlaceBet, selectedOutcome }: MarketCardPr
     <div
       className="bg-zinc-900 border border-zinc-800 relative group overflow-visible animate-fade-in"
       data-testid={`card-market-${market.id}`}
+      style={{ 
+        backgroundColor: "var(--wl-market-bg)", 
+        borderColor: "var(--wl-market-border)" 
+      }}
     >
-      <div className="h-0.5 w-full bg-wild-brand absolute top-0 left-0" />
+      <div 
+        className="h-0.5 w-full absolute top-0 left-0" 
+        style={{ backgroundColor: "var(--wl-market-moneyline, var(--wl-brand-primary, #f43f5e))" }}
+      />
       <div className="p-4">
         <div className="flex justify-between items-start mb-3 gap-2">
           <div>

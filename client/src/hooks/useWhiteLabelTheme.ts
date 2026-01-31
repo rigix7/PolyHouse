@@ -18,6 +18,9 @@ const CSS_VARIABLES = [
   "--wl-market-border",
   "--wl-market-odds",
   "--wl-market-text",
+  "--wl-market-moneyline",
+  "--wl-market-totals",
+  "--wl-market-more",
   "--wl-sorting-bg",
   "--wl-sorting-active",
   "--wl-sorting-inactive",
@@ -98,6 +101,15 @@ export function useWhiteLabelTheme() {
     }
     if (theme.marketCards?.textColor) {
       root.style.setProperty("--wl-market-text", theme.marketCards.textColor);
+    }
+    if (theme.marketCards?.moneylineAccent) {
+      root.style.setProperty("--wl-market-moneyline", theme.marketCards.moneylineAccent);
+    }
+    if (theme.marketCards?.totalsAccent) {
+      root.style.setProperty("--wl-market-totals", theme.marketCards.totalsAccent);
+    }
+    if (theme.marketCards?.moreMarketsAccent) {
+      root.style.setProperty("--wl-market-more", theme.marketCards.moreMarketsAccent);
     }
 
     if (theme.sortingBar?.backgroundColor) {

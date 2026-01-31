@@ -855,19 +855,17 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
                     const isPending = pos.status === "pending";
                     const isWin = isClaimable || isPending;
                     return (
-                      <div key={`${pos.tokenId}-${i}`} className="p-3 flex justify-between items-center gap-2" data-testid={`resolved-${i}`}>
+                      <div key={`${pos.tokenId}-${i}`} className="p-3 flex justify-between items-start gap-2" data-testid={`resolved-${i}`}>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className={cn(
-                              "px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0",
-                              isClaimable ? "bg-wild-scout/20 text-wild-scout" 
-                                : isPending ? "bg-wild-gold/20 text-wild-gold"
-                                : "bg-wild-brand/20 text-wild-brand"
-                            )}>
-                              {isClaimable ? "WON" : isPending ? "PENDING" : "LOST"}
-                            </span>
-                            <div className="text-xs text-white truncate">{pos.marketQuestion || "Resolved Position"}</div>
-                          </div>
+                          <span className={cn(
+                            "inline-block px-1.5 py-0.5 rounded text-[9px] font-bold mb-1",
+                            isClaimable ? "bg-wild-scout/20 text-wild-scout" 
+                              : isPending ? "bg-wild-gold/20 text-wild-gold"
+                              : "bg-wild-brand/20 text-wild-brand"
+                          )}>
+                            {isClaimable ? "WON" : isPending ? "PENDING" : "LOST"}
+                          </span>
+                          <div className="text-xs text-white leading-tight">{pos.marketQuestion || "Resolved Position"}</div>
                           <div className="text-[10px] font-mono text-zinc-500 mt-1">{pos.outcomeLabel || pos.side}</div>
                         </div>
                         <div className="text-right shrink-0 ml-2">
@@ -897,7 +895,7 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
                     <div key={`${pos.tokenId}-${i}`} className="p-3" data-testid={`position-${i}`}>
                       <div className="flex justify-between items-start gap-2">
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs text-white truncate">{pos.marketQuestion || "Unknown Market"}</div>
+                          <div className="text-xs text-white leading-tight">{pos.marketQuestion || "Unknown Market"}</div>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-[10px] font-mono text-zinc-500">{pos.outcomeLabel || pos.side}</span>
                             <span className="text-[10px] font-mono text-wild-trade">@{pos.avgPrice.toFixed(2)}</span>
@@ -938,14 +936,12 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
                   <>
                     {/* Lost positions first */}
                     {lostPositions.map((pos, i) => (
-                      <div key={`lost-${pos.tokenId}-${i}`} className="p-3 flex justify-between items-center gap-2" data-testid={`history-lost-${i}`}>
+                      <div key={`lost-${pos.tokenId}-${i}`} className="p-3 flex justify-between items-start gap-2" data-testid={`history-lost-${i}`}>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 bg-wild-brand/20 text-wild-brand">
-                              LOST
-                            </span>
-                            <div className="text-xs text-white truncate">{pos.marketQuestion || "Resolved Position"}</div>
-                          </div>
+                          <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold mb-1 bg-wild-brand/20 text-wild-brand">
+                            LOST
+                          </span>
+                          <div className="text-xs text-white leading-tight">{pos.marketQuestion || "Resolved Position"}</div>
                           <div className="text-[10px] font-mono text-zinc-500 mt-1">{pos.outcomeLabel || pos.side}</div>
                         </div>
                         <div className="text-right shrink-0 ml-2">
@@ -959,23 +955,21 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
                     {activity.slice(0, 20).map((act, i) => (
                     <div 
                       key={`${act.transactionHash}-${i}`} 
-                      className="p-3 flex justify-between items-center gap-2" 
+                      className="p-3 flex justify-between items-start gap-2" 
                       data-testid={`activity-${i}`}
                     >
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className={cn(
-                            "px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0",
-                            act.type === "REDEEM" 
-                              ? "bg-wild-scout/20 text-wild-scout"
-                              : act.side === "SELL"
-                              ? "bg-wild-gold/20 text-wild-gold"
-                              : "bg-wild-trade/20 text-wild-trade"
-                          )}>
-                            {act.type === "REDEEM" ? "CLAIMED" : act.side === "SELL" ? "SOLD" : "BOUGHT"}
-                          </span>
-                          <div className="text-xs text-white truncate">{act.title}</div>
-                        </div>
+                        <span className={cn(
+                          "inline-block px-1.5 py-0.5 rounded text-[9px] font-bold mb-1",
+                          act.type === "REDEEM" 
+                            ? "bg-wild-scout/20 text-wild-scout"
+                            : act.side === "SELL"
+                            ? "bg-wild-gold/20 text-wild-gold"
+                            : "bg-wild-trade/20 text-wild-trade"
+                        )}>
+                          {act.type === "REDEEM" ? "CLAIMED" : act.side === "SELL" ? "SOLD" : "BOUGHT"}
+                        </span>
+                        <div className="text-xs text-white leading-tight">{act.title}</div>
                         <div className="text-[10px] font-mono text-zinc-500 mt-1">
                           {act.outcome} {act.price ? `@ ${(act.price).toFixed(2)}` : ""}
                         </div>

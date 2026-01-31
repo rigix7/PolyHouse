@@ -980,7 +980,7 @@ function AdditionalMarketsSection({
   };
   
   return (
-    <div className="border-t border-zinc-800 pt-3 mt-3">
+    <div className="border-t border-zinc-800 pt-3 mt-3 pl-3 border-l-2" style={{ borderLeftColor: "var(--wl-market-more, #8b5cf6)" }}>
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-center justify-between w-full text-xs text-zinc-400 hover:text-zinc-300 transition-colors"
@@ -1101,8 +1101,20 @@ function MarketGroupDisplay({
     ? activeMarket.question 
     : formatMarketTypeLabel(group.label);
   
+  // Get market type accent color
+  const getMarketTypeAccent = () => {
+    switch (group.type) {
+      case "moneyline":
+        return "var(--wl-market-moneyline, #f43f5e)";
+      case "totals":
+        return "var(--wl-market-totals, #3b82f6)";
+      default:
+        return "var(--wl-market-more, #8b5cf6)";
+    }
+  };
+  
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 pl-3 border-l-2" style={{ borderLeftColor: getMarketTypeAccent() }}>
       <div className="flex items-center justify-between gap-2">
         <span className={`text-xs font-medium text-zinc-400 ${isTennis ? "normal-case" : "uppercase"} tracking-wide truncate`}>
           {displayLabel}
@@ -1254,7 +1266,7 @@ function EventCard({
               <div key={i} className="px-3 py-2" data-testid={`event-position-${i}`}>
                 <div className="flex justify-between items-start gap-2">
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs text-white truncate">{pos.marketQuestion || event.title}</div>
+                    <div className="text-xs text-white leading-tight">{pos.marketQuestion || event.title}</div>
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-[10px] font-mono text-zinc-500">{pos.outcomeLabel || "Yes"}</span>
                       <span className="text-[10px] font-mono text-wild-trade">@{pos.avgPrice.toFixed(2)}</span>

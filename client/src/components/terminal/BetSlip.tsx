@@ -494,14 +494,17 @@ export function BetSlip({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-[430px] bg-zinc-900 border-t border-zinc-700 rounded-t-xl p-4 animate-slide-up">
+      <div 
+        className="w-full max-w-[430px] bg-zinc-900 border-t border-zinc-700 rounded-t-xl p-4 animate-slide-up"
+        style={{ backgroundColor: "var(--wl-betslip-bg)" }}
+      >
         <div className="flex justify-between items-start mb-4">
           <div>
-            <p className="text-xs text-zinc-500 uppercase tracking-wider">Bet Slip</p>
-            <h3 className="font-bold text-white text-lg">
+            <p className="text-xs uppercase tracking-wider" style={{ color: "var(--wl-betslip-text, #71717a)" }}>Bet Slip</p>
+            <h3 className="font-bold text-lg" style={{ color: "var(--wl-betslip-text, #ffffff)" }}>
               {outcomeLabel} {isSoccer3Way && <span className={betDirection === "yes" ? "text-wild-scout" : "text-wild-brand"}>({labels[betDirection]})</span>}
             </h3>
-            <p className="text-xs text-zinc-400 mt-0.5">{marketTitle}</p>
+            <p className="text-xs mt-0.5" style={{ color: "var(--wl-betslip-text, #a1a1aa)" }}>{marketTitle}</p>
             {question && (
               <p className="text-xs text-zinc-500 mt-1 italic">{question}</p>
             )}

@@ -8,7 +8,10 @@ interface SubTabsProps<T extends string> {
 
 export function SubTabs<T extends string>({ tabs, activeTab, onTabChange }: SubTabsProps<T>) {
   return (
-    <div className="shrink-0 bg-zinc-950 border-b border-zinc-800 p-2 z-20">
+    <div 
+      className="shrink-0 bg-zinc-950 border-b border-zinc-800 p-2 z-20"
+      style={{ backgroundColor: "var(--wl-sorting-bg)" }}
+    >
       <div className="grid gap-1 bg-zinc-900 p-1 rounded-lg font-mono text-[10px] font-bold" style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}>
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
@@ -22,6 +25,11 @@ export function SubTabs<T extends string>({ tabs, activeTab, onTabChange }: SubT
                   ? "bg-zinc-800 text-white shadow"
                   : "text-zinc-500 hover:text-zinc-300"
               )}
+              style={isActive ? { 
+                backgroundColor: "var(--wl-sorting-active)"
+              } : { 
+                color: "var(--wl-sorting-inactive)" 
+              }}
               data-testid={`tab-${tab.id}`}
             >
               {tab.label}

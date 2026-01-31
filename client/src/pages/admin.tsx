@@ -2447,6 +2447,38 @@ function WhiteLabelSection() {
             />
           </div>
           
+          {/* Market Type Accent Colors */}
+          <div className="border-t border-zinc-800 pt-4">
+            <h4 className="text-sm font-medium mb-3">Market Type Accent Colors</h4>
+            <p className="text-xs text-zinc-500 mb-3">These colors are used as accent stripes for different market types</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <ColorPicker
+                label="Moneyline Accent"
+                value={localTheme.marketCards?.moneylineAccent || "#f43f5e"}
+                onChange={(v) => setLocalTheme({
+                  ...localTheme,
+                  marketCards: { ...localTheme.marketCards, moneylineAccent: v }
+                })}
+              />
+              <ColorPicker
+                label="Totals (O/U) Accent"
+                value={localTheme.marketCards?.totalsAccent || "#3b82f6"}
+                onChange={(v) => setLocalTheme({
+                  ...localTheme,
+                  marketCards: { ...localTheme.marketCards, totalsAccent: v }
+                })}
+              />
+              <ColorPicker
+                label="More Markets Accent"
+                value={localTheme.marketCards?.moreMarketsAccent || "#8b5cf6"}
+                onChange={(v) => setLocalTheme({
+                  ...localTheme,
+                  marketCards: { ...localTheme.marketCards, moreMarketsAccent: v }
+                })}
+              />
+            </div>
+          </div>
+          
           <Button 
             onClick={() => saveThemeMutation.mutate(localTheme)}
             disabled={saveThemeMutation.isPending}

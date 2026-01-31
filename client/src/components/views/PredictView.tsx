@@ -319,7 +319,7 @@ function LeagueFilters({
   if (leagues.length === 0) return null;
   
   return (
-    <div className="flex gap-2 overflow-x-auto pb-2 px-1">
+    <div className="sticky top-0 z-20 bg-zinc-950 flex gap-2 overflow-x-auto pb-2 pt-2 -mx-3 px-3">
       <Button
         size="sm"
         variant={selectedLeagues.size === 0 ? "default" : "outline"}

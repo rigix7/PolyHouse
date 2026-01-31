@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, Award, Activity, Wallet, History, Package, Coins, ArrowDownToLine, ArrowUpFromLine, RefreshCw, CheckCircle2, Copy, Check, HelpCircle, ChevronDown, ChevronUp, Loader2, ExternalLink, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -362,7 +362,41 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
 
   const wonBets = bets.filter((b) => b.status === "won");
   const pendingBets = bets.filter((b) => b.status === "pending");
-  const totalPnL = bets.reduce((acc, bet) => {
+  
+  // Calculate P&L from activity data (realized profits from redemptions minus losses)
+  const realizedPnL = useMemo(() => {
+    // Sum redemptions (claimed winnings)
+    const redeemTotal = activity
+      .filter(act => act.type === "REDEEM")
+      .reduce((sum, act) => sum + act.usdcSize, 0);
+    
+    // Sum lost positions (cost basis = size * avgPrice)
+    const lostTotal = positions
+      .filter(p => p.status === "lost")
+      .reduce((sum, p) => sum + (p.size * p.avgPrice), 0);
+    
+    return redeemTotal - lostTotal;
+  }, [activity, positions]);
+  
+  // Calculate won/total from positions (resolved positions only)
+  const wonPositions = useMemo(() => {
+    // Count only claimable as definite wins
+    return positions.filter(p => p.status === "claimable").length;
+  }, [positions]);
+  
+  const pendingWins = useMemo(() => {
+    // Pending = won but not yet redeemable
+    return positions.filter(p => p.status === "pending").length;
+  }, [positions]);
+  
+  const lostCount = useMemo(() => {
+    return positions.filter(p => p.status === "lost").length;
+  }, [positions]);
+  
+  const totalResolved = wonPositions + lostCount;
+  
+  // Use realized P&L for display (fallback to bets if no activity/positions)
+  const totalPnL = (activity.length > 0 || positions.length > 0) ? realizedPnL : bets.reduce((acc, bet) => {
     if (bet.status === "won") return acc + (bet.potentialPayout - bet.amount);
     if (bet.status === "lost") return acc - bet.amount;
     return acc;
@@ -455,17 +489,17 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
             </div>
             <div className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Won / Total</div>
             <div className="text-xl font-black font-mono text-white" data-testid="text-win-ratio">
-              {wonBets.length} / {bets.length}
+              {totalResolved > 0 ? `${wonPositions} / ${totalResolved}` : "0 / 0"}
             </div>
           </div>
 
           <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-md">
-            <div className="w-8 h-8 rounded-full bg-wild-brand/20 flex items-center justify-center mb-3">
-              <History className="w-4 h-4 text-wild-brand" />
+            <div className="w-8 h-8 rounded-full bg-wild-gold/20 flex items-center justify-center mb-3">
+              <History className="w-4 h-4 text-wild-gold" />
             </div>
-            <div className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Pending</div>
+            <div className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Pending Wins</div>
             <div className="text-xl font-black font-mono text-white" data-testid="text-pending">
-              {pendingBets.length}
+              {pendingWins}
             </div>
           </div>
         </div>
@@ -934,7 +968,47 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
                   </div>
                 ) : (
                   <>
-                    {/* Lost positions first */}
+                    {/* Activity from Polymarket API - sorted by timestamp (newest first), limited to 50 */}
+                    {activity.slice(0, 50).map((act, i) => (
+                      <div 
+                        key={`${act.transactionHash}-${i}`} 
+                        className="p-3 flex justify-between items-start gap-2" 
+                        data-testid={`activity-${i}`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <span className={cn(
+                            "inline-block px-1.5 py-0.5 rounded text-[9px] font-bold mb-1",
+                            act.type === "REDEEM" 
+                              ? "bg-wild-scout/20 text-wild-scout"
+                              : act.side === "SELL"
+                              ? "bg-wild-gold/20 text-wild-gold"
+                              : "bg-wild-trade/20 text-wild-trade"
+                          )}>
+                            {act.type === "REDEEM" ? "CLAIMED" : act.side === "SELL" ? "SOLD" : "BOUGHT"}
+                          </span>
+                          <div className="text-xs text-white leading-tight">{act.title}</div>
+                          <div className="text-[10px] font-mono text-zinc-500 mt-1">
+                            {act.outcome} {act.price ? `@ ${(act.price).toFixed(2)}` : ""}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0 ml-2">
+                          <div className={cn(
+                            "text-sm font-mono font-bold",
+                            act.type === "REDEEM" 
+                              ? "text-wild-scout" 
+                              : act.side === "SELL" 
+                              ? "text-wild-gold" 
+                              : "text-white"
+                          )}>
+                            {act.type === "REDEEM" ? "+" : act.side === "SELL" ? "+" : "-"}${act.usdcSize.toFixed(2)}
+                          </div>
+                          <div className="text-[10px] text-zinc-500">
+                            {formatActivityTime(act.timestamp)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {/* Lost positions (without timestamps, shown at end) */}
                     {lostPositions.map((pos, i) => (
                       <div key={`lost-${pos.tokenId}-${i}`} className="p-3 flex justify-between items-start gap-2" data-testid={`history-lost-${i}`}>
                         <div className="flex-1 min-w-0">
@@ -951,46 +1025,6 @@ export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, 
                         </div>
                       </div>
                     ))}
-                    {/* Activity from Polymarket API */}
-                    {activity.slice(0, 20).map((act, i) => (
-                    <div 
-                      key={`${act.transactionHash}-${i}`} 
-                      className="p-3 flex justify-between items-start gap-2" 
-                      data-testid={`activity-${i}`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <span className={cn(
-                          "inline-block px-1.5 py-0.5 rounded text-[9px] font-bold mb-1",
-                          act.type === "REDEEM" 
-                            ? "bg-wild-scout/20 text-wild-scout"
-                            : act.side === "SELL"
-                            ? "bg-wild-gold/20 text-wild-gold"
-                            : "bg-wild-trade/20 text-wild-trade"
-                        )}>
-                          {act.type === "REDEEM" ? "CLAIMED" : act.side === "SELL" ? "SOLD" : "BOUGHT"}
-                        </span>
-                        <div className="text-xs text-white leading-tight">{act.title}</div>
-                        <div className="text-[10px] font-mono text-zinc-500 mt-1">
-                          {act.outcome} {act.price ? `@ ${(act.price).toFixed(2)}` : ""}
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0 ml-2">
-                        <div className={cn(
-                          "text-sm font-mono font-bold",
-                          act.type === "REDEEM" 
-                            ? "text-wild-scout" 
-                            : act.side === "SELL" 
-                            ? "text-wild-gold" 
-                            : "text-white"
-                        )}>
-                          {act.type === "REDEEM" ? "+" : act.side === "SELL" ? "+" : "-"}${act.usdcSize.toFixed(2)}
-                        </div>
-                        <div className="text-[10px] text-zinc-500">
-                          {formatActivityTime(act.timestamp)}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
                   </>
                 )}
               </div>

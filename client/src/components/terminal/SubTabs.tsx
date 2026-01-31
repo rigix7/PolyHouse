@@ -9,7 +9,7 @@ interface SubTabsProps<T extends string> {
 export function SubTabs<T extends string>({ tabs, activeTab, onTabChange }: SubTabsProps<T>) {
   return (
     <div 
-      className="shrink-0 bg-zinc-950 border-b border-zinc-800 p-2 z-20"
+      className="shrink-0 sticky top-0 bg-zinc-950 border-b border-zinc-800 p-2 z-30"
       style={{ backgroundColor: "var(--wl-sorting-bg)" }}
     >
       <div className="grid gap-1 bg-zinc-900 p-1 rounded-lg font-mono text-[10px] font-bold" style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}>

@@ -1,6 +1,20 @@
-import { Wallet } from "lucide-react";
+import { Wallet, Zap, Flame, Target, Trophy, Crown, Shield, Rocket, Gem, Heart, Sparkles, Star, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWhiteLabelTheme } from "@/hooks/useWhiteLabelTheme";
+
+const ICON_MAP: Record<string, LucideIcon> = {
+  zap: Zap,
+  flame: Flame,
+  target: Target,
+  trophy: Trophy,
+  crown: Crown,
+  shield: Shield,
+  rocket: Rocket,
+  gem: Gem,
+  heart: Heart,
+  sparkles: Sparkles,
+  star: Star,
+};
 
 interface HeaderProps {
   usdcBalance: number;
@@ -10,7 +24,9 @@ interface HeaderProps {
 }
 
 export function Header({ usdcBalance, wildBalance, onWalletClick, isConnected = false }: HeaderProps) {
-  const { brandName, logoUrl, pointsConfig } = useWhiteLabelTheme();
+  const { brandName, logoUrl, logoIcon, primaryColor, pointsConfig } = useWhiteLabelTheme();
+  
+  const LogoIconComponent = logoIcon && logoIcon !== "none" ? ICON_MAP[logoIcon] : null;
   
   const formatBalance = (value: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -27,10 +43,15 @@ export function Header({ usdcBalance, wildBalance, onWalletClick, isConnected = 
       className="h-14 shrink-0 flex items-center justify-between px-4 bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-800/50 z-30" 
       style={{ backgroundColor: "var(--wl-header-bg, rgba(24, 24, 27, 0.8))" }}
     >
-      <div className="flex items-center gap-2" style={{ color: "var(--wl-header-accent, var(--wl-brand-accent, #f43f5e))" }}>
-        {logoUrl && (
+      <div className="flex items-center gap-2">
+        {logoUrl ? (
           <img src={logoUrl} alt={brandName} className="h-6 w-auto" />
-        )}
+        ) : LogoIconComponent ? (
+          <LogoIconComponent 
+            className="h-5 w-5" 
+            style={{ color: "var(--wl-header-accent, var(--wl-brand-primary, " + primaryColor + "))" }} 
+          />
+        ) : null}
         <span 
           className="font-black italic tracking-tighter text-lg" 
           style={{ color: "var(--wl-header-text, #ffffff)" }}

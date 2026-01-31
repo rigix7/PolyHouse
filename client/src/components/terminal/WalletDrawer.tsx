@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import type { Wallet as WalletType } from "@shared/schema";
 import { DepositInstructions } from "./DepositInstructions";
 import { useBridgeApi, getAddressTypeForChain } from "@/hooks/useBridgeApi";
+import { useWhiteLabelTheme } from "@/hooks/useWhiteLabelTheme";
 import {
   Select,
   SelectContent,
@@ -91,6 +92,10 @@ export function WalletDrawer({
   const [bridgeDepositAddresses, setBridgeDepositAddresses] = useState<{ evm: string; svm: string; btc: string } | null>(null);
   const [isLoadingDepositAddresses, setIsLoadingDepositAddresses] = useState(false);
   const [depositAddressCopied, setDepositAddressCopied] = useState(false);
+  
+  const { pointsConfig } = useWhiteLabelTheme();
+  const showPoints = pointsConfig?.enabled ?? false;
+  const pointsName = pointsConfig?.name?.replace("$", "") || "WILD";
 
   const { createDeposit, getChainOptions } = useBridgeApi();
   const chainOptions = getChainOptions();
@@ -231,17 +236,19 @@ export function WalletDrawer({
                     </div>
                   </div>
 
-                  <div className="flex justify-between items-center p-3 bg-zinc-950 rounded-lg border border-zinc-800">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-wild-scout flex items-center justify-center text-[10px] font-bold text-zinc-950">
-                        W
+                  {showPoints && (
+                    <div className="flex justify-between items-center p-3 bg-zinc-950 rounded-lg border border-zinc-800">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-wild-scout flex items-center justify-center text-[10px] font-bold text-zinc-950">
+                          {pointsName.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="text-sm text-zinc-300">{pointsName}</span>
                       </div>
-                      <span className="text-sm text-zinc-300">WILD</span>
+                      <span className="font-mono font-bold text-white" data-testid="text-drawer-wild">
+                        {formatBalance(wallet.wildBalance)}
+                      </span>
                     </div>
-                    <span className="font-mono font-bold text-white" data-testid="text-drawer-wild">
-                      {formatBalance(wallet.wildBalance)}
-                    </span>
-                  </div>
+                  )}
 
                   <div className="flex justify-between items-center p-3 bg-gradient-to-r from-wild-brand/10 to-wild-trade/10 rounded-lg border border-zinc-800">
                     <span className="text-sm text-zinc-300">Total Value</span>

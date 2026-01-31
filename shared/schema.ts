@@ -441,6 +441,7 @@ export const themeConfigSchema = z.object({
   brand: z.object({
     name: z.string().default("POLYHOUSE"),
     logoUrl: z.string().optional(),
+    logoIcon: z.string().optional(), // Icon name from lucide-react (e.g., "zap", "flame", "trophy")
     primaryColor: z.string().default("#f43f5e"), // rose-500
     accentColor: z.string().default("#fbbf24"), // amber-400
   }).default({}),

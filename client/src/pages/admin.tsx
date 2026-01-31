@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Plus, Trash2, RefreshCw, Check, X, Link2, Loader2, ChevronDown, ChevronRight, Palette, Key, DollarSign, Eye, AlertTriangle, Star, Users } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, RefreshCw, Check, X, Link2, Loader2, ChevronDown, ChevronRight, Palette, Key, DollarSign, Eye, AlertTriangle, Star, Users, Zap, Flame, Target, Trophy, Crown, Shield, Rocket, Gem, Heart, Sparkles, type LucideIcon } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -1919,8 +1919,27 @@ function WhiteLabelSection() {
   });
   
   // Color picker helper
+  const PRESET_COLORS = [
+    { name: "Rose", value: "#f43f5e" },
+    { name: "Amber", value: "#f59e0b" },
+    { name: "Emerald", value: "#10b981" },
+    { name: "Blue", value: "#3b82f6" },
+    { name: "Violet", value: "#8b5cf6" },
+    { name: "Cyan", value: "#06b6d4" },
+    { name: "Pink", value: "#ec4899" },
+    { name: "Orange", value: "#f97316" },
+    { name: "White", value: "#ffffff" },
+    { name: "Zinc 50", value: "#fafafa" },
+    { name: "Zinc 200", value: "#e4e4e7" },
+    { name: "Zinc 400", value: "#a1a1aa" },
+    { name: "Zinc 600", value: "#52525b" },
+    { name: "Zinc 800", value: "#27272a" },
+    { name: "Zinc 900", value: "#18181b" },
+    { name: "Zinc 950", value: "#09090b" },
+  ];
+  
   const ColorPicker = ({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) => (
-    <div className="flex items-center gap-3">
+    <div className="flex flex-col gap-2">
       <div className="flex-1">
         <Label className="text-xs text-zinc-400">{label}</Label>
         <div className="flex items-center gap-2 mt-1">
@@ -1939,6 +1958,19 @@ function WhiteLabelSection() {
             data-testid={`input-${label.toLowerCase().replace(/\s+/g, "-")}`}
           />
         </div>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {PRESET_COLORS.map((preset) => (
+          <button
+            key={preset.value}
+            type="button"
+            onClick={() => onChange(preset.value)}
+            className={`w-5 h-5 rounded border transition-all ${value === preset.value ? 'border-white ring-1 ring-white' : 'border-zinc-700 hover:border-zinc-500'}`}
+            style={{ backgroundColor: preset.value }}
+            title={preset.name}
+            data-testid={`preset-${label.toLowerCase().replace(/\s+/g, "-")}-${preset.name.toLowerCase().replace(/\s+/g, "-")}`}
+          />
+        ))}
       </div>
     </div>
   );
@@ -2053,13 +2085,22 @@ function WhiteLabelSection() {
             <div className="bg-zinc-900 rounded-lg p-4 border border-zinc-700">
               <div className="text-xs text-zinc-500 mb-2">Preview</div>
               <div className="flex items-center gap-2">
-                <div 
-                  className="w-8 h-8 rounded flex items-center justify-center font-bold"
-                  style={{ backgroundColor: localTheme.brand?.primaryColor }}
-                >
-                  P
-                </div>
-                <span className="font-bold" style={{ color: localTheme.brand?.accentColor }}>
+                {(() => {
+                  const iconName = localTheme.brand?.logoIcon;
+                  const IconMap: Record<string, typeof Zap> = {
+                    zap: Zap, flame: Flame, target: Target, trophy: Trophy, crown: Crown,
+                    shield: Shield, rocket: Rocket, gem: Gem, heart: Heart, sparkles: Sparkles, star: Star
+                  };
+                  const IconComponent = iconName && iconName !== "none" ? IconMap[iconName] : null;
+                  
+                  if (localTheme.brand?.logoUrl) {
+                    return <img src={localTheme.brand.logoUrl} alt="Logo" className="w-6 h-6 object-contain" />;
+                  } else if (IconComponent) {
+                    return <IconComponent className="w-6 h-6" style={{ color: localTheme.brand?.primaryColor }} />;
+                  }
+                  return null;
+                })()}
+                <span className="font-bold italic tracking-tighter" style={{ color: localTheme.brand?.accentColor }}>
                   {localTheme.brand?.name || "POLYHOUSE"}
                 </span>
               </div>
@@ -2081,7 +2122,7 @@ function WhiteLabelSection() {
               />
             </div>
             <div>
-              <Label className="text-xs text-zinc-400">Logo URL</Label>
+              <Label className="text-xs text-zinc-400">Logo URL (optional)</Label>
               <Input
                 value={localTheme.brand?.logoUrl || ""}
                 onChange={(e) => setLocalTheme({
@@ -2092,6 +2133,52 @@ function WhiteLabelSection() {
                 className="mt-1"
                 data-testid="input-logo-url"
               />
+            </div>
+            <div className="md:col-span-2">
+              <Label className="text-xs text-zinc-400">Logo Icon (used if no URL provided)</Label>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {[
+                  { name: "none", icon: null },
+                  { name: "zap", icon: Zap },
+                  { name: "flame", icon: Flame },
+                  { name: "target", icon: Target },
+                  { name: "trophy", icon: Trophy },
+                  { name: "crown", icon: Crown },
+                  { name: "shield", icon: Shield },
+                  { name: "rocket", icon: Rocket },
+                  { name: "gem", icon: Gem },
+                  { name: "heart", icon: Heart },
+                  { name: "sparkles", icon: Sparkles },
+                  { name: "star", icon: Star },
+                ].map((item) => {
+                  const isSelected = (localTheme.brand?.logoIcon || "none") === item.name;
+                  const IconComponent = item.icon;
+                  return (
+                    <button
+                      key={item.name}
+                      type="button"
+                      onClick={() => setLocalTheme({
+                        ...localTheme,
+                        brand: { ...localTheme.brand, logoIcon: item.name }
+                      })}
+                      className={`w-10 h-10 rounded-lg border flex items-center justify-center transition-all ${
+                        isSelected 
+                          ? 'border-white bg-zinc-800 ring-1 ring-white' 
+                          : 'border-zinc-700 bg-zinc-900 hover:border-zinc-500'
+                      }`}
+                      style={isSelected ? { color: localTheme.brand?.primaryColor || "#f43f5e" } : undefined}
+                      title={item.name === "none" ? "No icon" : item.name}
+                      data-testid={`icon-${item.name}`}
+                    >
+                      {IconComponent ? (
+                        <IconComponent className="w-5 h-5" />
+                      ) : (
+                        <X className="w-4 h-4 text-zinc-600" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <ColorPicker
               label="Primary Color"
@@ -2130,7 +2217,7 @@ function WhiteLabelSection() {
               <h3 className="font-bold">Header Customization</h3>
               <p className="text-sm text-zinc-500">Style the top navigation bar</p>
             </div>
-            {/* Preview */}
+            {/* Preview - matches actual Header component behavior */}
             <div 
               className="rounded-lg p-3 border border-zinc-700 min-w-[200px]"
               style={{ backgroundColor: localTheme.header?.backgroundColor }}
@@ -2138,15 +2225,17 @@ function WhiteLabelSection() {
               <div className="text-xs text-zinc-500 mb-2">Preview</div>
               <div className="flex items-center justify-between">
                 <span 
-                  className="font-bold text-sm"
-                  style={{ color: localTheme.header?.accentColor }}
+                  className="font-bold text-sm italic tracking-tighter"
+                  style={{ color: localTheme.header?.textColor }}
                 >
                   {localTheme.brand?.name || "POLYHOUSE"}
                 </span>
                 <div 
-                  className="w-6 h-6 rounded-full bg-zinc-700"
-                  style={{ borderColor: localTheme.header?.textColor, borderWidth: 2 }}
-                />
+                  className="w-6 h-6 rounded-full flex items-center justify-center"
+                  style={{ backgroundColor: localTheme.header?.accentColor }}
+                >
+                  <span className="text-[8px] text-zinc-900 font-bold">W</span>
+                </div>
               </div>
             </div>
           </div>
@@ -2161,7 +2250,7 @@ function WhiteLabelSection() {
               })}
             />
             <ColorPicker
-              label="Text Color"
+              label="Brand Text Color"
               value={localTheme.header?.textColor || "#fafafa"}
               onChange={(v) => setLocalTheme({
                 ...localTheme,
@@ -2169,7 +2258,7 @@ function WhiteLabelSection() {
               })}
             />
             <ColorPicker
-              label="Accent Color"
+              label="Accent Color (Logo area)"
               value={localTheme.header?.accentColor || "#fbbf24"}
               onChange={(v) => setLocalTheme({
                 ...localTheme,

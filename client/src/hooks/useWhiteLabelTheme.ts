@@ -144,6 +144,8 @@ export function useWhiteLabelTheme() {
     isLoading,
     brandName: (config?.themeConfig as ThemeConfig)?.brand?.name || "POLYHOUSE",
     logoUrl: (config?.themeConfig as ThemeConfig)?.brand?.logoUrl,
+    logoIcon: (config?.themeConfig as ThemeConfig)?.brand?.logoIcon,
+    primaryColor: (config?.themeConfig as ThemeConfig)?.brand?.primaryColor || "#f43f5e",
     pointsConfig,
   };
 }

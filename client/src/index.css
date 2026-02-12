@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* WILDCARD TERMINAL - DARK MODE ONLY */
+/* POLYHOUSE TERMINAL - DARK MODE ONLY */
 :root {
   --button-outline: rgba(255,255,255, .10);
   --badge-outline: rgba(255,255,255, .05);

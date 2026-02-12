@@ -1,7 +1,7 @@
-# Wildcard Sports Prediction Terminal
+# PolyHouse
 
 ## Overview
-Wildcard is a sports prediction terminal application with a HUD-style dark interface. Its primary purpose is to provide a platform for gasless betting using the Polymarket Builder Relayer pattern, player scouting with funding curves, and real-time trading. The project aims to deliver a fully functional MVP with core features including live betting markets, player launchpads, token trading, and a user dashboard.
+PolyHouse is a white-label prediction market platform built on Polymarket with a HUD-style dark interface. Its primary purpose is to provide a platform for gasless betting using the Polymarket Builder Relayer pattern. The project aims to deliver a fully functional MVP with core features including live betting markets and a user dashboard.
 
 ## User Preferences
 The user prefers a dark-themed interface with neon accents.
@@ -16,8 +16,6 @@ The user prefers a dark-themed interface with neon accents.
 - **UI/UX**: Zinc-950 dark mode with specific color accents (rose, emerald, blue, amber) and fonts (Inter, JetBrains Mono) for a terminal-like experience.
 - **Key Features**:
     - **Predict Tab**: Displays live betting markets with 3-way odds. Core markets (moneyline, totals) are prominently displayed, while other markets are in an expandable "More Markets" section.
-    - **Scout Tab**: Features a player launchpad with funding progress bars.
-    - **Trade Tab**: Provides an interface for player token trading.
     - **Dashboard**: Shows wallet balances, betting history, and position tracking with the ability to claim winnings. It includes an Activity tab displaying trade history from Polymarket.
     - **Admin CMS**: An `/admin` route for managing demo data, including a Sport Config Editor for dynamic market type discovery and configuration.
     - **Betting Mechanics**: Supports placing limit orders on Polymarket CLOB. The BetSlip dynamically shows outcome-specific labels and provides inline success/error panels for bet confirmation.

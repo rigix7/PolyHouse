@@ -20,20 +20,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { fetchSportsWithMarketTypes, type SportWithMarketTypes } from "@/lib/polymarket";
-import type { Market, Player, InsertMarket, InsertPlayer, AdminSettings, Futures, SportFieldConfig, SportMarketConfig, PolymarketTagRecord, FuturesCategory, WhiteLabelConfig, ThemeConfig, ApiCredentials, FeeConfig, FeeWallet, PointsConfig } from "@shared/schema";
+import type { Market, InsertMarket, AdminSettings, Futures, SportFieldConfig, SportMarketConfig, PolymarketTagRecord, FuturesCategory, WhiteLabelConfig, ThemeConfig, ApiCredentials, FeeConfig, FeeWallet, PointsConfig } from "@shared/schema";
 import { themeConfigSchema } from "@shared/schema";
-
-const playerFormSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  symbol: z.string().min(1, "Symbol is required").max(6, "Max 6 characters"),
-  team: z.string().min(1, "Team is required"),
-  sport: z.string().min(1, "Sport is required"),
-  fundingTarget: z.number().min(1000, "Minimum 1,000"),
-  fundingCurrent: z.number().min(0),
-  status: z.enum(["offering", "available", "closed"]),
-});
-
-type PlayerFormData = z.infer<typeof playerFormSchema>;
 
 function extractSlugFromInput(input: string): string {
   const trimmed = input.trim();
@@ -50,10 +38,9 @@ function extractSlugFromInput(input: string): string {
 
 export default function AdminPage() {
   const { toast } = useToast();
-  const [activeSection, setActiveSection] = useState<"tags" | "matchday" | "futures" | "players" | "wild" | "theme">("tags");
+  const [activeSection, setActiveSection] = useState<"tags" | "matchday" | "futures" | "wild" | "theme">("tags");
   const [sportsData, setSportsData] = useState<SportWithMarketTypes[]>([]);
   const [loadingLeagues, setLoadingLeagues] = useState(false);
-  const [showPlayerForm, setShowPlayerForm] = useState(false);
   const [futuresSlug, setFuturesSlug] = useState("");
   const [fetchingEvent, setFetchingEvent] = useState(false);
   const [expandedSports, setExpandedSports] = useState<Set<string>>(new Set());
@@ -61,25 +48,8 @@ export default function AdminPage() {
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
 
-  const playerForm = useForm<PlayerFormData>({
-    resolver: zodResolver(playerFormSchema),
-    defaultValues: {
-      name: "",
-      symbol: "",
-      team: "",
-      sport: "Basketball",
-      fundingTarget: 100000,
-      fundingCurrent: 0,
-      status: "offering",
-    },
-  });
-
   const { data: markets = [], isLoading: marketsLoading } = useQuery<Market[]>({
     queryKey: ["/api/markets"],
-  });
-
-  const { data: players = [], isLoading: playersLoading } = useQuery<Player[]>({
-    queryKey: ["/api/players"],
   });
 
   const { data: futuresList = [], isLoading: futuresLoading } = useQuery<Futures[]>({
@@ -438,57 +408,6 @@ export default function AdminPage() {
     } finally {
       setFetchingEvent(false);
     }
-  };
-
-  const createPlayerMutation = useMutation({
-    mutationFn: async (player: InsertPlayer) => {
-      return apiRequest("POST", "/api/players", player);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/players"] });
-      toast({ title: "Player created successfully" });
-      setShowPlayerForm(false);
-      playerForm.reset();
-    },
-  });
-
-  const deletePlayerMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return apiRequest("DELETE", `/api/players/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/players"] });
-      toast({ title: "Player deleted" });
-    },
-  });
-
-  const onSubmitPlayer = (data: PlayerFormData) => {
-    const fundingPercentage = Math.round((data.fundingCurrent / data.fundingTarget) * 100);
-    const avatarInitials = data.name
-      .split(" ")
-      .map(n => n[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase();
-
-    const newPlayer: InsertPlayer = {
-      name: data.name,
-      symbol: data.symbol.toUpperCase(),
-      team: data.team,
-      sport: data.sport,
-      avatarInitials,
-      fundingTarget: data.fundingTarget,
-      fundingCurrent: data.fundingCurrent,
-      fundingPercentage,
-      generation: 1,
-      status: data.status,
-      stats: data.status === "available" ? {
-        holders: Math.floor(Math.random() * 500) + 50,
-        marketCap: data.fundingTarget,
-        change24h: 0,
-      } : undefined,
-    };
-    createPlayerMutation.mutate(newPlayer);
   };
 
   return (

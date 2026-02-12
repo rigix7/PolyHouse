@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { z } from "zod";
 import { storage } from "./storage";
-import { insertMarketSchema, insertPlayerSchema, insertBetSchema, insertTradeSchema, insertFuturesSchema, insertSportFieldConfigSchema, insertSportMarketConfigSchema } from "@shared/schema";
+import { insertMarketSchema, insertBetSchema, insertFuturesSchema, insertSportFieldConfigSchema, insertSportMarketConfigSchema } from "@shared/schema";
 import { buildHmacSignature, type BuilderApiKeyCreds } from "@polymarket/builder-signing-sdk";
 
 // Polymarket Builder credentials (server-side only)
@@ -394,98 +394,6 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/players", async (req, res) => {
-    try {
-      const players = await storage.getPlayers();
-      res.json(players);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch players" });
-    }
-  });
-
-  app.get("/api/players/:id", async (req, res) => {
-    try {
-      const player = await storage.getPlayer(req.params.id);
-      if (!player) {
-        return res.status(404).json({ error: "Player not found" });
-      }
-      res.json(player);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch player" });
-    }
-  });
-
-  app.post("/api/players", async (req, res) => {
-    try {
-      const parsed = insertPlayerSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ error: parsed.error.message });
-      }
-      const player = await storage.createPlayer(parsed.data);
-      res.status(201).json(player);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to create player" });
-    }
-  });
-
-  app.post("/api/players/fund", async (req, res) => {
-    try {
-      const { playerId, amount } = req.body;
-      if (!playerId || !amount) {
-        return res.status(400).json({ error: "playerId and amount required" });
-      }
-
-      const player = await storage.getPlayer(playerId);
-      if (!player) {
-        return res.status(404).json({ error: "Player not found" });
-      }
-
-      const wallet = await storage.getWallet();
-      if (wallet.wildBalance < amount) {
-        return res.status(400).json({ error: "Insufficient WILD balance" });
-      }
-
-      const newFunding = player.fundingCurrent + amount;
-      const newPercentage = Math.min(100, Math.round((newFunding / player.fundingTarget) * 100));
-      const newStatus = newPercentage >= 100 ? "available" : player.status;
-
-      const updatedStats = newStatus === "available" ? {
-        holders: (player.stats?.holders || 0) + Math.floor(Math.random() * 50) + 10,
-        marketCap: newFunding,
-        change24h: player.stats?.change24h || 0,
-      } : (player.stats || { holders: 0, marketCap: 0, change24h: 0 });
-
-      const updated = await storage.updatePlayer(playerId, {
-        fundingCurrent: newFunding,
-        fundingPercentage: newPercentage,
-        status: newStatus as "offering" | "available" | "closed",
-        stats: updatedStats,
-      });
-
-      const newWildBalance = wallet.wildBalance - amount;
-      await storage.updateWallet({
-        wildBalance: newWildBalance,
-        totalValue: wallet.usdcBalance + newWildBalance,
-      });
-
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fund player" });
-    }
-  });
-
-  app.delete("/api/players/:id", async (req, res) => {
-    try {
-      const deleted = await storage.deletePlayer(req.params.id);
-      if (!deleted) {
-        return res.status(404).json({ error: "Player not found" });
-      }
-      res.status(204).send();
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete player" });
-    }
-  });
-
   app.get("/api/bets", async (req, res) => {
     try {
       const bets = await storage.getBets();
@@ -520,51 +428,6 @@ export async function registerRoutes(
       res.status(201).json(bet);
     } catch (error) {
       res.status(500).json({ error: "Failed to create bet" });
-    }
-  });
-
-  app.get("/api/trades", async (req, res) => {
-    try {
-      const trades = await storage.getTrades();
-      res.json(trades);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch trades" });
-    }
-  });
-
-  app.post("/api/trades", async (req, res) => {
-    try {
-      const { playerId, type, amount } = req.body;
-      if (!playerId || !type || !amount) {
-        return res.status(400).json({ error: "playerId, type, and amount required" });
-      }
-
-      const player = await storage.getPlayer(playerId);
-      if (!player) {
-        return res.status(404).json({ error: "Player not found" });
-      }
-
-      const marketCap = player.stats?.marketCap || 10000;
-      const price = marketCap / 1000;
-      const total = price * (amount / 100);
-
-      const wallet = await storage.getWallet();
-      if (type === "buy" && wallet.usdcBalance < total) {
-        return res.status(400).json({ error: "Insufficient USDC balance" });
-      }
-
-      const trade = await storage.createTrade({
-        playerId,
-        playerName: player.name,
-        playerSymbol: player.symbol,
-        type,
-        amount,
-        price,
-        total,
-      });
-      res.status(201).json(trade);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to create trade" });
     }
   });
 

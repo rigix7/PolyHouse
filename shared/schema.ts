@@ -471,6 +471,8 @@ export const themeConfigSchema = z.object({
     textColor: z.string().default("#fafafa"), // zinc-50
     // Market type accent colors
     moneylineAccent: z.string().default("#f43f5e"), // rose-500 for moneyline markets
+    moneylineAwayAccent: z.string().default("#3b82f6"), // blue-500 for away team
+    moneylineDrawAccent: z.string().default("#71717a"), // zinc-500 for draw
     totalsAccent: z.string().default("#3b82f6"), // blue-500 for totals/over-under markets
     moreMarketsAccent: z.string().default("#8b5cf6"), // violet-500 for more markets section
   }).default({}),

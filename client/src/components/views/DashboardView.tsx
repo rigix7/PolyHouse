@@ -13,19 +13,18 @@ import { useBridgeApi, getAddressTypeForChain, type SupportedAsset, type Transac
 import { DepositInstructions } from "@/components/terminal/DepositInstructions";
 import { useWhiteLabelTheme } from "@/hooks/useWhiteLabelTheme";
 import { useToast } from "@/hooks/use-toast";
-import type { Wallet as WalletType, Bet, Trade } from "@shared/schema";
+import type { Wallet as WalletType, Bet } from "@shared/schema";
 
 interface DashboardViewProps {
   wallet: WalletType | null;
   bets: Bet[];
-  trades: Trade[];
   isLoading: boolean;
   walletAddress?: string;
   safeAddress?: string | null;
   isSafeDeployed?: boolean;
 }
 
-export function DashboardView({ wallet, bets, trades, isLoading, walletAddress, safeAddress, isSafeDeployed }: DashboardViewProps) {
+export function DashboardView({ wallet, bets, isLoading, walletAddress, safeAddress, isSafeDeployed }: DashboardViewProps) {
   const { pointsConfig } = useWhiteLabelTheme();
   const { toast } = useToast();
   

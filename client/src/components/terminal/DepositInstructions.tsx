@@ -240,7 +240,7 @@ export function DepositInstructions({ safeAddress }: DepositInstructionsProps) {
 
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3">
         <p className="text-[10px] text-zinc-500 leading-relaxed">
-          <span className="font-medium text-zinc-400">Disclaimer:</span> By using this deposit service, you acknowledge that you understand the risks involved in cryptocurrency transactions. Wildcard is not responsible for any loss of funds due to user error, including but not limited to: sending unsupported tokens, using incorrect networks, sending to wrong addresses, or failing to meet minimum deposit requirements. All transactions are final and irreversible.
+          <span className="font-medium text-zinc-400">Disclaimer:</span> By using this deposit service, you acknowledge that you understand the risks involved in cryptocurrency transactions. PolyHouse is not responsible for any loss of funds due to user error, including but not limited to: sending unsupported tokens, using incorrect networks, sending to wrong addresses, or failing to meet minimum deposit requirements. All transactions are final and irreversible.
         </p>
       </div>
 

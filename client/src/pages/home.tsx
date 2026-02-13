@@ -17,7 +17,7 @@ import useClobClient from "@/hooks/useClobClient";
 import useClobOrder from "@/hooks/useClobOrder";
 import { useLivePrices } from "@/hooks/useLivePrices";
 import useFeeCollection from "@/hooks/useFeeCollection";
-import type { Market, Player, Trade, Bet, Wallet, AdminSettings, WalletRecord, Futures, PolymarketTagRecord, FuturesCategory } from "@shared/schema";
+import type { Market, Bet, Wallet, AdminSettings, WalletRecord, Futures, PolymarketTagRecord, FuturesCategory } from "@shared/schema";
 
 export default function HomePage() {
   const { authenticated: isConnected, eoaAddress: address, login, logout, isReady } = useWallet();
@@ -94,14 +94,6 @@ export default function HomePage() {
   const { data: walletRecord } = useQuery<WalletRecord>({
     queryKey: ["/api/wallet", address],
     enabled: !!address,
-  });
-
-  const { data: players = [], isLoading: playersLoading } = useQuery<Player[]>({
-    queryKey: ["/api/players"],
-  });
-
-  const { data: trades = [], isLoading: tradesLoading } = useQuery<Trade[]>({
-    queryKey: ["/api/trades"],
   });
 
   const { data: bets = [], isLoading: betsLoading } = useQuery<Bet[]>({
@@ -399,32 +391,6 @@ export default function HomePage() {
     },
   });
 
-  const fundPlayerMutation = useMutation({
-    mutationFn: async (data: { playerId: string; amount: number }) => {
-      return apiRequest("POST", "/api/players/fund", data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/players"] });
-      showToast("Funded 500 WILD successfully!", "success");
-    },
-    onError: () => {
-      showToast("Failed to fund player", "error");
-    },
-  });
-
-  const tradeMutation = useMutation({
-    mutationFn: async (data: { playerId: string; type: "buy" | "sell"; amount: number }) => {
-      return apiRequest("POST", "/api/trades", data);
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/trades"] });
-      showToast(`${variables.type === "buy" ? "Bought" : "Sold"} successfully!`, "success");
-    },
-    onError: () => {
-      showToast("Trade failed", "error");
-    },
-  });
-
   const handlePlaceBet = (
     marketId: string, 
     outcomeId: string, 
@@ -644,14 +610,6 @@ export default function HomePage() {
     setShowBetSlip(false);
   };
 
-  const handleFundPlayer = (playerId: string, amount: number) => {
-    fundPlayerMutation.mutate({ playerId, amount });
-  };
-
-  const handleTrade = (playerId: string, type: "buy" | "sell") => {
-    tradeMutation.mutate({ playerId, type, amount: 100 });
-  };
-
   const handleConnect = () => {
     login();
     setIsWalletOpen(false);
@@ -694,8 +652,7 @@ export default function HomePage() {
             <DashboardView
               wallet={isConnected ? wallet : null}
               bets={bets}
-              trades={trades}
-              isLoading={betsLoading || tradesLoading}
+              isLoading={betsLoading}
               walletAddress={safeAddress || address}
               safeAddress={safeAddress}
               isSafeDeployed={isSafeDeployed}

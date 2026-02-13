@@ -8,7 +8,7 @@ export default function NotFound() {
       <div className="text-center max-w-md">
         <div className="flex items-center justify-center gap-2 text-wild-brand mb-6">
           <Zap className="w-8 h-8 fill-current" />
-          <span className="font-black italic tracking-tighter text-2xl text-white">WILDCARD</span>
+          <span className="font-black italic tracking-tighter text-2xl text-white">POLYHOUSE</span>
         </div>
         
         <div className="font-mono text-6xl font-black text-zinc-700 mb-4">404</div>

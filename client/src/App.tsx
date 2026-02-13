@@ -4,16 +4,11 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import WalletProvider from "@/providers/WalletProvider";
+import { ThemeProvider } from "@/providers/ThemeProvider";
 import { GeoblockBanner } from "@/components/GeoblockBanner";
-import { useWhiteLabelTheme } from "@/hooks/useWhiteLabelTheme";
 import NotFound from "@/pages/not-found";
 import HomePage from "@/pages/home";
 import AdminPage from "@/pages/admin";
-
-function ThemeInitializer({ children }: { children: React.ReactNode }) {
-  useWhiteLabelTheme();
-  return <>{children}</>;
-}
 
 function Router() {
   return (
@@ -32,27 +27,27 @@ function App() {
     console.warn("VITE_PRIVY_APP_ID not configured");
     return (
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <ThemeInitializer>
+        <ThemeProvider>
+          <TooltipProvider>
             <Toaster />
             <Router />
-          </ThemeInitializer>
-        </TooltipProvider>
+          </TooltipProvider>
+        </ThemeProvider>
       </QueryClientProvider>
     );
   }
 
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <ThemeInitializer>
+      <ThemeProvider>
+        <TooltipProvider>
           <WalletProvider appId={privyAppId}>
             <GeoblockBanner />
             <Toaster />
             <Router />
           </WalletProvider>
-        </ThemeInitializer>
-      </TooltipProvider>
+        </TooltipProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

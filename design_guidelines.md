@@ -1,4 +1,4 @@
-# PolyHouse - Design Guidelines
+# Wildcard Sports Prediction Terminal - Design Guidelines
 
 ## Design Approach
 **Reference-Based Approach**: Terminal/HUD-style sports betting interface inspired by professional trading platforms and gaming interfaces. Think Bloomberg Terminal meets esports HUD - data-dense, efficient, futuristic.
@@ -18,7 +18,7 @@
 - **Monospace**: JetBrains Mono (400, 500, 700) - Numbers, balances, timestamps, data
 
 **Hierarchy:**
-- App Title: `text-lg font-black italic tracking-tighter` (POLYHOUSE logo)
+- App Title: `text-lg font-black italic tracking-tighter` (WILDCARD logo)
 - Section Headers: `text-xs font-bold tracking-wider uppercase text-zinc-400`
 - Card Titles: `text-base font-black text-white`
 - Body Text: `text-sm font-normal`
@@ -38,8 +38,8 @@
 
 **Neon Accents (Context-Based):**
 - Predict Tab: `#fb7185` (Rose/Pink) - wild-brand
-- Success/Secondary: `#34d399` (Emerald/Green) - wild-scout
-- Info/Tertiary: `#3b82f6` (Blue) - wild-trade
+- Scout Tab: `#34d399` (Emerald/Green) - wild-scout  
+- Trade Tab: `#3b82f6` (Blue) - wild-trade
 - Dashboard/Rank: `#fbbf24` (Amber/Gold) - wild-gold
 
 **Semantic Colors:**

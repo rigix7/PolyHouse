@@ -1,7 +1,7 @@
 /**
  * Admin Panel – Full version with all features and password protection
  *
- * PolyHouse admin panel with password protection via ADMIN_SECRET_KEY.
+ * Forked from Wildcards with Scout/Trade/Players removed.
  *
  * Tabs:
  *   - Tags          – Sync & toggle Polymarket sport tags
@@ -11,13 +11,10 @@
  *   - Points Config – Enable/disable points, referral %, reset schedule
  *   - Fees          – Fee BPS, multi-wallet splits
  *   - White Label   – Theme / brand customization (colors, logo, etc.)
- *   - Referrals     – Referral program management
  */
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   ArrowLeft,
@@ -111,6 +108,8 @@ interface WhiteLabelConfig {
   updatedAt: string;
 }
 
+// ---------------------------------------------------------------------------
+// Player form schema
 // ---------------------------------------------------------------------------
 // Auth-aware fetch helper
 // ---------------------------------------------------------------------------
@@ -742,18 +741,19 @@ function ColorPicker({ label, value, onChange }: { label: string; value: string;
 }
 
 const PRESET_THEMES: Record<string, { name: string; description: string; icon: typeof Zap; theme: ThemeConfig }> = {
-  polyhouse: {
-    name: "PolyHouse",
-    description: "Original PolyHouse theme - bold orange and gold",
+  wildcards: {
+    name: "Wildcards",
+    description: "Original Wildcards theme - bold orange and gold",
     icon: Flame,
     theme: {
-      brand: { name: "POLYHOUSE", primaryColor: "#f43f5e", accentColor: "#fbbf24" },
+      brand: { name: "WILDCARDS", primaryColor: "#f43f5e", accentColor: "#fbbf24" },
       header: { backgroundColor: '#09090b', textColor: '#fafafa', accentColor: '#fbbf24' },
       betSlip: { backgroundColor: '#18181b', cardColor: '#27272a', primaryButtonColor: '#f43f5e', successColor: '#10b981', textColor: '#fafafa' },
       marketCards: { backgroundColor: '#18181b', hoverColor: '#27272a', borderColor: '#3f3f46', oddsBadgeColor: '#fbbf24', textColor: '#fafafa', moneylineAccent: '#f43f5e', moneylineAwayAccent: '#3b82f6', moneylineDrawAccent: '#71717a', totalsAccent: '#3b82f6', moreMarketsAccent: '#8b5cf6' },
       sortingBar: { backgroundColor: '#09090b', activeTabColor: '#f43f5e', inactiveTabColor: '#71717a' },
       bottomNav: { backgroundColor: '#09090b', activeColor: '#fbbf24', inactiveColor: '#71717a' },
       global: { successColor: '#10b981', errorColor: '#ef4444', warningColor: '#f59e0b' },
+      dashboard: { accentColor: '#3b82f6', actionColor: '#fbbf24', positiveColor: '#34d399', negativeColor: '#f43f5e' },
     },
   },
   professional: {
@@ -768,6 +768,7 @@ const PRESET_THEMES: Record<string, { name: string; description: string; icon: t
       sortingBar: { backgroundColor: '#ffffff', activeTabColor: '#3b82f6', inactiveTabColor: '#9ca3af' },
       bottomNav: { backgroundColor: '#ffffff', activeColor: '#3b82f6', inactiveColor: '#9ca3af' },
       global: { successColor: '#10b981', errorColor: '#ef4444', warningColor: '#f59e0b' },
+      dashboard: { accentColor: '#3b82f6', actionColor: '#3b82f6', positiveColor: '#10b981', negativeColor: '#ef4444' },
     },
   },
   neon: {
@@ -782,6 +783,7 @@ const PRESET_THEMES: Record<string, { name: string; description: string; icon: t
       sortingBar: { backgroundColor: '#0a0a0f', activeTabColor: '#00ff88', inactiveTabColor: '#6b7280' },
       bottomNav: { backgroundColor: '#0a0a0f', activeColor: '#00ff88', inactiveColor: '#6b7280' },
       global: { successColor: '#00ff88', errorColor: '#ff0055', warningColor: '#ffaa00' },
+      dashboard: { accentColor: '#00d4ff', actionColor: '#00ff88', positiveColor: '#00ff88', negativeColor: '#ff0055' },
     },
   },
   luxury: {
@@ -796,6 +798,7 @@ const PRESET_THEMES: Record<string, { name: string; description: string; icon: t
       sortingBar: { backgroundColor: '#1c1917', activeTabColor: '#f59e0b', inactiveTabColor: '#78716c' },
       bottomNav: { backgroundColor: '#1c1917', activeColor: '#f59e0b', inactiveColor: '#78716c' },
       global: { successColor: '#10b981', errorColor: '#ef4444', warningColor: '#f59e0b' },
+      dashboard: { accentColor: '#fbbf24', actionColor: '#f59e0b', positiveColor: '#10b981', negativeColor: '#ef4444' },
     },
   },
   earth: {
@@ -810,6 +813,7 @@ const PRESET_THEMES: Record<string, { name: string; description: string; icon: t
       sortingBar: { backgroundColor: '#fefce8', activeTabColor: '#10b981', inactiveTabColor: '#6b7280' },
       bottomNav: { backgroundColor: '#fefce8', activeColor: '#10b981', inactiveColor: '#6b7280' },
       global: { successColor: '#10b981', errorColor: '#ef4444', warningColor: '#f59e0b' },
+      dashboard: { accentColor: '#059669', actionColor: '#10b981', positiveColor: '#10b981', negativeColor: '#ef4444' },
     },
   },
   midnight: {
@@ -824,6 +828,7 @@ const PRESET_THEMES: Record<string, { name: string; description: string; icon: t
       sortingBar: { backgroundColor: '#0f0a1f', activeTabColor: '#a855f7', inactiveTabColor: '#6b7280' },
       bottomNav: { backgroundColor: '#0f0a1f', activeColor: '#a855f7', inactiveColor: '#6b7280' },
       global: { successColor: '#10b981', errorColor: '#ef4444', warningColor: '#f59e0b' },
+      dashboard: { accentColor: '#c084fc', actionColor: '#a855f7', positiveColor: '#10b981', negativeColor: '#ef4444' },
     },
   },
 };
@@ -839,8 +844,8 @@ function WhiteLabelSection({
 }: {
   localTheme: ThemeConfig;
   setLocalTheme: (t: ThemeConfig) => void;
-  activeThemeTab: "brand" | "header" | "betslip" | "marketCards" | "sortingBar" | "bottomNav";
-  setActiveThemeTab: (t: "brand" | "header" | "betslip" | "marketCards" | "sortingBar" | "bottomNav") => void;
+  activeThemeTab: "brand" | "header" | "betslip" | "marketCards" | "sortingBar" | "bottomNav" | "dashboard";
+  setActiveThemeTab: (t: "brand" | "header" | "betslip" | "marketCards" | "sortingBar" | "bottomNav" | "dashboard") => void;
   onSave: () => void;
   onSaveTheme: (theme: ThemeConfig) => void;
   isSaving: boolean;
@@ -988,7 +993,7 @@ function WhiteLabelSection({
                     className="text-xl font-bold italic tracking-tighter"
                     style={{ color: localTheme.header?.textColor }}
                   >
-                    {localTheme.brand?.name || "POLYHOUSE"}
+                    {localTheme.brand?.name || "WILDCARDS"}
                   </span>
                   <div
                     className="w-10 h-10 rounded-full flex items-center justify-center"
@@ -1250,6 +1255,9 @@ function WhiteLabelSection({
           <Button variant={activeThemeTab === "bottomNav" ? "default" : "outline"} size="sm" onClick={() => setActiveThemeTab("bottomNav")}>
             Bottom Nav
           </Button>
+          <Button variant={activeThemeTab === "dashboard" ? "default" : "outline"} size="sm" onClick={() => setActiveThemeTab("dashboard")}>
+            Dashboard
+          </Button>
         </div>
       </div>
 
@@ -1275,7 +1283,7 @@ function WhiteLabelSection({
                   return null;
                 })()}
                 <span className="font-bold italic tracking-tighter" style={{ color: localTheme.brand?.accentColor }}>
-                  {localTheme.brand?.name || "POLYHOUSE"}
+                  {localTheme.brand?.name || "WILDCARDS"}
                 </span>
               </div>
             </div>
@@ -1287,7 +1295,7 @@ function WhiteLabelSection({
               <Input
                 value={localTheme.brand?.name || ""}
                 onChange={(e) => setLocalTheme({ ...localTheme, brand: { ...localTheme.brand, name: e.target.value } })}
-                placeholder="POLYHOUSE"
+                placeholder="WILDCARDS"
                 className="mt-1"
               />
             </div>
@@ -1346,7 +1354,7 @@ function WhiteLabelSection({
               <div className="text-xs text-zinc-500 mb-2">Preview</div>
               <div className="flex items-center justify-between">
                 <span className="font-bold text-sm italic tracking-tighter" style={{ color: localTheme.header?.textColor }}>
-                  {localTheme.brand?.name || "POLYHOUSE"}
+                  {localTheme.brand?.name || "WILDCARDS"}
                 </span>
                 <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: localTheme.header?.accentColor }}>
                   <span className="text-[8px] text-zinc-900 font-bold">W</span>
@@ -1513,6 +1521,46 @@ function WhiteLabelSection({
           <Button onClick={onSave} disabled={isSaving}>
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
             Save Bottom Nav Settings
+          </Button>
+        </Card>
+      )}
+
+      {/* ---- Dashboard ---- */}
+      {activeThemeTab === "dashboard" && (
+        <Card className="p-4 space-y-4">
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="font-bold">Dashboard Customization</h3>
+              <p className="text-sm text-zinc-500">Customize the wallet dashboard accent colors</p>
+            </div>
+            <div className="bg-zinc-900 rounded-lg p-3 min-w-[200px] border border-zinc-700">
+              <div className="text-xs text-zinc-500 mb-2">Preview</div>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full" style={{ backgroundColor: localTheme.dashboard?.accentColor }} />
+                  <span className="text-[10px]" style={{ color: localTheme.dashboard?.accentColor }}>Activity</span>
+                  <div className="w-4 h-4 rounded-full" style={{ backgroundColor: localTheme.dashboard?.positiveColor }} />
+                  <span className="text-[10px]" style={{ color: localTheme.dashboard?.positiveColor }}>Won</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full" style={{ backgroundColor: localTheme.dashboard?.negativeColor }} />
+                  <span className="text-[10px]" style={{ color: localTheme.dashboard?.negativeColor }}>Lost</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold text-zinc-950" style={{ backgroundColor: localTheme.dashboard?.actionColor }}>Withdraw</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <ColorPicker label="Info Accent (Activity, links)" value={localTheme.dashboard?.accentColor || "#3b82f6"} onChange={(v) => setLocalTheme({ ...localTheme, dashboard: { ...localTheme.dashboard, accentColor: v } })} />
+            <ColorPicker label="Action Button (Withdraw, Sell)" value={localTheme.dashboard?.actionColor || "#fbbf24"} onChange={(v) => setLocalTheme({ ...localTheme, dashboard: { ...localTheme.dashboard, actionColor: v } })} />
+            <ColorPicker label="Positive (Won, Profit)" value={localTheme.dashboard?.positiveColor || "#34d399"} onChange={(v) => setLocalTheme({ ...localTheme, dashboard: { ...localTheme.dashboard, positiveColor: v } })} />
+            <ColorPicker label="Negative (Lost, Error)" value={localTheme.dashboard?.negativeColor || "#f43f5e"} onChange={(v) => setLocalTheme({ ...localTheme, dashboard: { ...localTheme.dashboard, negativeColor: v } })} />
+          </div>
+
+          <Button onClick={onSave} disabled={isSaving}>
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+            Save Dashboard Settings
           </Button>
         </Card>
       )}
@@ -1763,7 +1811,7 @@ function AuthenticatedAdminPanel({ onLogout }: { onLogout: () => void }) {
   const [savingFees, setSavingFees] = useState(false);
   const [savingPoints, setSavingPoints] = useState(false);
   const [localTheme, setLocalTheme] = useState<ThemeConfig>(themeConfigSchema.parse({}));
-  const [activeThemeTab, setActiveThemeTab] = useState<"brand" | "header" | "betslip" | "marketCards" | "sortingBar" | "bottomNav">("brand");
+  const [activeThemeTab, setActiveThemeTab] = useState<"brand" | "header" | "betslip" | "marketCards" | "sortingBar" | "bottomNav" | "dashboard">("brand");
   const [savingTheme, setSavingTheme] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{
     type: "success" | "error";

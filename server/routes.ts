@@ -2,14 +2,14 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { z } from "zod";
 import { storage } from "./storage";
-import { insertMarketSchema, insertBetSchema, insertFuturesSchema, insertSportFieldConfigSchema, insertSportMarketConfigSchema } from "@shared/schema";
+import { insertMarketSchema, insertBetSchema, insertFuturesSchema } from "@shared/schema";
 import { buildHmacSignature, type BuilderApiKeyCreds } from "@polymarket/builder-signing-sdk";
 
 // Polymarket Builder credentials (server-side only)
 const BUILDER_CREDENTIALS: BuilderApiKeyCreds = {
-  key: process.env.DBOOK_BUILDER_API_KEY || "",
-  secret: process.env.DBOOK_BUILDER_SECRET || "",
-  passphrase: process.env.DBOOK_BUILDER_PASSPHRASE || "",
+  key: process.env.POLYMARKET_BUILDER_API_KEY || "",
+  secret: process.env.POLYMARKET_BUILDER_SECRET || "",
+  passphrase: process.env.POLYMARKET_BUILDER_PASSPHRASE || "",
 };
 
 const GAMMA_API_BASE = "https://gamma-api.polymarket.com";
@@ -64,49 +64,56 @@ export async function registerRoutes(
     res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  // Public theme config endpoint for ThemeProvider (no auth required)
+  app.get("/api/config/theme", async (_req, res) => {
+    try {
+      const config = await storage.getWhiteLabelConfig();
+      if (config) {
+        return res.json({
+          themeConfig: config.themeConfig,
+          pointsConfig: config.pointsConfig || null,
+          brandName: (config.themeConfig as any)?.brand?.name || null,
+        });
+      }
+      return res.json({ themeConfig: null, pointsConfig: null, brandName: null });
+    } catch (err) {
+      console.error("[Public ThemeConfig] Error:", err);
+      return res.json({ themeConfig: null, pointsConfig: null, brandName: null });
+    }
+  });
+
   // Fee configuration endpoint - returns runtime fee config for production
   app.get("/api/config/fees", async (req, res) => {
     try {
-      // First try to get config from database (white-label config)
-      const dbConfig = await storage.getWhiteLabelConfig();
-      
-      if (dbConfig?.feeConfig) {
-        const feeConfig = dbConfig.feeConfig;
-        const hasWallets = feeConfig.wallets && feeConfig.wallets.length > 0;
-        const hasLegacyAddress = !!feeConfig.feeWalletAddress;
-        const enabled = feeConfig.feeBps > 0 && (hasWallets || hasLegacyAddress);
-        
-        console.log("[FeeConfig API] Returning DB fee config:", { 
-          feeBps: feeConfig.feeBps, 
-          walletsCount: feeConfig.wallets?.length || 0,
-          hasLegacyAddress,
-          enabled 
-        });
-        
-        return res.json({
-          feeAddress: feeConfig.feeWalletAddress || "",
-          feeBps: feeConfig.feeBps,
-          enabled,
-          wallets: feeConfig.wallets || [],
-        });
+      // Try loading fee config from database first (admin-configured)
+      const wlConfig = await storage.getWhiteLabelConfig();
+      const dbFeeConfig = wlConfig?.feeConfig as { feeBps?: number; feeAddress?: string; enabled?: boolean; showFeeInUI?: boolean; wallets?: Array<{ address: string; percentage: number }> } | null;
+
+      if (dbFeeConfig && (dbFeeConfig.enabled || (dbFeeConfig.feeBps && dbFeeConfig.feeBps > 0))) {
+        // Determine the primary fee address from wallets or direct config
+        let feeAddress = dbFeeConfig.feeAddress || "";
+        if (!feeAddress && dbFeeConfig.wallets && dbFeeConfig.wallets.length > 0) {
+          feeAddress = dbFeeConfig.wallets[0].address;
+        }
+        const feeBps = dbFeeConfig.feeBps || 0;
+        const enabled = dbFeeConfig.enabled !== false && !!feeAddress && feeBps > 0;
+
+        const showFeeInUI = dbFeeConfig.showFeeInUI ?? true;
+        const wallets = dbFeeConfig.wallets || [];
+        console.log("[FeeConfig API] Returning DB fee config:", { feeAddress: feeAddress || "(not set)", feeBps, enabled, showFeeInUI, wallets: wallets.length });
+        return res.json({ feeAddress, feeBps, enabled, showFeeInUI, wallets });
       }
     } catch (err) {
-      console.warn("[FeeConfig API] Failed to load from database, falling back to env vars:", err);
+      console.warn("[FeeConfig API] Failed to load from DB, falling back to env vars:", err);
     }
-    
+
     // Fallback to environment variables
     const feeAddress = process.env.INTEGRATOR_FEE_ADDRESS || process.env.VITE_INTEGRATOR_FEE_ADDRESS || "";
     const feeBps = parseInt(process.env.INTEGRATOR_FEE_BPS || process.env.VITE_INTEGRATOR_FEE_BPS || "0", 10);
     const enabled = !!feeAddress && feeBps > 0;
-    
+
     console.log("[FeeConfig API] Returning env fee config:", { feeAddress: feeAddress || "(not set)", feeBps, enabled });
-    
-    res.json({
-      feeAddress,
-      feeBps,
-      enabled,
-      wallets: [],
-    });
+    res.json({ feeAddress, feeBps, enabled, showFeeInUI: true, wallets: [] });
   });
 
   // ========== Polymarket Bridge API Proxy ==========
@@ -423,6 +430,14 @@ export async function registerRoutes(
       // Award WILD points: 1 WILD per $1 bet
       if (walletAddress) {
         await storage.addWildPoints(walletAddress, amount);
+
+        // Track bet for referral system (non-blocking)
+        try {
+          const { ReferralPeriodService } = await import("../services/referral/ReferralPeriodService");
+          await new ReferralPeriodService().trackBet(walletAddress, amount);
+        } catch (err) {
+          // Silent failure - never break the bet flow
+        }
       }
 
       res.status(201).json(bet);
@@ -464,36 +479,16 @@ export async function registerRoutes(
         wildPoints = polyResult.wildPoints;
         activityCount = polyResult.activityCount;
         partial = polyResult.partial;
-        
-        // Store the Polymarket-derived points so referral calculations can use them
-        await storage.updateStoredWildPoints(record.address, wildPoints);
       } else {
         // Fall back to database calculation if Polymarket API fails
         wildPoints = await storage.getCalculatedWildPoints(address);
         usedFallback = true;
       }
       
-      // Get referral stats and points config to calculate referral bonus
-      const referralStats = await storage.getReferralStats(record.address);
-      const whiteLabelConfig = await storage.getWhiteLabelConfig();
-      const pointsConfig = whiteLabelConfig?.pointsConfig;
-      
-      let referralPoints = 0;
-      if (pointsConfig?.enabled && pointsConfig?.referralEnabled && referralStats.referralsCount > 0) {
-        // Calculate referral points as percentage of referred users' points
-        referralPoints = Math.floor(referralStats.pointsEarned);
-      }
-      
-      // Total points = trading points + referral bonus
-      const totalPoints = wildPoints + referralPoints;
-      
       // Return record with Polymarket-calculated WILD points as source of truth
       res.json({
         ...record,
-        wildPoints: totalPoints,
-        tradingPoints: wildPoints,
-        referralPoints,
-        referralsCount: referralStats.referralsCount,
+        wildPoints,
         activityCount,
         usedFallback,
         partial, // true if data may be incomplete (hit API limit)
@@ -896,476 +891,6 @@ export async function registerRoutes(
     }
   });
 
-  // Sport Field Config endpoints for admin UI
-  app.get("/api/admin/sport-configs", async (req, res) => {
-    try {
-      const configs = await storage.getSportFieldConfigs();
-      res.json(configs);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch sport configs" });
-    }
-  });
-
-  app.get("/api/admin/sport-configs/:sportSlug", async (req, res) => {
-    try {
-      const config = await storage.getSportFieldConfig(req.params.sportSlug);
-      if (!config) {
-        return res.status(404).json({ error: "Sport config not found" });
-      }
-      res.json(config);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch sport config" });
-    }
-  });
-
-  app.post("/api/admin/sport-configs", async (req, res) => {
-    try {
-      const parsed = insertSportFieldConfigSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ error: parsed.error.message });
-      }
-      const config = await storage.createOrUpdateSportFieldConfig(parsed.data);
-      res.status(201).json(config);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to create sport config" });
-    }
-  });
-
-  app.put("/api/admin/sport-configs/:sportSlug", async (req, res) => {
-    try {
-      const data = { ...req.body, sportSlug: req.params.sportSlug };
-      const parsed = insertSportFieldConfigSchema.safeParse(data);
-      if (!parsed.success) {
-        return res.status(400).json({ error: parsed.error.message });
-      }
-      const config = await storage.createOrUpdateSportFieldConfig(parsed.data);
-      res.json(config);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to update sport config" });
-    }
-  });
-
-  app.delete("/api/admin/sport-configs/:sportSlug", async (req, res) => {
-    try {
-      const deleted = await storage.deleteSportFieldConfig(req.params.sportSlug);
-      if (!deleted) {
-        return res.status(404).json({ error: "Sport config not found" });
-      }
-      res.status(204).send();
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete sport config" });
-    }
-  });
-
-  // Fetch sample market data for a sport (for admin preview)
-  app.get("/api/admin/sport-sample/:seriesId", async (req, res) => {
-    try {
-      const { seriesId } = req.params;
-      const url = `${GAMMA_API_BASE}/events?active=true&closed=false&limit=1&series_id=${seriesId}`;
-      console.log(`[Sample Data] Fetching: ${url}`);
-      
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Gamma API error: ${response.status}`);
-      }
-      
-      const events = await response.json();
-      if (!events || events.length === 0) {
-        return res.json({ sample: null, message: "No active events found for this sport" });
-      }
-      
-      // Return first event with its markets as sample data
-      const event = events[0];
-      const sampleMarket = event.markets?.[0] || null;
-      
-      res.json({
-        event: {
-          id: event.id,
-          title: event.title,
-          description: event.description,
-          startDate: event.startDate,
-          gameStartTime: sampleMarket?.gameStartTime,
-        },
-        market: sampleMarket ? {
-          id: sampleMarket.id,
-          question: sampleMarket.question,
-          groupItemTitle: sampleMarket.groupItemTitle,
-          sportsMarketType: sampleMarket.sportsMarketType,
-          line: sampleMarket.line,
-          outcomes: sampleMarket.outcomes,
-          outcomePrices: sampleMarket.outcomePrices,
-          bestAsk: sampleMarket.bestAsk,
-          bestBid: sampleMarket.bestBid,
-        } : null,
-        allMarketTypes: event.markets?.map((m: any) => m.sportsMarketType).filter(Boolean) || [],
-      });
-    } catch (error) {
-      console.error("Error fetching sample data:", error);
-      res.status(500).json({ error: "Failed to fetch sample data" });
-    }
-  });
-
-  // Enhanced sample endpoint that returns full market data for a specific market type
-  app.get("/api/admin/sport-sample/:seriesId/:marketType", async (req, res) => {
-    try {
-      const { seriesId, marketType } = req.params;
-      const url = `${GAMMA_API_BASE}/events?active=true&closed=false&limit=5&series_id=${seriesId}`;
-      console.log(`[Sample Data] Fetching for marketType ${marketType}: ${url}`);
-      
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Gamma API error: ${response.status}`);
-      }
-      
-      const events = await response.json();
-      if (!events || events.length === 0) {
-        return res.json({ sample: null, message: "No active events found for this sport" });
-      }
-      
-      // Find a market matching the requested market type
-      let matchingMarket = null;
-      let matchingEvent = null;
-      
-      for (const event of events) {
-        const market = event.markets?.find((m: any) => m.sportsMarketType === marketType);
-        if (market) {
-          matchingMarket = market;
-          matchingEvent = event;
-          break;
-        }
-      }
-      
-      if (!matchingMarket) {
-        // Return first event with all available market types
-        const event = events[0];
-        return res.json({
-          sample: null,
-          message: `No markets found with type "${marketType}"`,
-          availableMarketTypes: event.markets?.map((m: any) => m.sportsMarketType).filter(Boolean) || [],
-        });
-      }
-      
-      // Return full market data for configuration
-      res.json({
-        event: {
-          id: matchingEvent.id,
-          title: matchingEvent.title,
-          slug: matchingEvent.slug,
-          description: matchingEvent.description,
-          startDate: matchingEvent.startDate,
-          seriesSlug: matchingEvent.seriesSlug,
-        },
-        market: {
-          id: matchingMarket.id,
-          conditionId: matchingMarket.conditionId,
-          slug: matchingMarket.slug,
-          question: matchingMarket.question,
-          groupItemTitle: matchingMarket.groupItemTitle,
-          sportsMarketType: matchingMarket.sportsMarketType,
-          subtitle: matchingMarket.subtitle,
-          extraInfo: matchingMarket.extraInfo,
-          line: matchingMarket.line,
-          outcomes: matchingMarket.outcomes,
-          outcomePrices: matchingMarket.outcomePrices,
-          bestAsk: matchingMarket.bestAsk,
-          bestBid: matchingMarket.bestBid,
-          volume: matchingMarket.volume,
-          liquidity: matchingMarket.liquidity,
-          gameStartTime: matchingMarket.gameStartTime,
-          tokens: matchingMarket.tokens,
-          spread: matchingMarket.spread,
-          active: matchingMarket.active,
-          closed: matchingMarket.closed,
-        },
-        allMarketTypes: events.flatMap((e: any) => 
-          e.markets?.map((m: any) => m.sportsMarketType).filter(Boolean) || []
-        ).filter((v: string, i: number, a: string[]) => a.indexOf(v) === i),
-      });
-    } catch (error) {
-      console.error("Error fetching sample data:", error);
-      res.status(500).json({ error: "Failed to fetch sample data" });
-    }
-  });
-
-  // Comprehensive market type discovery - fetches more events to find ALL available market types
-  app.get("/api/admin/sport-market-types/:seriesId", async (req, res) => {
-    try {
-      const { seriesId } = req.params;
-      const foundMarketTypes = new Map<string, { count: number; sampleQuestion: string }>();
-      
-      // Fetch more events (up to 500) to discover all market types
-      const url = `${GAMMA_API_BASE}/events?series_id=${seriesId}&active=true&closed=false&limit=500`;
-      console.log(`[Market Types Discovery] Fetching: ${url}`);
-      
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Gamma API error: ${response.status}`);
-      }
-      
-      const events = await response.json();
-      
-      // Extract all unique market types with sample questions
-      for (const event of events) {
-        if (event.markets) {
-          for (const market of event.markets) {
-            if (market.sportsMarketType) {
-              const existing = foundMarketTypes.get(market.sportsMarketType);
-              if (existing) {
-                existing.count++;
-              } else {
-                foundMarketTypes.set(market.sportsMarketType, {
-                  count: 1,
-                  sampleQuestion: market.question || market.groupItemTitle || "",
-                });
-              }
-            }
-          }
-        }
-      }
-      
-      // Market type labels
-      const marketTypeLabels: Record<string, string> = {
-        moneyline: "Moneyline (Winner)",
-        spreads: "Spreads",
-        totals: "Totals (Over/Under)",
-        first_half_moneyline: "1st Half Moneyline",
-        first_half_spreads: "1st Half Spreads",
-        first_half_totals: "1st Half Totals",
-        points: "Player Points",
-        rebounds: "Player Rebounds",
-        assists: "Player Assists",
-        threes: "Player 3-Pointers",
-        steals: "Player Steals",
-        blocks: "Player Blocks",
-        passing_yards: "Passing Yards",
-        rushing_yards: "Rushing Yards",
-        receiving_yards: "Receiving Yards",
-        touchdowns: "Touchdowns",
-        strikeouts: "Pitcher Strikeouts",
-        hits: "Player Hits",
-        home_runs: "Home Runs",
-        goals: "Goals",
-        shots: "Shots",
-        saves: "Saves",
-        both_teams_to_score: "Both Teams To Score",
-        map_handicap: "Map Handicap",
-        map_participant_win_total: "Map Participant Win Total",
-        child_moneyline: "Child Moneyline",
-        tennis_first_set_winner: "Tennis First Set Winner",
-        tennis_match_totals: "Tennis Match Totals",
-        tennis_first_set_totals: "Tennis First Set Totals",
-        tennis_set_totals: "Tennis Set Totals",
-        tennis_set_handicap: "Tennis Set Handicap",
-        round_over_under_match: "Round Over/Under Match",
-        round_handicap_match: "Round Handicap Match",
-        kill_handicap_match: "Kill Handicap Match",
-        tower_handicap_match: "Tower Handicap Match",
-        cricket_toss_winner: "Cricket Toss Winner",
-        cricket_completed_match: "Cricket Completed Match",
-        cricket_team_top_batter: "Cricket Team Top Batter",
-        cricket_most_sixes: "Cricket Most Sixes",
-      };
-      
-      // Convert to sorted array (by count, descending)
-      const marketTypes = Array.from(foundMarketTypes.entries())
-        .map(([type, data]) => ({
-          type,
-          label: marketTypeLabels[type] || type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()),
-          count: data.count,
-          sampleQuestion: data.sampleQuestion,
-        }))
-        .sort((a, b) => b.count - a.count);
-      
-      res.json({
-        seriesId,
-        eventsScanned: events.length,
-        marketTypes,
-      });
-    } catch (error) {
-      console.error("Error discovering market types:", error);
-      res.status(500).json({ error: "Failed to discover market types" });
-    }
-  });
-
-  // Enhanced sample endpoint that searches more thoroughly
-  app.get("/api/admin/sport-sample-v2/:seriesId/:marketType", async (req, res) => {
-    try {
-      const { seriesId, marketType } = req.params;
-      
-      // Fetch more events (up to 500) to find a matching market
-      const url = `${GAMMA_API_BASE}/events?active=true&closed=false&limit=500&series_id=${seriesId}`;
-      console.log(`[Sample Data V2] Fetching for marketType ${marketType}: ${url}`);
-      
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Gamma API error: ${response.status}`);
-      }
-      
-      const events = await response.json();
-      if (!events || events.length === 0) {
-        return res.json({ sample: null, message: "No active events found for this sport" });
-      }
-      
-      // Find a market matching the requested market type, preferring ones with higher liquidity
-      let matchingMarket = null;
-      let matchingEvent = null;
-      let bestLiquidity = 0;
-      
-      for (const event of events) {
-        if (event.markets) {
-          for (const market of event.markets) {
-            if (market.sportsMarketType === marketType) {
-              const liquidity = parseFloat(market.liquidity) || 0;
-              if (!matchingMarket || liquidity > bestLiquidity) {
-                matchingMarket = market;
-                matchingEvent = event;
-                bestLiquidity = liquidity;
-              }
-            }
-          }
-        }
-      }
-      
-      // Collect all available market types across all events
-      const allMarketTypes = new Set<string>();
-      for (const event of events) {
-        if (event.markets) {
-          for (const market of event.markets) {
-            if (market.sportsMarketType) {
-              allMarketTypes.add(market.sportsMarketType);
-            }
-          }
-        }
-      }
-      
-      if (!matchingMarket) {
-        return res.json({
-          sample: null,
-          message: `No markets found with type "${marketType}" in ${events.length} events`,
-          availableMarketTypes: Array.from(allMarketTypes),
-        });
-      }
-      
-      // Return comprehensive market data for configuration
-      res.json({
-        event: {
-          id: matchingEvent.id,
-          title: matchingEvent.title,
-          slug: matchingEvent.slug,
-          description: matchingEvent.description,
-          startDate: matchingEvent.startDate,
-          endDate: matchingEvent.endDate,
-          seriesSlug: matchingEvent.seriesSlug,
-        },
-        market: {
-          id: matchingMarket.id,
-          conditionId: matchingMarket.conditionId,
-          slug: matchingMarket.slug,
-          question: matchingMarket.question,
-          groupItemTitle: matchingMarket.groupItemTitle,
-          sportsMarketType: matchingMarket.sportsMarketType,
-          subtitle: matchingMarket.subtitle,
-          extraInfo: matchingMarket.extraInfo,
-          participantName: matchingMarket.participantName,
-          teamAbbrev: matchingMarket.teamAbbrev,
-          line: matchingMarket.line,
-          outcomes: matchingMarket.outcomes,
-          outcomePrices: matchingMarket.outcomePrices,
-          bestAsk: matchingMarket.bestAsk,
-          bestBid: matchingMarket.bestBid,
-          volume: matchingMarket.volume,
-          liquidity: matchingMarket.liquidity,
-          gameStartTime: matchingMarket.gameStartTime,
-          tokens: matchingMarket.tokens,
-          spread: matchingMarket.spread,
-          active: matchingMarket.active,
-          closed: matchingMarket.closed,
-          clobTokenIds: matchingMarket.clobTokenIds,
-        },
-        // Include full raw market for debugging/exploration
-        rawMarket: matchingMarket,
-        availableMarketTypes: Array.from(allMarketTypes),
-        eventsSearched: events.length,
-      });
-    } catch (error) {
-      console.error("Error fetching sample data v2:", error);
-      res.status(500).json({ error: "Failed to fetch sample data" });
-    }
-  });
-
-  // Sport Market Config endpoints (sport + marketType composite key)
-  app.get("/api/admin/sport-market-configs", async (req, res) => {
-    try {
-      const configs = await storage.getSportMarketConfigs();
-      res.json(configs);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch sport market configs" });
-    }
-  });
-
-  app.get("/api/admin/sport-market-configs/:sportSlug", async (req, res) => {
-    try {
-      const configs = await storage.getSportMarketConfigsBySport(req.params.sportSlug);
-      res.json(configs);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch sport market configs" });
-    }
-  });
-
-  app.get("/api/admin/sport-market-configs/:sportSlug/:marketType", async (req, res) => {
-    try {
-      const config = await storage.getSportMarketConfig(req.params.sportSlug, req.params.marketType);
-      if (!config) {
-        return res.status(404).json({ error: "Config not found" });
-      }
-      res.json(config);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch sport market config" });
-    }
-  });
-
-  app.post("/api/admin/sport-market-configs", async (req, res) => {
-    try {
-      const parsed = insertSportMarketConfigSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ error: parsed.error.message });
-      }
-      const config = await storage.createOrUpdateSportMarketConfig(parsed.data);
-      res.status(201).json(config);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to create sport market config" });
-    }
-  });
-
-  app.put("/api/admin/sport-market-configs/:sportSlug/:marketType", async (req, res) => {
-    try {
-      const data = { 
-        ...req.body, 
-        sportSlug: req.params.sportSlug,
-        marketType: req.params.marketType,
-      };
-      const parsed = insertSportMarketConfigSchema.safeParse(data);
-      if (!parsed.success) {
-        return res.status(400).json({ error: parsed.error.message });
-      }
-      const config = await storage.createOrUpdateSportMarketConfig(parsed.data);
-      res.json(config);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to update sport market config" });
-    }
-  });
-
-  app.delete("/api/admin/sport-market-configs/:sportSlug/:marketType", async (req, res) => {
-    try {
-      const deleted = await storage.deleteSportMarketConfig(req.params.sportSlug, req.params.marketType);
-      if (!deleted) {
-        return res.status(404).json({ error: "Config not found" });
-      }
-      res.status(204).send();
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete sport market config" });
-    }
-  });
 
   // ============================================================
   // $WILD POINTS MANAGEMENT
@@ -1794,6 +1319,14 @@ export async function registerRoutes(
         const stakeAmount = Math.floor(orderAmount);
         await storage.addWildPoints(walletAddress, stakeAmount);
         console.log(`[Orders] Awarded ${stakeAmount} WILD points to ${walletAddress} (status: ${status} -> ${normalizedStatus})`);
+
+        // Track bet for referral system (non-blocking)
+        try {
+          const { ReferralPeriodService } = await import("../services/referral/ReferralPeriodService");
+          await new ReferralPeriodService().trackBet(walletAddress, stakeAmount);
+        } catch (err) {
+          // Silent failure - never break the order flow
+        }
       } else {
         console.log(`[Orders] No WILD points awarded - status: "${status}" normalized to "${normalizedStatus}" (accepted: filled/matched/executed/completed/success)`);
       }
@@ -1889,6 +1422,9 @@ export async function registerRoutes(
         } else if (redeemable && curPrice <= 0.01) {
           // Market resolved BUT user's outcome lost → no claim available
           status = "lost";
+        } else if (redeemable) {
+          // Market cancelled/voided — shares redeemable at current price (refund)
+          status = "claimable";
         } else if (curPrice <= 0.01) {
           // Market resolved to NO but redeemable not set yet
           status = "lost";
@@ -2123,176 +1659,6 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching by slug:", error);
       res.status(500).json({ error: "Failed to fetch event" });
-    }
-  });
-
-  // ============ WHITE-LABEL CONFIGURATION ENDPOINTS ============
-  
-  // Get current white-label configuration
-  app.get("/api/admin/white-label", async (req, res) => {
-    try {
-      const config = await storage.getWhiteLabelConfig();
-      res.json(config || { 
-        themeConfig: {},
-        apiCredentials: {},
-        feeConfig: { feeBps: 0 }
-      });
-    } catch (error) {
-      console.error("Error fetching white-label config:", error);
-      res.status(500).json({ error: "Failed to fetch configuration" });
-    }
-  });
-
-  // Update theme configuration
-  app.patch("/api/admin/white-label/theme", async (req, res) => {
-    try {
-      const themeConfig = req.body;
-      const updated = await storage.updateWhiteLabelTheme(themeConfig);
-      res.json(updated);
-    } catch (error) {
-      console.error("Error updating theme config:", error);
-      res.status(500).json({ error: "Failed to update theme" });
-    }
-  });
-
-  // Update API credentials (sensitive - should be encrypted in production)
-  app.patch("/api/admin/white-label/credentials", async (req, res) => {
-    try {
-      const credentials = req.body;
-      const updated = await storage.updateWhiteLabelApiCredentials(credentials);
-      // Return masked credentials for security
-      res.json({
-        ...updated,
-        apiCredentials: {
-          apiKey: credentials.apiKey ? "***configured***" : undefined,
-          apiSecret: credentials.apiSecret ? "***configured***" : undefined,
-          passphrase: credentials.passphrase ? "***configured***" : undefined,
-        }
-      });
-    } catch (error) {
-      console.error("Error updating API credentials:", error);
-      res.status(500).json({ error: "Failed to update credentials" });
-    }
-  });
-
-  // Update fee configuration
-  app.patch("/api/admin/white-label/fees", async (req, res) => {
-    try {
-      const feeConfig = req.body;
-      
-      // Server-side validation: ensure wallet percentages sum to 100%
-      if (feeConfig.wallets && feeConfig.wallets.length > 0) {
-        const totalPercentage = feeConfig.wallets.reduce(
-          (sum: number, w: { percentage?: number }) => sum + (w.percentage || 0), 
-          0
-        );
-        if (Math.abs(totalPercentage - 100) > 0.01) {
-          return res.status(400).json({ 
-            error: `Wallet percentages must sum to 100% (currently ${totalPercentage.toFixed(1)}%)` 
-          });
-        }
-        
-        // Validate wallet addresses
-        for (const wallet of feeConfig.wallets) {
-          if (!wallet.address || !wallet.address.startsWith("0x")) {
-            return res.status(400).json({ 
-              error: "Invalid wallet address. Must be a valid Ethereum address starting with 0x" 
-            });
-          }
-        }
-      }
-      
-      const updated = await storage.updateWhiteLabelFeeConfig(feeConfig);
-      res.json(updated);
-    } catch (error) {
-      console.error("Error updating fee config:", error);
-      res.status(500).json({ error: "Failed to update fee configuration" });
-    }
-  });
-
-  // Update points configuration
-  app.patch("/api/admin/white-label/points", async (req, res) => {
-    try {
-      const pointsConfig = req.body;
-      const updated = await storage.updateWhiteLabelPointsConfig(pointsConfig);
-      res.json(updated);
-    } catch (error) {
-      console.error("Error updating points config:", error);
-      res.status(500).json({ error: "Failed to update points configuration" });
-    }
-  });
-
-  // Referral routes
-  app.post("/api/referral/set-code", async (req, res) => {
-    try {
-      const { address, referralCode } = req.body;
-      if (!address || !referralCode) {
-        return res.status(400).json({ error: "Address and referral code required" });
-      }
-      if (referralCode.length < 4 || referralCode.length > 20) {
-        return res.status(400).json({ error: "Referral code must be 4-20 characters" });
-      }
-      const updated = await storage.setReferralCode(address, referralCode);
-      if (!updated) {
-        return res.status(409).json({ error: "Referral code already taken" });
-      }
-      res.json({ success: true, referralCode: updated.referralCode });
-    } catch (error) {
-      console.error("Error setting referral code:", error);
-      res.status(500).json({ error: "Failed to set referral code" });
-    }
-  });
-
-  app.post("/api/referral/apply", async (req, res) => {
-    try {
-      const { address, referrerCode } = req.body;
-      if (!address || !referrerCode) {
-        return res.status(400).json({ error: "Address and referrer code required" });
-      }
-      const result = await storage.applyReferralCode(address, referrerCode);
-      if (!result.success) {
-        return res.status(400).json({ error: result.error });
-      }
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Error applying referral code:", error);
-      res.status(500).json({ error: "Failed to apply referral code" });
-    }
-  });
-
-  app.get("/api/referral/stats/:address", async (req, res) => {
-    try {
-      const { address } = req.params;
-      
-      // Get basic stats and list of referred users
-      const basicStats = await storage.getReferralStats(address);
-      
-      // If there are referrals, fetch fresh points for each referred user from Polymarket
-      // and update their stored points for accurate referral bonus calculation
-      if (basicStats.referralsCount > 0) {
-        const referrals = await storage.getReferrals(address);
-        
-        // Fetch fresh points for each referred user (in parallel, max 5 at a time)
-        const refreshPromises = referrals.map(async (referral) => {
-          const queryAddress = referral.safeAddress || referral.address;
-          const polyResult = await fetchWildPointsFromPolymarket(queryAddress);
-          if (polyResult.success) {
-            await storage.updateStoredWildPoints(referral.address, polyResult.wildPoints);
-          }
-        });
-        
-        // Wait for all refreshes to complete
-        await Promise.all(refreshPromises);
-        
-        // Re-fetch stats with updated points
-        const updatedStats = await storage.getReferralStats(address);
-        return res.json(updatedStats);
-      }
-      
-      res.json(basicStats);
-    } catch (error) {
-      console.error("Error getting referral stats:", error);
-      res.status(500).json({ error: "Failed to get referral stats" });
     }
   });
 

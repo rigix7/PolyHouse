@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { cn } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Header } from "@/components/terminal/Header";
 import { BottomNav, TabType } from "@/components/terminal/BottomNav";
@@ -9,7 +10,7 @@ import { PredictView } from "@/components/views/PredictView";
 import { DashboardView } from "@/components/views/DashboardView";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { fetchGammaEvents, gammaEventToMarket, gammaEventToDisplayEvent, type DisplayEvent } from "@/lib/polymarket";
-import { fetchPositions, type PolymarketPosition } from "@/lib/polymarketOrder";
+import { fetchPositions, fetchActivity, type PolymarketPosition } from "@/lib/polymarketOrder";
 import { getUSDCBalance } from "@/lib/polygon";
 import { useWallet } from "@/providers/WalletContext";
 import useTradingSession from "@/hooks/useTradingSession";
@@ -17,9 +18,16 @@ import useClobClient from "@/hooks/useClobClient";
 import useClobOrder from "@/hooks/useClobOrder";
 import { useLivePrices } from "@/hooks/useLivePrices";
 import useFeeCollection from "@/hooks/useFeeCollection";
+import { useTheme } from "@/hooks/useTheme";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { DollarSign, Loader2, CheckCircle2, X, AlertTriangle } from "lucide-react";
 import type { Market, Bet, Wallet, AdminSettings, WalletRecord, Futures, PolymarketTagRecord, FuturesCategory } from "@shared/schema";
 
 export default function HomePage() {
+  const { pointsName, pointsEnabled } = useTheme();
   const { authenticated: isConnected, eoaAddress: address, login, logout, isReady } = useWallet();
   const { 
     tradingSession, 
@@ -37,7 +45,7 @@ export default function HomePage() {
   
   const { clobClient } = useClobClient(tradingSession, isTradingSessionComplete, safeAddress);
   const { submitOrder, isSubmitting: isPolymarketSubmitting, error: polymarketError } = useClobOrder(clobClient, safeAddress);
-  const { collectFee, isFeeCollectionEnabled, feeBps } = useFeeCollection();
+  const { collectFee, isFeeCollectionEnabled, showFeeInUI } = useFeeCollection();
   
   const walletLoading = !isReady;
   const isSafeDeployed = tradingSession?.isSafeDeployed ?? false;
@@ -72,8 +80,53 @@ export default function HomePage() {
   const [userPositions, setUserPositions] = useState<PolymarketPosition[]>([]);
   const { showToast, ToastContainer } = useTerminalToast();
   
+  // Sell modal state (for selling from PredictView)
+  const [sellModalOpen, setSellModalOpen] = useState(false);
+  const [sellPosition, setSellPosition] = useState<{ tokenId: string; size: number; avgPrice: number; outcomeLabel?: string; marketQuestion?: string; negRisk?: boolean } | null>(null);
+  const [sellAmount, setSellAmount] = useState("");
+  const [sellError, setSellError] = useState<string | null>(null);
+  const [sellSuccess, setSellSuccess] = useState(false);
+  const [isSelling, setIsSelling] = useState(false);
+  const [sellBestBid, setSellBestBid] = useState<number | null>(null);
+  const [isLoadingSellBid, setIsLoadingSellBid] = useState(false);
+  
   // Live prices from WebSocket
   const livePrices = useLivePrices();
+
+  // Capture referral code from URL (?ref=CODE)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const refCode = params.get("ref");
+    if (refCode) {
+      localStorage.setItem("pendingReferralCode", refCode);
+      // Clean URL without reload
+      const url = new URL(window.location.href);
+      url.searchParams.delete("ref");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
+
+  // Apply referral code after wallet connection
+  useEffect(() => {
+    const refCode = localStorage.getItem("pendingReferralCode");
+    if (refCode && isConnected && address) {
+      const walletAddr = (safeAddress || address).toLowerCase();
+      fetch("/api/referral/track-signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ referralCode: refCode, refereeAddress: walletAddr }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success) {
+            localStorage.removeItem("pendingReferralCode");
+          }
+        })
+        .catch(() => {
+          // Silent failure
+        });
+    }
+  }, [isConnected, address, safeAddress]);
 
   const { data: demoMarkets = [], isLoading: demoMarketsLoading } = useQuery<Market[]>({
     queryKey: ["/api/markets"],
@@ -282,6 +335,7 @@ export default function HomePage() {
       marketTitle?: string;
       outcomeLabel?: string;
       orderMinSize?: number;
+      originalStake?: number; // User's entered stake (before fee deduction) for fee calculation
     }) => {
       const walletAddr = safeAddress || address || "";
       
@@ -293,78 +347,52 @@ export default function HomePage() {
           orderMinSize: data.orderMinSize,
         });
         
-        // Pre-collection fee flow: Collect fee BEFORE order placement
-        // This prevents users from rejecting fees after their bet is placed
-        // 
-        // Fee is DEDUCTED from user's stake, not added on top:
-        // - User wants to spend: $X total
-        // - Fee = $X × (feeBps / 10000)
-        // - Effective bet = $X - Fee
-        // This ensures total spent (bet + fee) never exceeds user's intended stake
-        let feeWasCollected = false;
-        let effectiveBetAmount = data.amount; // Default to full amount if no fee
+        // ATOMIC FEE COLLECTION: Collect fee BEFORE placing order
+        // This ensures users can't reject the fee after their bet is placed
+        const feeBaseAmount = data.originalStake || data.amount;
         
-        if (isFeeCollectionEnabled && relayClient && feeBps > 0) {
-          // Calculate fee from user's total stake
-          const feeAmountUsdc = data.amount * (feeBps / 10000);
-          effectiveBetAmount = data.amount - feeAmountUsdc;
-          
-          console.log("[FeeCollection] Pre-collection: user stake $" + data.amount + 
-            ", fee $" + feeAmountUsdc.toFixed(6) + 
-            ", effective bet $" + effectiveBetAmount.toFixed(6));
-          
+        // Track if fee was actually collected (not skipped or disabled)
+        let feeWasCollected = false;
+        
+        if (isFeeCollectionEnabled && relayClient) {
+          console.log("[FeeCollection] Collecting fee BEFORE order on stake $" + feeBaseAmount);
           try {
-            // collectFee calculates and collects fee from orderValueUsdc (full stake)
-            // It internally computes: fee = stake * (feeBps / 10000)
-            const feeResult = await collectFee(relayClient, data.amount);
-            
+            const feeResult = await collectFee(relayClient, feeBaseAmount);
             if (!feeResult.success) {
-              console.error("[FeeCollection] Pre-collection failed - aborting order");
+              console.error("[FeeCollection] Fee collection failed - aborting order");
               return { success: false, error: "Fee collection failed. Please try again." };
             }
-            
             if (feeResult.skipped) {
               console.log("[FeeCollection] Fee was skipped (disabled or zero amount)");
+              // Fee was skipped, not actually collected
               feeWasCollected = false;
-              effectiveBetAmount = data.amount; // Revert to full amount
             } else {
               console.log("[FeeCollection] Fee collected:", feeResult.feeAmount.toString(), "tx:", feeResult.txHash);
+              // Fee was actually transferred
               feeWasCollected = true;
             }
           } catch (feeErr) {
-            console.error("[FeeCollection] Pre-collection error - aborting order:", feeErr);
+            console.error("[FeeCollection] Fee collection error - aborting order:", feeErr);
             return { success: false, error: "Fee collection failed. Please try again." };
           }
         } else {
-          console.log("[FeeCollection] Skipped pre-collection:", { 
-            feeEnabled: isFeeCollectionEnabled, 
-            hasRelayClient: !!relayClient,
-            feeBps: feeBps
-          });
+          console.log("[FeeCollection] Skipped (not enabled or no relay client)");
         }
         
+        // Now submit the order after fee is collected (or skipped)
         // Use FOK (Fill-or-Kill) market order via official useClobOrder hook
         // negRisk is true for winner-take-all markets like soccer 3-way moneylines
-        console.log("[Order] Submitting with effective bet amount:", effectiveBetAmount.toFixed(6), 
-          "USDC (user stake:", data.amount, "- fee:", (data.amount - effectiveBetAmount).toFixed(6), ")");
-        
         const result = await submitOrder({
           tokenId: data.tokenId,
           side: "BUY",
-          size: effectiveBetAmount, // Bet amount AFTER fee deduction
+          size: data.amount, // USDC amount to spend
           negRisk: selectedBet?.negRisk ?? false,
           isMarketOrder: true, // Use FOK market order
         });
         
-        if (result.success) {
-          console.log("[Order] Success! Total spend breakdown:", 
-            "bet:", effectiveBetAmount.toFixed(6), 
-            "+ fee:", (data.amount - effectiveBetAmount).toFixed(6), 
-            "= total:", data.amount.toFixed(6));
-        }
-        
-        // If order fails after fee was collected, show helpful message
+        // If order failed but fee was collected, add note about potential refund
         if (!result.success && feeWasCollected) {
+          console.warn("[Bet] Order failed after fee was collected. User may need support for refund.");
           return {
             ...result,
             error: (result.error || "Order failed") + " (Fee was collected - contact support if needed)"
@@ -390,6 +418,7 @@ export default function HomePage() {
     onError: () => {
     },
   });
+
 
   const handlePlaceBet = (
     marketId: string, 
@@ -482,7 +511,83 @@ export default function HomePage() {
     setShowBetSlip(true);
   };
 
-  const handleConfirmBet = async (stake: number, direction: "yes" | "no", effectiveOdds: number, executionPrice: number): Promise<{ success: boolean; error?: string; orderId?: string }> => {
+  // Handler to open sell modal from PredictView
+  const handleOpenSellModal = useCallback(async (position: { tokenId: string; size: number; avgPrice: number; outcomeLabel?: string; marketQuestion?: string; negRisk?: boolean }) => {
+    setSellPosition(position);
+    setSellAmount(position.size.toString());
+    setSellError(null);
+    setSellSuccess(false);
+    setSellBestBid(null);
+    setSellModalOpen(true);
+    
+    // Fetch best bid price
+    if (clobClient && position.tokenId) {
+      setIsLoadingSellBid(true);
+      try {
+        const book = await clobClient.getOrderBook(position.tokenId);
+        if (book && book.bids && book.bids.length > 0) {
+          // Sort bids descending and get best (highest) bid
+          const sortedBids = [...book.bids].sort((a, b) => parseFloat(b.price) - parseFloat(a.price));
+          setSellBestBid(parseFloat(sortedBids[0].price));
+        }
+      } catch (err) {
+        console.warn("[Home] Failed to fetch order book for sell:", err);
+      } finally {
+        setIsLoadingSellBid(false);
+      }
+    }
+  }, [clobClient]);
+
+  // Handler to execute sell
+  const handleExecuteSell = useCallback(async () => {
+    if (!sellPosition || !sellAmount || !submitOrder) return;
+    
+    const shareAmount = parseFloat(sellAmount);
+    if (isNaN(shareAmount) || shareAmount <= 0) {
+      setSellError("Please enter a valid amount");
+      return;
+    }
+    if (shareAmount > sellPosition.size) {
+      setSellError(`You only have ${sellPosition.size.toFixed(2)} shares`);
+      return;
+    }
+
+    setSellError(null);
+    setSellSuccess(false);
+    setIsSelling(true);
+
+    try {
+      const result = await submitOrder({
+        tokenId: sellPosition.tokenId,
+        side: "SELL",
+        size: shareAmount,
+        negRisk: sellPosition.negRisk,
+        isMarketOrder: true,
+      });
+
+      if (result.success) {
+        setSellSuccess(true);
+        showToast("Position sold successfully!", "success");
+        // Refresh positions after successful sell
+        if (safeAddress) {
+          fetchPositions(safeAddress).then(setUserPositions);
+        }
+        // Close modal after short delay to show success
+        setTimeout(() => {
+          setSellModalOpen(false);
+          setSellPosition(null);
+        }, 1500);
+      } else {
+        setSellError(result.error || "Failed to sell position");
+      }
+    } catch (err) {
+      setSellError(err instanceof Error ? err.message : "Sell failed");
+    } finally {
+      setIsSelling(false);
+    }
+  }, [sellPosition, sellAmount, submitOrder, safeAddress, showToast]);
+
+  const handleConfirmBet = async (stake: number, direction: "yes" | "no", effectiveOdds: number, executionPrice: number, originalStake?: number): Promise<{ success: boolean; error?: string; orderId?: string }> => {
     if (!selectedBet) {
       return { success: false, error: "No bet selected" };
     }
@@ -502,7 +607,7 @@ export default function HomePage() {
     console.log("[ConfirmBet] yesTokenId:", selectedBet.yesTokenId);
     console.log("[ConfirmBet] noTokenId:", selectedBet.noTokenId);
     console.log("[ConfirmBet] Selected tokenId:", tokenId);
-    console.log("[ConfirmBet] Stake:", stake, "Execution Price:", executionPrice);
+    console.log("[ConfirmBet] Stake (effective):", stake, "Original Stake:", originalStake, "Execution Price:", executionPrice);
     console.log("============================");
     
     if (!tokenId) {
@@ -526,6 +631,7 @@ export default function HomePage() {
         marketTitle: selectedBet.marketTitle,
         outcomeLabel: selectedBet.outcomeLabel,
         orderMinSize: selectedBet.orderMinSize,
+        originalStake: originalStake || stake, // For fee calculation based on user's entered amount
       });
       
       const orderResult = result as { 
@@ -622,8 +728,8 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 bg-hud-grid bg-[size:30px_30px] font-sans selection:bg-wild-brand selection:text-black text-sm overflow-hidden">
-      <div className="relative z-10 min-h-dvh h-dvh flex flex-col max-w-[430px] mx-auto border-x border-zinc-800/50 bg-zinc-950/95 shadow-2xl pb-safe">
+    <div className="min-h-screen bg-hud-grid bg-[size:30px_30px] font-sans selection:bg-wild-brand selection:text-black text-sm overflow-hidden" style={{ backgroundColor: 'var(--header-bg, #09090b)' }}>
+      <div className="relative z-10 min-h-dvh h-dvh flex flex-col max-w-[430px] mx-auto border-x border-[var(--border-primary)]/50 shadow-2xl pb-safe" style={{ backgroundColor: 'var(--header-bg, #09090b)', opacity: 0.95 }}>
         <Header
           usdcBalance={wallet.usdcBalance}
           wildBalance={wallet.wildBalance}
@@ -646,6 +752,9 @@ export default function HomePage() {
               livePrices={livePrices}
               enabledTags={enabledTags}
               futuresCategories={futuresCategories}
+              onSellPosition={handleOpenSellModal}
+              walletAddress={safeAddress || address}
+              isConnected={isConnected}
             />
           )}
           {activeTab === "dash" && (
@@ -656,6 +765,8 @@ export default function HomePage() {
               walletAddress={safeAddress || address}
               safeAddress={safeAddress}
               isSafeDeployed={isSafeDeployed}
+              submitOrder={submitOrder}
+              clobClient={clobClient}
             />
           )}
         </main>
@@ -699,10 +810,221 @@ export default function HomePage() {
           question={selectedBet.question}
           isSoccer3Way={selectedBet.isSoccer3Way}
           getOrderBook={clobClient ? getOrderBook : undefined}
+          showFeeInUI={showFeeInUI}
+          pointsName={pointsName}
+          pointsEnabled={pointsEnabled}
         />
       )}
 
       <ToastContainer />
+
+      {/* Sell Position Panel - BetSlip Style (for PredictView) */}
+      {sellModalOpen && sellPosition && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-[430px] bg-[var(--card-bg)] border-t border-wild-gold/50 rounded-t-xl p-4 animate-slide-up">
+            {/* Header */}
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-1">
+                  <DollarSign className="w-3 h-3 text-wild-gold" />
+                  Sell Position
+                </p>
+                <h3 className="font-bold text-[var(--text-primary)] text-lg">
+                  {sellPosition.outcomeLabel || "Yes"}
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)] mt-0.5">{sellPosition.marketQuestion || "Market Position"}</p>
+                <p className="text-xs text-[var(--text-muted)] mt-1">
+                  You have: <span className="text-[var(--text-primary)] font-mono">{sellPosition.size.toFixed(2)} shares</span>
+                </p>
+              </div>
+              <button
+                onClick={() => setSellModalOpen(false)}
+                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] p-1"
+                disabled={isSelling}
+                data-testid="button-close-predict-sell"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Cost Basis & Best Bid Section */}
+              <div className="bg-[var(--card-bg-elevated)]/50 rounded-lg p-3 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-[var(--text-secondary)]">Amount spent</span>
+                  <span className="text-sm font-mono text-[var(--text-primary)]">
+                    ${(sellPosition.size * sellPosition.avgPrice).toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-[var(--text-secondary)]">Avg cost / Breakeven</span>
+                  <span className="text-sm font-mono text-[var(--text-secondary)]">
+                    ${sellPosition.avgPrice.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-[var(--text-secondary)]">Best bid (sell now)</span>
+                  {isLoadingSellBid ? (
+                    <span className="text-sm font-mono text-[var(--text-muted)] flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Loading...
+                    </span>
+                  ) : sellBestBid ? (
+                    <span className={cn("text-sm font-mono font-semibold",
+                      sellBestBid >= sellPosition.avgPrice ? "text-wild-scout" : "text-wild-brand"
+                    )}>
+                      ${sellBestBid.toFixed(2)}
+                    </span>
+                  ) : (
+                    <span className="text-sm font-mono text-[var(--text-muted)]">—</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Shares Input with Best Bid Display */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <label className="text-xs text-[var(--text-muted)] mb-1 block">Shares to sell</label>
+                  <Input
+                    type="number"
+                    value={sellAmount}
+                    onChange={(e) => setSellAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="bg-[var(--card-bg-elevated)] border-[var(--border-secondary)] text-[var(--text-primary)] text-lg font-mono h-12"
+                    min="0"
+                    max={sellPosition.size}
+                    step="0.01"
+                    disabled={isSelling}
+                    data-testid="input-predict-sell-amount"
+                  />
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-[var(--text-muted)]">Best Bid</p>
+                  <p className={cn("text-2xl font-black font-mono",
+                    sellBestBid && sellBestBid >= sellPosition.avgPrice ? "text-wild-scout" : "text-wild-gold"
+                  )}>
+                    {sellBestBid ? `$${sellBestBid.toFixed(2)}` : "—"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Percentage Quick Select Buttons */}
+              <div className="flex gap-2">
+                {[25, 50, 75].map((pct) => (
+                  <button
+                    key={pct}
+                    onClick={() => setSellAmount((sellPosition.size * pct / 100).toFixed(2))}
+                    className={cn(
+                      "flex-1 py-2 text-sm font-mono rounded transition-colors",
+                      sellAmount === (sellPosition.size * pct / 100).toFixed(2)
+                        ? "bg-wild-gold/20 text-wild-gold border border-wild-gold/30"
+                        : "bg-[var(--card-bg-elevated)] hover:bg-[var(--card-bg-hover)] text-[var(--text-secondary)]"
+                    )}
+                    disabled={isSelling}
+                    data-testid={`button-predict-sell-${pct}pct`}
+                  >
+                    {pct}%
+                  </button>
+                ))}
+                <button
+                  onClick={() => setSellAmount(sellPosition.size.toFixed(2))}
+                  className={cn(
+                    "flex-1 py-2 text-sm font-bold rounded transition-colors border",
+                    sellAmount === sellPosition.size.toFixed(2)
+                      ? "bg-wild-gold/30 text-wild-gold border-wild-gold/50"
+                      : "bg-wild-gold/20 hover:bg-wild-gold/30 text-wild-gold border-wild-gold/30"
+                  )}
+                  disabled={isSelling}
+                  data-testid="button-predict-sell-100pct"
+                >
+                  MAX
+                </button>
+              </div>
+
+              {/* Estimated Return Summary */}
+              {sellAmount && parseFloat(sellAmount) > 0 && (
+                <div className="bg-[var(--card-bg-elevated)]/50 rounded-lg p-3 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[var(--text-secondary)]">Cost basis</span>
+                    <span className="font-mono text-[var(--text-secondary)]">
+                      ${(parseFloat(sellAmount) * sellPosition.avgPrice).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[var(--text-secondary)]">Estimated return</span>
+                    <span className="font-mono font-bold text-wild-gold">
+                      ~${(parseFloat(sellAmount) * (sellBestBid || sellPosition.avgPrice)).toFixed(2)}
+                    </span>
+                  </div>
+                  {sellBestBid && (
+                    <div className="flex justify-between text-sm border-t border-[var(--border-secondary)] pt-2 mt-2">
+                      <span className="text-[var(--text-secondary)]">Estimated P&L</span>
+                      <span className={cn("font-mono font-semibold",
+                        (sellBestBid - sellPosition.avgPrice) >= 0 ? "text-wild-scout" : "text-wild-brand"
+                      )}>
+                        {(sellBestBid - sellPosition.avgPrice) >= 0 ? "+" : ""}
+                        ${((parseFloat(sellAmount) * sellBestBid) - (parseFloat(sellAmount) * sellPosition.avgPrice)).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-[var(--text-muted)]">
+                    Final value depends on market liquidity
+                  </p>
+                </div>
+              )}
+
+              {/* Error Message */}
+              {sellError && (
+                <div className="flex items-center gap-2 text-wild-brand text-sm bg-wild-brand/10 rounded p-2">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>{sellError}</span>
+                </div>
+              )}
+
+              {/* Success Message */}
+              {sellSuccess && (
+                <div className="flex items-center gap-2 text-wild-scout text-sm bg-wild-scout/10 rounded p-2">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Position sold successfully!</span>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setSellModalOpen(false)}
+                  className="flex-1 border-[var(--border-secondary)]"
+                  disabled={isSelling}
+                  data-testid="button-cancel-predict-sell"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleExecuteSell}
+                  disabled={isSelling || sellSuccess || !sellAmount || parseFloat(sellAmount) <= 0}
+                  size="lg"
+                  className="flex-1 bg-wild-gold text-zinc-950 font-bold text-lg"
+                  data-testid="button-confirm-predict-sell"
+                >
+                  {isSelling ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Selling...
+                    </>
+                  ) : (
+                    `Sell · $${(parseFloat(sellAmount || "0") * (sellBestBid || sellPosition.avgPrice)).toFixed(2)}`
+                  )}
+                </Button>
+              </div>
+
+              <p className="text-[10px] text-[var(--text-muted)] text-center">
+                Orders submitted to Polymarket CLOB at best available price.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

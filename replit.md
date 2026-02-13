@@ -1,7 +1,7 @@
-# PolyHouse
+# Wildcard Sports Prediction Terminal
 
 ## Overview
-PolyHouse is a white-label prediction market platform built on Polymarket with a HUD-style dark interface. Its primary purpose is to provide a platform for gasless betting using the Polymarket Builder Relayer pattern. The project aims to deliver a fully functional MVP with core features including live betting markets and a user dashboard.
+Wildcard is a sports prediction terminal application with a HUD-style dark interface. Its primary purpose is to provide a platform for gasless betting using the Polymarket Builder Relayer pattern, player scouting with funding curves, and real-time trading. The project aims to deliver a fully functional MVP with core features including live betting markets, player launchpads, token trading, and a user dashboard.
 
 ## User Preferences
 The user prefers a dark-themed interface with neon accents.
@@ -16,6 +16,8 @@ The user prefers a dark-themed interface with neon accents.
 - **UI/UX**: Zinc-950 dark mode with specific color accents (rose, emerald, blue, amber) and fonts (Inter, JetBrains Mono) for a terminal-like experience.
 - **Key Features**:
     - **Predict Tab**: Displays live betting markets with 3-way odds. Core markets (moneyline, totals) are prominently displayed, while other markets are in an expandable "More Markets" section.
+    - **Scout Tab**: Features a player launchpad with funding progress bars.
+    - **Trade Tab**: Provides an interface for player token trading.
     - **Dashboard**: Shows wallet balances, betting history, and position tracking with the ability to claim winnings. It includes an Activity tab displaying trade history from Polymarket.
     - **Admin CMS**: An `/admin` route for managing demo data, including a Sport Config Editor for dynamic market type discovery and configuration.
     - **Betting Mechanics**: Supports placing limit orders on Polymarket CLOB. The BetSlip dynamically shows outcome-specific labels and provides inline success/error panels for bet confirmation.
@@ -37,12 +39,8 @@ The user prefers a dark-themed interface with neon accents.
 - **Team Abbreviation Parsing**: Team and player abbreviations are consistently derived from Polymarket event slugs for display across the application.
 - **Wild Points System**: $WILD points are calculated from Polymarket Activity API data, with an admin panel for auditing and management.
 - **Position Status**: Enhanced position statuses in the Dashboard, distinguishing between "WON", "LOST", and "PENDING" (won but not yet redeemable) based on Polymarket Data API.
-- **Integrator Fee System**: Supports optional fee collection on successful orders via the Polymarket Builder Program. Fees are collected as a separate USDC transfer after order fills (not deducted upfront). Supports **multi-wallet fee distribution** - fees can be split across multiple wallets with configurable percentages (e.g., 50% to Platform, 30% to Operator, 20% to Referrer). All transfers are batched into a single transaction for gas efficiency. Configured via Admin Panel (`/admin` → Fees tab) or legacy environment variables `VITE_INTEGRATOR_FEE_ADDRESS` and `VITE_INTEGRATOR_FEE_BPS`.
-- **White-Label Configuration**: The `/admin` route includes a White Label Configuration section with:
-    - **Brand Settings**: Custom brand name, logo URL, primary/accent colors
-    - **Component Theming**: Per-component color customization (Header, BetSlip, Market Cards, Sorting Bar, Bottom Nav)
-    - **API Credentials**: Builder API credentials storage (API Key, Secret, Passphrase)
-    - **Fee Configuration**: Multi-wallet fee distribution with percentage splits and batched transfers
+- **Integrator Fee System**: Supports optional fee collection via the Polymarket Builder Program using a pre-collection approach. Fees are collected BEFORE the order is submitted (not after), preventing users from rejecting the fee transaction after their bet is placed. If the order fails after fee collection, the fee is still collected. Configured via environment variables `VITE_INTEGRATOR_FEE_ADDRESS` (wallet to receive fees) and `VITE_INTEGRATOR_FEE_BPS` (fee in basis points, e.g., 50 = 0.5%). Currently set to 10 bps (0.1%).
+- **Odds Refresh System**: BetSlip includes a refresh button for manual odds refresh, stale indicator when odds are >30 seconds old, and auto-refresh of stale odds before bet placement.
 
 ## External Dependencies
 - **Polymarket**: Core platform for betting markets, including its CLOB API and Data API.

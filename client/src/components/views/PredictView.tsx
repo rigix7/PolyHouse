@@ -1,13 +1,14 @@
-import { useState, useEffect, useRef, createContext, useContext, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Shield, Lock, Loader2, TrendingUp, Calendar, Radio, Clock, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from "lucide-react";
+import { Trophy, Lock, Loader2, TrendingUp, Calendar, Radio, Clock, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from "lucide-react";
+import { LeaderboardPanel } from "./LeaderboardPanel";
 import { SubTabs } from "@/components/terminal/SubTabs";
 import { MarketCardSkeleton } from "@/components/terminal/MarketCard";
 import { EmptyState } from "@/components/terminal/EmptyState";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { Market, Futures, AdminSettings, SportMarketConfig, FuturesCategory } from "@shared/schema";
+import type { Market, Futures, AdminSettings, FuturesCategory } from "@shared/schema";
 import type { DisplayEvent, ParsedMarket, MarketGroup } from "@/lib/polymarket";
 import { prefetchTeams } from "@/lib/polymarket";
 import type { UseLivePricesResult } from "@/hooks/useLivePrices";
@@ -29,27 +30,13 @@ function getLivePrice(
   return staticPrice;
 }
 
-// Context for sport market configs
-const SportConfigContext = createContext<Map<string, SportMarketConfig>>(new Map());
 
-function useSportConfig(sportSlug: string, marketType: string): SportMarketConfig | undefined {
-  const configMap = useContext(SportConfigContext);
-  return configMap.get(`${sportSlug}:${marketType}`);
-}
-
-function buildConfigMap(configs: SportMarketConfig[]): Map<string, SportMarketConfig> {
-  const map = new Map<string, SportMarketConfig>();
-  for (const config of configs) {
-    map.set(`${config.sportSlug}:${config.marketType}`, config);
-  }
-  return map;
-}
-
-type PredictSubTab = "matchday" | "futures";
+type PredictSubTab = "matchday" | "futures" | "leaderboard";
 
 const subTabs = [
   { id: "matchday" as const, label: "MATCH DAY" },
   { id: "futures" as const, label: "FUTURES" },
+  { id: "leaderboard" as const, label: "LEADERBOARD" },
 ];
 
 interface PredictViewProps {
@@ -61,10 +48,13 @@ interface PredictViewProps {
   onPlaceBet: (marketId: string, outcomeId: string, odds: number, marketTitle?: string, outcomeLabel?: string, marketType?: string, direction?: "yes" | "no", yesTokenId?: string, noTokenId?: string, yesPrice?: number, noPrice?: number, orderMinSize?: number, question?: string, isSoccer3Way?: boolean, negRisk?: boolean) => void;
   selectedBet?: { marketId: string; outcomeId: string; direction?: string };
   adminSettings?: AdminSettings;
-  userPositions?: { tokenId: string; size: number; avgPrice: number; outcomeLabel?: string; marketQuestion?: string; unrealizedPnl?: number }[];
+  userPositions?: { tokenId: string; size: number; avgPrice: number; outcomeLabel?: string; marketQuestion?: string; unrealizedPnl?: number; negRisk?: boolean }[];
   livePrices?: UseLivePricesResult;
   enabledTags?: { id: string; label: string; slug: string }[];
   futuresCategories?: FuturesCategory[];
+  onSellPosition?: (position: { tokenId: string; size: number; avgPrice: number; outcomeLabel?: string; marketQuestion?: string; negRisk?: boolean }) => void;
+  walletAddress?: string;
+  isConnected?: boolean;
 }
 
 function formatVolume(vol: number): string {
@@ -266,7 +256,7 @@ function PriceTicker({ events }: { events: DisplayEvent[] }) {
   const animationDuration = Math.max(30, tickerItems.length * 4);
   
   return (
-    <div className="bg-zinc-900/80 border-b border-zinc-800 overflow-hidden">
+    <div className="bg-[var(--card-bg)]/80 border-b border-[var(--border-primary)] overflow-hidden">
       <style>
         {`
           @keyframes ticker-scroll {
@@ -287,15 +277,15 @@ function PriceTicker({ events }: { events: DisplayEvent[] }) {
         {/* Duplicate the content for seamless loop */}
         {[...tickerItems, ...tickerItems].map((item, idx) => (
           <div key={idx} className="inline-flex items-center gap-2 text-xs mr-8">
-            <span className="text-zinc-500 text-[10px] font-medium">{item.league}</span>
-            <span className="text-zinc-400">{item.eventTitle}:</span>
+            <span className="text-[var(--text-muted)] text-[10px] font-medium">{item.league}</span>
+            <span className="text-[var(--text-secondary)]">{item.eventTitle}:</span>
             <span className="inline-flex items-center gap-1">
               {item.outcomes.map((o, i) => (
                 <span key={i} className="inline-flex items-center">
-                  <span className="text-zinc-300">{o.abbrev}</span>
+                  <span className="text-[var(--text-secondary)]">{o.abbrev}</span>
                   <span className="text-wild-gold font-mono font-bold ml-1">{o.price}¢</span>
                   {i < item.outcomes.length - 1 && (
-                    <span className="text-zinc-600 mx-1">|</span>
+                    <span className="text-[var(--text-muted)] mx-1">|</span>
                   )}
                 </span>
               ))}
@@ -307,40 +297,51 @@ function PriceTicker({ events }: { events: DisplayEvent[] }) {
   );
 }
 
-function LeagueFilters({ 
-  leagues, 
-  selectedLeagues, 
-  onToggle 
-}: { 
-  leagues: string[]; 
-  selectedLeagues: Set<string>; 
+function LeagueFilters({
+  leagues,
+  selectedLeagues,
+  onToggle
+}: {
+  leagues: string[];
+  selectedLeagues: Set<string>;
   onToggle: (league: string) => void;
 }) {
   if (leagues.length === 0) return null;
-  
+
+  const isAllActive = selectedLeagues.size === 0;
+
   return (
-    <div className="sticky top-0 z-20 bg-zinc-950 flex gap-2 overflow-x-auto pb-2 pt-2 -mx-3 px-3">
-      <Button
-        size="sm"
-        variant={selectedLeagues.size === 0 ? "default" : "outline"}
-        onClick={() => onToggle("ALL")}
-        className="shrink-0 text-xs h-7"
-        data-testid="filter-all"
-      >
-        All
-      </Button>
-      {leagues.map((league) => (
-        <Button
-          key={league}
-          size="sm"
-          variant={selectedLeagues.has(league) ? "default" : "outline"}
-          onClick={() => onToggle(league)}
-          className="shrink-0 text-xs h-7"
-          data-testid={`filter-${league.toLowerCase()}`}
+    <div className="sticky top-0 z-10 pb-2 pt-1 -mx-3 px-3" style={{ backgroundColor: 'var(--sort-bg, var(--page-bg))' }}>
+      <div className="flex gap-2 overflow-x-auto pb-1 px-1">
+        <button
+          onClick={() => onToggle("ALL")}
+          className="shrink-0 text-xs h-7 px-3 rounded-md font-medium transition-all"
+          style={isAllActive
+            ? { backgroundColor: 'var(--sort-active)', color: 'var(--text-primary)' }
+            : { color: 'var(--sort-inactive)', backgroundColor: 'transparent' }
+          }
+          data-testid="filter-all"
         >
-          {league}
-        </Button>
-      ))}
+          All
+        </button>
+        {leagues.map((league) => {
+          const isActive = selectedLeagues.has(league);
+          return (
+            <button
+              key={league}
+              onClick={() => onToggle(league)}
+              className="shrink-0 text-xs h-7 px-3 rounded-md font-medium transition-all"
+              style={isActive
+                ? { backgroundColor: 'var(--sort-active)', color: 'var(--text-primary)' }
+                : { color: 'var(--sort-inactive)', backgroundColor: 'transparent' }
+              }
+              data-testid={`filter-${league.toLowerCase()}`}
+            >
+              {league}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -373,7 +374,7 @@ function LineSelector({
     <div className="flex items-center gap-1 mt-2">
       <button 
         onClick={() => scroll("left")}
-        className="p-1 text-zinc-500 hover:text-zinc-300 shrink-0"
+        className="p-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)] shrink-0"
         data-testid="line-scroll-left"
       >
         <ChevronLeft className="w-3 h-3" />
@@ -389,8 +390,8 @@ function LineSelector({
             onClick={() => onSelect(line)}
             className={`px-2.5 py-1 rounded text-xs font-mono shrink-0 transition-colors ${
               selectedLine === line
-                ? "bg-zinc-600 text-white font-bold"
-                : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                ? "bg-[var(--card-bg-hover)] text-[var(--text-primary)] font-bold"
+                : "bg-[var(--card-bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--card-bg-hover)]"
             }`}
             data-testid={`line-${line}`}
           >
@@ -400,7 +401,7 @@ function LineSelector({
       </div>
       <button 
         onClick={() => scroll("right")}
-        className="p-1 text-zinc-500 hover:text-zinc-300 shrink-0"
+        className="p-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)] shrink-0"
         data-testid="line-scroll-right"
       >
         <ChevronRight className="w-3 h-3" />
@@ -559,25 +560,25 @@ function SpreadMarketDisplay({
         onClick={() => onSelect(market, leftDirection, leftDisplayLabel)}
         className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-all ${
           isLeftSelected 
-            ? "bg-teal-600 border border-teal-500 text-white" 
-            : "bg-teal-900/40 border border-teal-800/50 hover:bg-teal-800/50 text-zinc-100"
+            ? "bg-teal-600 border border-teal-500 text-[var(--text-primary)]" 
+            : "bg-teal-900/40 border border-teal-800/50 hover:bg-teal-800/50 text-[var(--text-secondary)]"
         }`}
         data-testid={`spread-left-${market.id}`}
       >
         <span className="font-bold truncate">{leftDisplayLabel}</span>
-        <span className="font-mono font-bold text-white shrink-0">{leftPrice}¢</span>
+        <span className="font-mono font-bold text-[var(--text-primary)] shrink-0">{leftPrice}¢</span>
       </button>
       <button
         onClick={() => onSelect(market, rightDirection, rightDisplayLabel)}
         className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-all ${
           isRightSelected 
-            ? "bg-amber-600 border border-amber-500 text-white" 
-            : "bg-amber-900/40 border border-amber-800/50 hover:bg-amber-800/50 text-zinc-100"
+            ? "bg-amber-600 border border-amber-500 text-[var(--text-primary)]" 
+            : "bg-amber-900/40 border border-amber-800/50 hover:bg-amber-800/50 text-[var(--text-secondary)]"
         }`}
         data-testid={`spread-right-${market.id}`}
       >
         <span className="font-bold truncate">{rightDisplayLabel}</span>
-        <span className="font-mono font-bold text-white shrink-0">{rightPrice}¢</span>
+        <span className="font-mono font-bold text-[var(--text-primary)] shrink-0">{rightPrice}¢</span>
       </button>
     </div>
   );
@@ -614,27 +615,35 @@ function TotalsMarketDisplay({
     <div className="flex gap-2">
       <button
         onClick={() => onSelect(market, "over")}
-        className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-all ${
-          isOverSelected 
-            ? "bg-blue-600 border border-blue-500 text-white" 
-            : "bg-blue-900/40 border border-blue-800/50 hover:bg-blue-800/50 text-zinc-100"
+        className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md border text-sm transition-all ${
+          isOverSelected
+            ? "text-[var(--text-primary)]"
+            : "hover:brightness-125 text-[var(--text-secondary)]"
         }`}
+        style={isOverSelected
+          ? { backgroundColor: 'var(--market-totals, #3b82f6)', borderColor: 'var(--market-totals, #3b82f6)' }
+          : { backgroundColor: 'color-mix(in srgb, var(--market-totals, #3b82f6) 25%, transparent)', borderColor: 'color-mix(in srgb, var(--market-totals, #3b82f6) 30%, transparent)' }
+        }
         data-testid={`total-over-${market.id}`}
       >
         <span className="font-bold">O {line}</span>
-        <span className="font-mono font-bold text-white">{overPrice}¢</span>
+        <span className="font-mono font-bold text-[var(--text-primary)]">{overPrice}¢</span>
       </button>
       <button
         onClick={() => onSelect(market, "under")}
-        className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-all ${
-          isUnderSelected 
-            ? "bg-blue-600 border border-blue-500 text-white" 
-            : "bg-blue-900/40 border border-blue-800/50 hover:bg-blue-800/50 text-zinc-100"
+        className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md border text-sm transition-all ${
+          isUnderSelected
+            ? "text-[var(--text-primary)]"
+            : "hover:brightness-125 text-[var(--text-secondary)]"
         }`}
+        style={isUnderSelected
+          ? { backgroundColor: 'var(--market-totals, #3b82f6)', borderColor: 'var(--market-totals, #3b82f6)' }
+          : { backgroundColor: 'color-mix(in srgb, var(--market-totals, #3b82f6) 25%, transparent)', borderColor: 'color-mix(in srgb, var(--market-totals, #3b82f6) 30%, transparent)' }
+        }
         data-testid={`total-under-${market.id}`}
       >
         <span className="font-bold">U {line}</span>
-        <span className="font-mono font-bold text-white">{underPrice}¢</span>
+        <span className="font-mono font-bold text-[var(--text-primary)]">{underPrice}¢</span>
       </button>
     </div>
   );
@@ -723,27 +732,23 @@ function SoccerMoneylineDisplay({
           const isYesSelected = isSelected && selectedDirection === "yes";
           const isFavorite = idx === favoriteIndex && isFavoriteStrong;
           
-          // Color: Home (teal), Draw (zinc), Away (amber)
-          let colorClass: string;
-          if (isDraw) {
-            colorClass = isYesSelected 
-              ? "bg-zinc-600 border-zinc-500" 
-              : "bg-zinc-800/60 border-zinc-700/50 hover:bg-zinc-700/50";
-          } else if (idx === 0) {
-            colorClass = isYesSelected 
-              ? "bg-teal-600 border-teal-500" 
-              : "bg-teal-900/40 border-teal-800/50 hover:bg-teal-800/50";
-          } else {
-            colorClass = isYesSelected 
-              ? "bg-amber-600 border-amber-500" 
-              : "bg-amber-900/40 border-amber-800/50 hover:bg-amber-800/50";
-          }
-          
+          // Color via CSS vars: Home (--market-moneyline), Draw (--market-moneyline-draw), Away (--market-moneyline-away)
+          const accentVar = isDraw
+            ? '--market-moneyline-draw'
+            : idx === 0
+              ? '--market-moneyline'
+              : '--market-moneyline-away';
+
+          const colorStyle: React.CSSProperties = isYesSelected
+            ? { backgroundColor: `var(${accentVar})`, borderColor: `var(${accentVar})` }
+            : { backgroundColor: `color-mix(in srgb, var(${accentVar}) 20%, transparent)`, borderColor: `color-mix(in srgb, var(${accentVar}) 30%, transparent)` };
+
           return (
             <button
               key={market.id}
               onClick={() => onSelect(market, "yes", fullLabel)}
-              className={`flex-1 flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-lg border text-sm transition-all ${colorClass} text-zinc-100`}
+              className="flex-1 flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-lg border text-sm transition-all text-[var(--text-secondary)]"
+              style={colorStyle}
               data-testid={`soccer-moneyline-${market.id}`}
             >
               <div className="flex items-center gap-1.5">
@@ -754,7 +759,7 @@ function SoccerMoneylineDisplay({
                   </span>
                 )}
               </div>
-              <span className="font-mono font-bold text-sm text-white">{priceInCents}¢</span>
+              <span className="font-mono font-bold text-sm text-[var(--text-primary)]">{priceInCents}¢</span>
             </button>
           );
         })}
@@ -762,18 +767,18 @@ function SoccerMoneylineDisplay({
       
       {/* 3-segment odds differential bar */}
       {sortedMarkets.length === 3 && (
-        <div className="relative h-1.5 bg-zinc-800 rounded-full overflow-hidden flex">
-          <div 
-            className="h-full bg-gradient-to-r from-teal-500 to-teal-400 transition-all duration-300"
-            style={{ width: `${probabilities[0]}%` }}
+        <div className="relative h-1.5 bg-[var(--card-bg-elevated)] rounded-full overflow-hidden flex">
+          <div
+            className="h-full transition-all duration-300"
+            style={{ width: `${probabilities[0]}%`, backgroundColor: 'var(--market-moneyline)' }}
           />
-          <div 
-            className="h-full bg-gradient-to-r from-zinc-500 to-zinc-400 transition-all duration-300"
-            style={{ width: `${probabilities[1]}%` }}
+          <div
+            className="h-full transition-all duration-300"
+            style={{ width: `${probabilities[1]}%`, backgroundColor: 'var(--market-moneyline-draw)' }}
           />
-          <div 
-            className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-300"
-            style={{ width: `${probabilities[2]}%` }}
+          <div
+            className="h-full transition-all duration-300"
+            style={{ width: `${probabilities[2]}%`, backgroundColor: 'var(--market-moneyline-away)' }}
           />
         </div>
       )}
@@ -821,19 +826,19 @@ function MoneylineMarketDisplay({
           const isSelected = selectedOutcomeIndex === idx;
           const isFavorite = idx === favoriteIndex && isFavoriteStrong;
           
+          const accentVar = idx === 0 ? '--market-moneyline' : '--market-moneyline-away';
+          const btnStyle: React.CSSProperties = isSelected
+            ? { backgroundColor: `var(${accentVar})`, borderColor: `var(${accentVar})` }
+            : { backgroundColor: `color-mix(in srgb, var(${accentVar}) 20%, transparent)`, borderColor: `color-mix(in srgb, var(${accentVar}) 30%, transparent)` };
+
           return (
             <button
               key={idx}
               onClick={() => onSelect(market, idx)}
               className={`flex-1 flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-lg border text-sm transition-all ${
-                isSelected 
-                  ? idx === 0 
-                    ? "bg-teal-600 border-teal-500 text-white" 
-                    : "bg-amber-600 border-amber-500 text-white"
-                  : idx === 0
-                    ? "bg-teal-900/40 border-teal-800/50 hover:bg-teal-800/50 text-zinc-100"
-                    : "bg-amber-900/40 border-amber-800/50 hover:bg-amber-800/50 text-zinc-100"
+                isSelected ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]"
               }`}
+              style={btnStyle}
               data-testid={`moneyline-${market.id}-${idx}`}
             >
               <div className="flex items-center gap-1.5">
@@ -844,7 +849,7 @@ function MoneylineMarketDisplay({
                   </span>
                 )}
               </div>
-              <span className="font-mono font-bold text-sm text-white">
+              <span className="font-mono font-bold text-sm text-[var(--text-primary)]">
                 {priceInCents}¢
               </span>
             </button>
@@ -854,14 +859,14 @@ function MoneylineMarketDisplay({
       
       {/* Odds differential bar */}
       {outcomes.length === 2 && (
-        <div className="relative h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-          <div 
-            className="absolute left-0 top-0 h-full bg-gradient-to-r from-teal-500 to-teal-400 transition-all duration-300"
-            style={{ width: `${probabilities[0]}%` }}
+        <div className="relative h-1.5 bg-[var(--card-bg-elevated)] rounded-full overflow-hidden">
+          <div
+            className="absolute left-0 top-0 h-full transition-all duration-300"
+            style={{ width: `${probabilities[0]}%`, backgroundColor: 'var(--market-moneyline)' }}
           />
-          <div 
-            className="absolute right-0 top-0 h-full bg-gradient-to-l from-amber-500 to-amber-400 transition-all duration-300"
-            style={{ width: `${probabilities[1]}%` }}
+          <div
+            className="absolute right-0 top-0 h-full transition-all duration-300"
+            style={{ width: `${probabilities[1]}%`, backgroundColor: 'var(--market-moneyline-away)' }}
           />
         </div>
       )}
@@ -920,7 +925,7 @@ function SimplifiedMarketRow({
   
   return (
     <div className="space-y-1.5" data-testid={`simplified-market-${market.id}`}>
-      <div className="text-sm text-zinc-300 break-words">{market.question}</div>
+      <div className="text-sm text-[var(--text-secondary)] break-words">{market.question}</div>
       <div className="flex flex-wrap gap-2">
         {market.outcomes.map((outcome, idx) => {
           // Use live price from WebSocket if available, fall back to market.bestAsk from Gamma API
@@ -935,12 +940,12 @@ function SimplifiedMarketRow({
               onClick={() => onSelect(market, idx, outcome.label)}
               className={`flex-1 px-3 py-2 rounded-md border transition-all text-center ${
                 isSelected 
-                  ? "border-wild-brand bg-wild-brand/20 text-white" 
-                  : "border-zinc-700 bg-zinc-800/50 hover:border-zinc-600 hover:bg-zinc-800 text-zinc-200"
+                  ? "border-wild-brand bg-wild-brand/20 text-[var(--text-primary)]" 
+                  : "border-[var(--border-secondary)] bg-[var(--card-bg-elevated)]/50 hover:border-[var(--border-secondary)] hover:bg-[var(--card-bg-elevated)] text-[var(--text-secondary)]"
               }`}
               data-testid={`outcome-${market.id}-${idx}`}
             >
-              <div className="text-xs text-zinc-400 truncate">{outcome.label}</div>
+              <div className="text-xs text-[var(--text-secondary)] truncate">{outcome.label}</div>
               <div className={`font-mono font-bold ${isSelected ? "text-wild-brand" : "text-wild-gold"}`}>
                 {priceInCents}¢
               </div>
@@ -980,10 +985,11 @@ function AdditionalMarketsSection({
   };
   
   return (
-    <div className="border-t border-zinc-800 pt-3 mt-3 pl-3 border-l-2" style={{ borderLeftColor: "var(--wl-market-more, #8b5cf6)" }}>
+    <div className="border-t border-[var(--border-primary)] pt-3 mt-3">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center justify-between w-full text-xs text-zinc-400 hover:text-zinc-300 transition-colors"
+        className="flex items-center justify-between w-full text-xs transition-colors"
+        style={{ color: 'var(--market-more, var(--text-secondary))' }}
         data-testid="expand-more-markets"
       >
         <span className="font-medium uppercase tracking-wide">
@@ -1001,10 +1007,10 @@ function AdditionalMarketsSection({
           {marketGroups.map((group) => (
             <div key={group.type} className="space-y-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
+                <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
                   {formatMarketTypeLabel(group.label)}
                 </span>
-                <span className="text-xs text-zinc-600">
+                <span className="text-xs text-[var(--text-muted)]">
                   {formatVolume(group.volume)} Vol.
                 </span>
               </div>
@@ -1101,25 +1107,13 @@ function MarketGroupDisplay({
     ? activeMarket.question 
     : formatMarketTypeLabel(group.label);
   
-  // Get market type accent color
-  const getMarketTypeAccent = () => {
-    switch (group.type) {
-      case "moneyline":
-        return "var(--wl-market-moneyline, #f43f5e)";
-      case "totals":
-        return "var(--wl-market-totals, #3b82f6)";
-      default:
-        return "var(--wl-market-more, #8b5cf6)";
-    }
-  };
-  
   return (
-    <div className="space-y-2 pl-3 border-l-2" style={{ borderLeftColor: getMarketTypeAccent() }}>
+    <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <span className={`text-xs font-medium text-zinc-400 ${isTennis ? "normal-case" : "uppercase"} tracking-wide truncate`}>
+        <span className={`text-xs font-medium text-[var(--text-secondary)] ${isTennis ? "normal-case" : "uppercase"} tracking-wide truncate`}>
           {displayLabel}
         </span>
-        <span className="text-xs text-zinc-600 shrink-0">
+        <span className="text-xs text-[var(--text-muted)] shrink-0">
           {formatVolume(group.volume)} Vol.
         </span>
       </div>
@@ -1190,6 +1184,7 @@ interface UserPosition {
   outcomeLabel?: string;
   marketQuestion?: string;
   unrealizedPnl?: number;
+  negRisk?: boolean;
 }
 
 // New EventCard component using DisplayEvent
@@ -1202,6 +1197,7 @@ function EventCard({
   selectedOutcomeIndex,
   userPositions = [],
   livePrices,
+  onSellPosition,
 }: { 
   event: DisplayEvent;
   onSelectMarket: (market: ParsedMarket, eventTitle: string, marketType: string, direction?: string, outcomeLabel?: string) => void;
@@ -1211,6 +1207,7 @@ function EventCard({
   selectedOutcomeIndex?: number;
   userPositions?: UserPosition[];
   livePrices?: Map<string, { bestAsk: number; bestBid: number }>;
+  onSellPosition?: (position: UserPosition) => void;
 }) {
   const countdown = getCountdown(event.gameStartTime);
   
@@ -1261,23 +1258,36 @@ function EventCard({
             <div className="w-2 h-2 rounded-full bg-wild-trade animate-pulse" />
             <span className="text-[10px] font-bold text-wild-trade uppercase tracking-wider">Your Position</span>
           </div>
-          <div className="divide-y divide-zinc-800/50">
+          <div className="divide-y divide-[var(--border-primary)]/50">
             {eventPositions.map((pos, i) => (
               <div key={i} className="px-3 py-2" data-testid={`event-position-${i}`}>
                 <div className="flex justify-between items-start gap-2">
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs text-white leading-tight">{pos.marketQuestion || event.title}</div>
+                    <div className="text-xs text-[var(--text-primary)] truncate">{pos.marketQuestion || event.title}</div>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px] font-mono text-zinc-500">{pos.outcomeLabel || "Yes"}</span>
+                      <span className="text-[10px] font-mono text-[var(--text-muted)]">{pos.outcomeLabel || "Yes"}</span>
                       <span className="text-[10px] font-mono text-wild-trade">@{pos.avgPrice.toFixed(2)}</span>
                     </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-xs font-mono text-white">{pos.size.toFixed(2)} shares</div>
-                    {pos.unrealizedPnl !== undefined && (
-                      <div className={`text-[10px] font-mono ${pos.unrealizedPnl >= 0 ? "text-wild-scout" : "text-wild-brand"}`}>
-                        {pos.unrealizedPnl >= 0 ? "+" : ""}{pos.unrealizedPnl.toFixed(2)}
-                      </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="text-right">
+                      <div className="text-xs font-mono text-[var(--text-primary)]">{pos.size.toFixed(2)} shares</div>
+                      {pos.unrealizedPnl !== undefined && (
+                        <div className={`text-[10px] font-mono ${pos.unrealizedPnl >= 0 ? "text-wild-scout" : "text-wild-brand"}`}>
+                          {pos.unrealizedPnl >= 0 ? "+" : ""}{pos.unrealizedPnl.toFixed(2)}
+                        </div>
+                      )}
+                    </div>
+                    {onSellPosition && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-[10px] h-6 px-2 border-wild-gold/50 text-wild-gold hover:bg-wild-gold/10"
+                        onClick={() => onSellPosition(pos)}
+                        data-testid={`button-sell-event-position-${i}`}
+                      >
+                        Sell
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -1292,9 +1302,9 @@ function EventCard({
         <div className="flex-1 min-w-0">
           <h3 className="font-bold text-base leading-tight break-words">{event.title}</h3>
           {event.description && (
-            <p className="text-sm text-zinc-400 mt-1 line-clamp-2">{event.description}</p>
+            <p className="text-sm text-[var(--text-secondary)] mt-1 line-clamp-2">{event.description}</p>
           )}
-          <div className="flex items-center gap-2 text-xs text-zinc-500 mt-1.5">
+          <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] mt-1.5">
             <span className="font-medium">{event.league}</span>
             <span>•</span>
             <span>{formatVolume(event.volume)} vol</span>
@@ -1402,7 +1412,7 @@ function FuturesCard({ future, onPlaceBet, selectedOutcome }: {
         <div className="flex-1 min-w-0">
           <h3 className="font-bold text-sm">{future.title}</h3>
           {future.description && (
-            <p className="text-xs text-zinc-500 line-clamp-2 mt-0.5">{future.description}</p>
+            <p className="text-xs text-[var(--text-muted)] line-clamp-2 mt-0.5">{future.description}</p>
           )}
         </div>
         <Badge variant="secondary" className="text-xs shrink-0">
@@ -1426,13 +1436,13 @@ function FuturesCard({ future, onPlaceBet, selectedOutcome }: {
                   className={`flex items-center justify-between gap-2 px-3 py-2 rounded-md border transition-colors ${
                     isSelected 
                       ? "border-wild-brand bg-wild-brand/10" 
-                      : "border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900/50"
+                      : "border-[var(--border-primary)] hover:border-[var(--border-secondary)] hover:bg-[var(--card-bg)]/50"
                   }`}
                   data-testid={`futures-outcome-${future.id}-${index}`}
                 >
                   <div className="flex flex-col min-w-0 flex-1">
                     <span className="text-sm truncate font-medium">{getShortOutcomeLabel(outcome.label)}</span>
-                    <span className="text-xs text-zinc-500">{probability.toFixed(0)}%</span>
+                    <span className="text-xs text-[var(--text-muted)]">{probability.toFixed(0)}%</span>
                   </div>
                   <span className={`font-mono text-base font-bold shrink-0 ${
                     isSelected ? "text-wild-brand" : "text-wild-gold"
@@ -1456,7 +1466,7 @@ function FuturesCard({ future, onPlaceBet, selectedOutcome }: {
       )}
       
       {future.marketData && (
-        <div className="flex items-center justify-between text-xs text-zinc-500 pt-2 border-t border-zinc-800">
+        <div className="flex items-center justify-between text-xs text-[var(--text-muted)] pt-2 border-t border-[var(--border-primary)]">
           <div className="flex items-center gap-1">
             <TrendingUp className="w-3 h-3" />
             Vol: ${(future.marketData.volume / 1000).toFixed(1)}K
@@ -1483,19 +1493,14 @@ export function PredictView({
   livePrices,
   enabledTags = [],
   futuresCategories = [],
+  onSellPosition,
+  walletAddress,
+  isConnected = false,
 }: PredictViewProps) {
   const [activeSubTab, setActiveSubTab] = useState<PredictSubTab>("matchday");
   const [selectedLeagues, setSelectedLeagues] = useState<Set<string>>(new Set());
   const [selectedFuturesCategory, setSelectedFuturesCategory] = useState<number | null>(null);
 
-  // Load sport market configs for dynamic formatting
-  const { data: sportConfigs = [] } = useQuery<SportMarketConfig[]>({
-    queryKey: ["/api/admin/sport-market-configs"],
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
-  });
-  
-  const configMap = buildConfigMap(sportConfigs);
-  
   // Prefetch teams from Gamma API for team name → abbreviation lookup
   useEffect(() => {
     prefetchTeams();
@@ -1758,7 +1763,6 @@ export function PredictView({
   };
 
   return (
-    <SportConfigContext.Provider value={configMap}>
       <div className="flex flex-col h-full animate-fade-in">
         <PriceTicker events={displayEvents} />
         <SubTabs tabs={subTabs} activeTab={activeSubTab} onTabChange={setActiveSubTab} />
@@ -1798,6 +1802,7 @@ export function PredictView({
                         selectedDirection={selectedBet?.direction}
                         userPositions={userPositions}
                         livePrices={livePrices?.prices}
+                        onSellPosition={onSellPosition}
                       />
                     ))}
                   </div>
@@ -1805,7 +1810,7 @@ export function PredictView({
                 
                 {upcomingEvents.length > 0 && (
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm font-bold text-zinc-400">
+                    <div className="flex items-center gap-2 text-sm font-bold text-[var(--text-secondary)]">
                       <Clock className="w-4 h-4" />
                       UPCOMING ({upcomingEvents.length})
                     </div>
@@ -1819,6 +1824,7 @@ export function PredictView({
                         selectedDirection={selectedBet?.direction}
                         userPositions={userPositions}
                         livePrices={livePrices?.prices}
+                        onSellPosition={onSellPosition}
                       />
                     ))}
                   </div>
@@ -1880,10 +1886,16 @@ export function PredictView({
           </div>
         )}
 
+        {activeSubTab === "leaderboard" && (
+          <LeaderboardPanel
+            walletAddress={walletAddress}
+            isConnected={isConnected}
+          />
+        )}
         </div>
         
         {/* Powered by Polymarket attribution */}
-        <div className="shrink-0 py-3 px-4 border-t border-zinc-800 bg-zinc-950 flex justify-center" data-testid="container-polymarket-attribution">
+        <div className="shrink-0 py-3 px-4 border-t border-[var(--border-primary)] bg-[var(--page-bg)] flex justify-center" data-testid="container-polymarket-attribution">
           <Button
             variant="ghost"
             size="sm"
@@ -1893,7 +1905,7 @@ export function PredictView({
               href="https://polymarket.com" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="flex items-center gap-2 text-zinc-500"
+              className="flex items-center gap-2 text-[var(--text-muted)]"
               data-testid="link-polymarket-attribution"
             >
               <span className="text-xs font-medium">Powered by</span>
@@ -1908,6 +1920,5 @@ export function PredictView({
           </Button>
         </div>
       </div>
-    </SportConfigContext.Provider>
   );
 }

@@ -2,7 +2,74 @@
 @tailwind components;
 @tailwind utilities;
 
-/* POLYHOUSE TERMINAL - DARK MODE ONLY */
+/* Theme CSS Variables - Applied by ThemeProvider */
+:root {
+  /* General-purpose semantic variables */
+  --page-bg: #09090b;
+  --card-bg: #18181b;
+  --card-bg-elevated: #27272a;
+  --card-bg-hover: #3f3f46;
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --border-primary: #27272a;
+  --border-secondary: #3f3f46;
+  --primary-color: #f43f5e;
+  --accent-color: #fbbf24;
+
+  /* Global status colors */
+  --success-color: #10b981;
+  --error-color: #ef4444;
+  --warning-color: #f59e0b;
+
+  /* Wild color system (RGB triplets for Tailwind alpha support) */
+  --wild-brand-rgb: 251 113 133;
+  --wild-scout-rgb: 52 211 153;
+  --wild-gold-rgb: 251 191 36;
+  --wild-trade-rgb: 59 130 246;
+  --wild-error-rgb: 239 68 68;
+  --wild-warning-rgb: 245 158 11;
+
+  /* Header */
+  --header-bg: #09090b;
+  --header-text: #fafafa;
+  --header-accent: #fbbf24;
+
+  /* BetSlip */
+  --betslip-bg: #18181b;
+  --betslip-card: #27272a;
+  --betslip-primary: #f43f5e;
+  --betslip-success: #10b981;
+  --betslip-text: #fafafa;
+
+  /* Legacy BetSlip variables (backward compat) */
+  --wl-betslip-bg: #18181b;
+  --wl-betslip-text: #fafafa;
+
+  /* Market Cards */
+  --market-bg: #18181b;
+  --market-hover: #27272a;
+  --market-border: #3f3f46;
+  --market-odds-badge: #fbbf24;
+  --market-text: #fafafa;
+  --market-moneyline: #f43f5e;
+  --market-moneyline-away: #3b82f6;
+  --market-moneyline-draw: #71717a;
+  --market-totals: #3b82f6;
+  --market-more: #8b5cf6;
+
+  /* Sorting Bar */
+  --sort-bg: #09090b;
+  --sort-active: #f43f5e;
+  --sort-inactive: #71717a;
+
+  /* Bottom Nav */
+  --nav-bg: #09090b;
+  --nav-active: #fbbf24;
+  --nav-inactive: #71717a;
+}
+
+/* WILDCARD TERMINAL - DARK MODE ONLY */
 :root {
   --button-outline: rgba(255,255,255, .10);
   --badge-outline: rgba(255,255,255, .05);

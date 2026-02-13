@@ -1,19 +1,10 @@
-import { Wallet, Zap, Flame, Target, Trophy, Crown, Shield, Rocket, Gem, Heart, Sparkles, Star, type LucideIcon } from "lucide-react";
+import { Zap, Wallet, Flame, Target, Trophy, Crown, Shield, Rocket, Gem, Heart, Sparkles, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useWhiteLabelTheme } from "@/hooks/useWhiteLabelTheme";
+import { useTheme } from "@/hooks/useTheme";
 
-const ICON_MAP: Record<string, LucideIcon> = {
-  zap: Zap,
-  flame: Flame,
-  target: Target,
-  trophy: Trophy,
-  crown: Crown,
-  shield: Shield,
-  rocket: Rocket,
-  gem: Gem,
-  heart: Heart,
-  sparkles: Sparkles,
-  star: Star,
+const IconMap: Record<string, typeof Zap> = {
+  zap: Zap, flame: Flame, target: Target, trophy: Trophy, crown: Crown,
+  shield: Shield, rocket: Rocket, gem: Gem, heart: Heart, sparkles: Sparkles, star: Star,
 };
 
 interface HeaderProps {
@@ -24,10 +15,7 @@ interface HeaderProps {
 }
 
 export function Header({ usdcBalance, wildBalance, onWalletClick, isConnected = false }: HeaderProps) {
-  const { brandName, logoUrl, logoIcon, primaryColor, pointsConfig } = useWhiteLabelTheme();
-  
-  const LogoIconComponent = logoIcon && logoIcon !== "none" ? ICON_MAP[logoIcon] : null;
-  
+  const { brandName, pointsName, pointsEnabled, logoUrl, logoIcon } = useTheme();
   const formatBalance = (value: number) => {
     return new Intl.NumberFormat("en-US", {
       minimumFractionDigits: 2,
@@ -35,47 +23,38 @@ export function Header({ usdcBalance, wildBalance, onWalletClick, isConnected = 
     }).format(value);
   };
 
-  const pointsName = pointsConfig?.name?.replace("$", "") || "WILD";
-  const showPoints = pointsConfig?.enabled ?? false;
-
   return (
-    <header 
-      className="h-14 shrink-0 flex items-center justify-between px-4 bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-800/50 z-30" 
-      style={{ backgroundColor: "var(--wl-header-bg, rgba(24, 24, 27, 0.8))" }}
+    <header
+      className="h-14 shrink-0 flex items-center justify-between px-4 backdrop-blur-lg border-b border-[var(--border-primary)]/50 z-30"
+      style={{ backgroundColor: 'var(--header-bg, #09090b)' }}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" style={{ color: 'var(--header-accent, #fb7185)' }}>
         {logoUrl ? (
           <img src={logoUrl} alt={brandName} className="h-6 w-auto" />
-        ) : LogoIconComponent ? (
-          <LogoIconComponent 
-            className="h-5 w-5" 
-            style={{ color: "var(--wl-header-accent, var(--wl-brand-primary, " + primaryColor + "))" }} 
-          />
-        ) : null}
-        <span 
-          className="font-black italic tracking-tighter text-lg" 
-          style={{ color: "var(--wl-header-text, #ffffff)" }}
-        >
-          {brandName}
-        </span>
+        ) : logoIcon && logoIcon !== "none" && IconMap[logoIcon] ? (
+          (() => { const Icon = IconMap[logoIcon]; return <Icon className="w-5 h-5 fill-current" />; })()
+        ) : (
+          <Zap className="w-5 h-5 fill-current" />
+        )}
+        <span className="font-black italic tracking-tighter text-lg" style={{ color: 'var(--header-text, #ffffff)' }}>{brandName}</span>
       </div>
       {isConnected ? (
         <Button
           variant="ghost"
           onClick={onWalletClick}
-          className="group flex items-center gap-3 bg-zinc-900/50 border border-zinc-800 px-3 py-1.5 rounded-full"
+          className="group flex items-center gap-3 bg-[var(--card-bg)]/50 border border-[var(--border-primary)] px-3 py-1.5 rounded-full"
           data-testid="button-wallet"
         >
-          <div className="text-[10px] font-mono text-right leading-tight text-zinc-400 group-hover:text-white">
+          <div className="text-[10px] font-mono text-right leading-tight text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">
             <div data-testid="text-usdc-balance">${formatBalance(usdcBalance)}</div>
-            {showPoints && (
+            {pointsEnabled && (
               <div className="text-wild-scout" data-testid="text-wild-balance">
                 {formatBalance(wildBalance)} {pointsName}
               </div>
             )}
           </div>
-          <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center">
-            <Wallet className="w-3 h-3 text-zinc-400 group-hover:text-white" />
+          <div className="w-6 h-6 rounded-full bg-[var(--card-bg-elevated)] flex items-center justify-center">
+            <Wallet className="w-3 h-3 text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]" />
           </div>
         </Button>
       ) : (

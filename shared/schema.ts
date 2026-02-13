@@ -20,23 +20,6 @@ export const markets = pgTable("markets", {
   imageUrl: text("image_url"),
 });
 
-export const players = pgTable("players", {
-  id: varchar("id", { length: 36 }).primaryKey(),
-  name: text("name").notNull(),
-  symbol: text("symbol").notNull(),
-  team: text("team").notNull(),
-  sport: text("sport").notNull(),
-  avatarInitials: text("avatar_initials").notNull(),
-  avatarUrl: text("avatar_url"),
-  fundingTarget: real("funding_target").notNull(),
-  fundingCurrent: real("funding_current").notNull().default(0),
-  fundingPercentage: real("funding_percentage").notNull().default(0),
-  generation: integer("generation").notNull().default(1),
-  status: text("status").notNull().default("offering"),
-  priceHistory: jsonb("price_history").$type<Array<{ timestamp: string; price: number }>>(),
-  stats: jsonb("stats").$type<{ holders: number; marketCap: number; change24h: number }>(),
-});
-
 export const bets = pgTable("bets", {
   id: varchar("id", { length: 36 }).primaryKey(),
   marketId: varchar("market_id", { length: 36 }).notNull(),
@@ -46,19 +29,6 @@ export const bets = pgTable("bets", {
   potentialPayout: real("potential_payout").notNull(),
   status: text("status").notNull().default("pending"),
   placedAt: text("placed_at").notNull(),
-  walletAddress: text("wallet_address"),
-});
-
-export const trades = pgTable("trades", {
-  id: varchar("id", { length: 36 }).primaryKey(),
-  playerId: varchar("player_id", { length: 36 }).notNull(),
-  playerName: text("player_name").notNull(),
-  playerSymbol: text("player_symbol").notNull(),
-  type: text("type").notNull(),
-  amount: real("amount").notNull(),
-  price: real("price").notNull(),
-  total: real("total").notNull(),
-  timestamp: text("timestamp").notNull(),
   walletAddress: text("wallet_address"),
 });
 
@@ -186,17 +156,9 @@ export const insertMarketSchema = createInsertSchema(markets).omit({ id: true })
 export type InsertMarket = z.infer<typeof insertMarketSchema>;
 export type Market = typeof markets.$inferSelect;
 
-export const insertPlayerSchema = createInsertSchema(players).omit({ id: true });
-export type InsertPlayer = z.infer<typeof insertPlayerSchema>;
-export type Player = typeof players.$inferSelect;
-
 export const insertBetSchema = createInsertSchema(bets).omit({ id: true, placedAt: true, status: true });
 export type InsertBet = z.infer<typeof insertBetSchema>;
 export type Bet = typeof bets.$inferSelect;
-
-export const insertTradeSchema = createInsertSchema(trades).omit({ id: true, timestamp: true });
-export type InsertTrade = z.infer<typeof insertTradeSchema>;
-export type Trade = typeof trades.$inferSelect;
 
 export type WalletRecord = typeof walletRecords.$inferSelect;
 export type AdminSettings = typeof adminSettings.$inferSelect;
@@ -257,43 +219,6 @@ export const betSchema = z.object({
   potentialPayout: z.number(),
   status: z.string(),
   placedAt: z.string(),
-  walletAddress: z.string().optional().nullable(),
-});
-
-export const playerSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  symbol: z.string(),
-  team: z.string(),
-  sport: z.string(),
-  avatarInitials: z.string(),
-  avatarUrl: z.string().optional().nullable(),
-  fundingTarget: z.number(),
-  fundingCurrent: z.number(),
-  fundingPercentage: z.number(),
-  generation: z.number(),
-  status: z.string(),
-  priceHistory: z.array(z.object({
-    timestamp: z.string(),
-    price: z.number(),
-  })).optional().nullable(),
-  stats: z.object({
-    holders: z.number(),
-    marketCap: z.number(),
-    change24h: z.number(),
-  }).optional().nullable(),
-});
-
-export const tradeSchema = z.object({
-  id: z.string(),
-  playerId: z.string(),
-  playerName: z.string(),
-  playerSymbol: z.string(),
-  type: z.string(),
-  amount: z.number(),
-  price: z.number(),
-  total: z.number(),
-  timestamp: z.string(),
   walletAddress: z.string().optional().nullable(),
 });
 

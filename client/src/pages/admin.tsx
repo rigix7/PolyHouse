@@ -1,7 +1,7 @@
 /**
  * Admin Panel – Full version with all features and password protection
  *
- * PolyHouse admin panel with password protection via ADMIN_SECRET_KEY.
+ * Forked from Wildcards admin panel with Scout/Trade/Players features removed.
  *
  * Tabs:
  *   - Tags          – Sync & toggle Polymarket sport tags
@@ -11,13 +11,10 @@
  *   - Points Config – Enable/disable points, referral %, reset schedule
  *   - Fees          – Fee BPS, multi-wallet splits
  *   - White Label   – Theme / brand customization (colors, logo, etc.)
- *   - Referrals     – Referral program management
  */
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   ArrowLeft,
@@ -742,12 +739,12 @@ function ColorPicker({ label, value, onChange }: { label: string; value: string;
 }
 
 const PRESET_THEMES: Record<string, { name: string; description: string; icon: typeof Zap; theme: ThemeConfig }> = {
-  polyhouse: {
-    name: "PolyHouse",
-    description: "Original PolyHouse theme - bold orange and gold",
+  wildcards: {
+    name: "Wildcards",
+    description: "Original Wildcards theme - bold orange and gold",
     icon: Flame,
     theme: {
-      brand: { name: "POLYHOUSE", primaryColor: "#f43f5e", accentColor: "#fbbf24" },
+      brand: { name: "WILDCARDS", primaryColor: "#f43f5e", accentColor: "#fbbf24" },
       header: { backgroundColor: '#09090b', textColor: '#fafafa', accentColor: '#fbbf24' },
       betSlip: { backgroundColor: '#18181b', cardColor: '#27272a', primaryButtonColor: '#f43f5e', successColor: '#10b981', textColor: '#fafafa' },
       marketCards: { backgroundColor: '#18181b', hoverColor: '#27272a', borderColor: '#3f3f46', oddsBadgeColor: '#fbbf24', textColor: '#fafafa', moneylineAccent: '#f43f5e', moneylineAwayAccent: '#3b82f6', moneylineDrawAccent: '#71717a', totalsAccent: '#3b82f6', moreMarketsAccent: '#8b5cf6' },
@@ -988,7 +985,7 @@ function WhiteLabelSection({
                     className="text-xl font-bold italic tracking-tighter"
                     style={{ color: localTheme.header?.textColor }}
                   >
-                    {localTheme.brand?.name || "POLYHOUSE"}
+                    {localTheme.brand?.name || "WILDCARDS"}
                   </span>
                   <div
                     className="w-10 h-10 rounded-full flex items-center justify-center"
@@ -1275,7 +1272,7 @@ function WhiteLabelSection({
                   return null;
                 })()}
                 <span className="font-bold italic tracking-tighter" style={{ color: localTheme.brand?.accentColor }}>
-                  {localTheme.brand?.name || "POLYHOUSE"}
+                  {localTheme.brand?.name || "WILDCARDS"}
                 </span>
               </div>
             </div>
@@ -1287,7 +1284,7 @@ function WhiteLabelSection({
               <Input
                 value={localTheme.brand?.name || ""}
                 onChange={(e) => setLocalTheme({ ...localTheme, brand: { ...localTheme.brand, name: e.target.value } })}
-                placeholder="POLYHOUSE"
+                placeholder="WILDCARDS"
                 className="mt-1"
               />
             </div>
@@ -1346,7 +1343,7 @@ function WhiteLabelSection({
               <div className="text-xs text-zinc-500 mb-2">Preview</div>
               <div className="flex items-center justify-between">
                 <span className="font-bold text-sm italic tracking-tighter" style={{ color: localTheme.header?.textColor }}>
-                  {localTheme.brand?.name || "POLYHOUSE"}
+                  {localTheme.brand?.name || "WILDCARDS"}
                 </span>
                 <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: localTheme.header?.accentColor }}>
                   <span className="text-[8px] text-zinc-900 font-bold">W</span>

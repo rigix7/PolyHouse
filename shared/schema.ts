@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, real, timestamp, jsonb, varchar, boolean, numeric, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, real, timestamp, jsonb, varchar, boolean, numeric } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -38,9 +38,19 @@ export const walletRecords = pgTable("wallet_records", {
   totalBetAmount: real("total_bet_amount").notNull().default(0),
   safeAddress: varchar("safe_address", { length: 42 }),
   isSafeDeployed: boolean("is_safe_deployed").notNull().default(false),
-  referralCode: varchar("referral_code", { length: 20 }), // User's own referral code
-  referredBy: varchar("referred_by", { length: 42 }), // Address of the referrer
-  referralPointsEarned: real("referral_points_earned").notNull().default(0), // Points earned from referrals
+  referralCode: varchar("referral_code", { length: 20 }),
+  referredBy: varchar("referred_by", { length: 42 }),
+  referralPointsEarned: real("referral_points_earned").notNull().default(0),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const whiteLabelConfig = pgTable("white_label_config", {
+  id: serial("id").primaryKey(),
+  themeConfig: jsonb("theme_config").$type<Record<string, unknown>>().default({}),
+  apiCredentials: jsonb("api_credentials").$type<Record<string, unknown>>().default({}),
+  feeConfig: jsonb("fee_config").$type<{ feeBps: number; feeAddress?: string; wallets?: Array<{ address: string; percentage: number }> }>().default({ feeBps: 0 }),
+  pointsConfig: jsonb("points_config").$type<{ enabled: boolean; name: string; resetSchedule: string; referralEnabled: boolean; referralPercentage: number } | null>(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -109,47 +119,6 @@ export const polymarketTags = pgTable("polymarket_tags", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const sportMarketConfigs = pgTable("sport_market_configs", {
-  id: serial("id").primaryKey(),
-  sportSlug: text("sport_slug").notNull(),
-  sportLabel: text("sport_label").notNull(),
-  marketType: text("market_type").notNull(),
-  marketTypeLabel: text("market_type_label"),
-  titleField: text("title_field").notNull().default("groupItemTitle"),
-  buttonLabelField: text("button_label_field").notNull().default("outcomes"),
-  betSlipTitleField: text("bet_slip_title_field").notNull().default("question"),
-  useQuestionForTitle: boolean("use_question_for_title").notNull().default(false),
-  showLine: boolean("show_line").notNull().default(false),
-  lineFieldPath: text("line_field_path").default("line"),
-  lineFormatter: text("line_formatter").default("default"),
-  outcomeStrategy: jsonb("outcome_strategy").$type<{
-    type: string;
-    fallback?: string;
-    regex?: string;
-    template?: string;
-  }>(),
-  sampleData: jsonb("sample_data").$type<Record<string, unknown>>(),
-  notes: text("notes"),
-  createdAt: text("created_at"),
-  updatedAt: text("updated_at"),
-}, (table) => [
-  // Composite unique index on sportSlug + marketType
-  uniqueIndex("sport_market_config_unique").on(table.sportSlug, table.marketType)
-]);
-
-export const sportFieldConfigs = pgTable("sport_field_configs", {
-  id: serial("id").primaryKey(),
-  sportSlug: text("sport_slug").notNull().unique(),
-  sportLabel: text("sport_label").notNull(),
-  titleField: text("title_field").notNull().default("groupItemTitle"),
-  buttonLabelField: text("button_label_field").notNull().default("outcomes"),
-  betSlipTitleField: text("bet_slip_title_field").notNull().default("question"),
-  useQuestionForTitle: boolean("use_question_for_title").notNull().default(false),
-  sampleData: jsonb("sample_data").$type<Record<string, unknown>>(),
-  createdAt: text("created_at"),
-  updatedAt: text("updated_at"),
-});
-
 // ============ ZOD SCHEMAS & TYPES ============
 
 export const insertMarketSchema = createInsertSchema(markets).omit({ id: true });
@@ -162,6 +131,10 @@ export type Bet = typeof bets.$inferSelect;
 
 export type WalletRecord = typeof walletRecords.$inferSelect;
 export type AdminSettings = typeof adminSettings.$inferSelect;
+
+export const insertWhiteLabelConfigSchema = createInsertSchema(whiteLabelConfig).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertWhiteLabelConfig = z.infer<typeof insertWhiteLabelConfigSchema>;
+export type WhiteLabelConfig = typeof whiteLabelConfig.$inferSelect;
 
 export const insertBridgeTransactionSchema = createInsertSchema(bridgeTransactions).omit({ id: true, createdAt: true });
 export type InsertBridgeTransaction = z.infer<typeof insertBridgeTransactionSchema>;
@@ -179,13 +152,59 @@ export const insertPolymarketTagSchema = createInsertSchema(polymarketTags).omit
 export type InsertPolymarketTag = z.infer<typeof insertPolymarketTagSchema>;
 export type PolymarketTagRecord = typeof polymarketTags.$inferSelect;
 
-export const insertSportFieldConfigSchema = createInsertSchema(sportFieldConfigs).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertSportFieldConfig = z.infer<typeof insertSportFieldConfigSchema>;
-export type SportFieldConfig = typeof sportFieldConfigs.$inferSelect;
 
-export const insertSportMarketConfigSchema = createInsertSchema(sportMarketConfigs).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertSportMarketConfig = z.infer<typeof insertSportMarketConfigSchema>;
-export type SportMarketConfig = typeof sportMarketConfigs.$inferSelect;
+// ============ WHITE-LABEL THEME CONFIGURATION ============
+
+export const themeConfigSchema = z.object({
+  brand: z.object({
+    name: z.string().default("WILDCARDS"),
+    logoUrl: z.string().optional(),
+    logoIcon: z.string().optional(),
+    primaryColor: z.string().default("#f43f5e"),
+    accentColor: z.string().default("#fbbf24"),
+  }).default({}),
+  header: z.object({
+    backgroundColor: z.string().default("#09090b"),
+    textColor: z.string().default("#fafafa"),
+    accentColor: z.string().default("#fbbf24"),
+  }).default({}),
+  betSlip: z.object({
+    backgroundColor: z.string().default("#18181b"),
+    cardColor: z.string().default("#27272a"),
+    primaryButtonColor: z.string().default("#f43f5e"),
+    successColor: z.string().default("#10b981"),
+    textColor: z.string().default("#fafafa"),
+  }).default({}),
+  marketCards: z.object({
+    backgroundColor: z.string().default("#18181b"),
+    hoverColor: z.string().default("#27272a"),
+    borderColor: z.string().default("#3f3f46"),
+    oddsBadgeColor: z.string().default("#fbbf24"),
+    textColor: z.string().default("#fafafa"),
+    moneylineAccent: z.string().default("#f43f5e"),
+    moneylineAwayAccent: z.string().default("#3b82f6"),
+    moneylineDrawAccent: z.string().default("#71717a"),
+    totalsAccent: z.string().default("#3b82f6"),
+    moreMarketsAccent: z.string().default("#8b5cf6"),
+  }).default({}),
+  sortingBar: z.object({
+    backgroundColor: z.string().default("#09090b"),
+    activeTabColor: z.string().default("#f43f5e"),
+    inactiveTabColor: z.string().default("#71717a"),
+  }).default({}),
+  bottomNav: z.object({
+    backgroundColor: z.string().default("#09090b"),
+    activeColor: z.string().default("#fbbf24"),
+    inactiveColor: z.string().default("#71717a"),
+  }).default({}),
+  global: z.object({
+    successColor: z.string().default("#10b981"),
+    errorColor: z.string().default("#ef4444"),
+    warningColor: z.string().default("#f59e0b"),
+  }).default({}),
+});
+
+export type ThemeConfig = z.infer<typeof themeConfigSchema>;
 
 // ============ LEGACY ZOD SCHEMAS (for API validation) ============
 
@@ -237,6 +256,9 @@ export const walletRecordSchema = z.object({
   totalBetAmount: z.number(),
   safeAddress: z.string().nullable().optional(),
   isSafeDeployed: z.boolean(),
+  referralCode: z.string().nullable().optional(),
+  referredBy: z.string().nullable().optional(),
+  referralPointsEarned: z.number(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -345,144 +367,76 @@ export const polymarketOrderSchema = z.object({
   updatedAt: z.string(),
 });
 
-// ============ WHITE-LABEL THEME CONFIGURATION ============
+// ============ REFERRAL SYSTEM TABLES ============
 
-// Theme colors for each component area
-export const themeColorSchema = z.object({
-  primary: z.string().optional(),
-  secondary: z.string().optional(),
-  background: z.string().optional(),
-  foreground: z.string().optional(),
-  accent: z.string().optional(),
-  border: z.string().optional(),
-  muted: z.string().optional(),
-});
-
-export type ThemeColors = z.infer<typeof themeColorSchema>;
-
-// Full theme configuration with component-specific settings
-export const themeConfigSchema = z.object({
-  // Brand settings
-  brand: z.object({
-    name: z.string().default("POLYHOUSE"),
-    logoUrl: z.string().optional(),
-    logoIcon: z.string().optional(), // Icon name from lucide-react (e.g., "zap", "flame", "trophy")
-    primaryColor: z.string().default("#f43f5e"), // rose-500
-    accentColor: z.string().default("#fbbf24"), // amber-400
-  }).default({}),
-  
-  // Header component
-  header: z.object({
-    backgroundColor: z.string().default("#09090b"), // zinc-950
-    textColor: z.string().default("#fafafa"), // zinc-50
-    accentColor: z.string().default("#fbbf24"), // amber-400
-  }).default({}),
-  
-  // BetSlip component
-  betSlip: z.object({
-    backgroundColor: z.string().default("#18181b"), // zinc-900
-    cardColor: z.string().default("#27272a"), // zinc-800
-    primaryButtonColor: z.string().default("#f43f5e"), // rose-500
-    successColor: z.string().default("#10b981"), // emerald-500
-    textColor: z.string().default("#fafafa"), // zinc-50
-  }).default({}),
-  
-  // Market cards
-  marketCards: z.object({
-    backgroundColor: z.string().default("#18181b"), // zinc-900
-    hoverColor: z.string().default("#27272a"), // zinc-800
-    borderColor: z.string().default("#3f3f46"), // zinc-700
-    oddsBadgeColor: z.string().default("#fbbf24"), // amber-400
-    textColor: z.string().default("#fafafa"), // zinc-50
-    // Market type accent colors
-    moneylineAccent: z.string().default("#f43f5e"), // rose-500 for moneyline markets
-    moneylineAwayAccent: z.string().default("#3b82f6"), // blue-500 for away team
-    moneylineDrawAccent: z.string().default("#71717a"), // zinc-500 for draw
-    totalsAccent: z.string().default("#3b82f6"), // blue-500 for totals/over-under markets
-    moreMarketsAccent: z.string().default("#8b5cf6"), // violet-500 for more markets section
-  }).default({}),
-  
-  // Sorting/filter bar
-  sortingBar: z.object({
-    backgroundColor: z.string().default("#09090b"), // zinc-950
-    activeTabColor: z.string().default("#f43f5e"), // rose-500
-    inactiveTabColor: z.string().default("#71717a"), // zinc-500
-  }).default({}),
-  
-  // Bottom navigation
-  bottomNav: z.object({
-    backgroundColor: z.string().default("#09090b"), // zinc-950
-    activeColor: z.string().default("#fbbf24"), // amber-400
-    inactiveColor: z.string().default("#71717a"), // zinc-500
-  }).default({}),
-  
-  // Global colors
-  global: z.object({
-    successColor: z.string().default("#10b981"), // emerald-500
-    errorColor: z.string().default("#ef4444"), // red-500
-    warningColor: z.string().default("#f59e0b"), // amber-500
-  }).default({}),
-});
-
-export type ThemeConfig = z.infer<typeof themeConfigSchema>;
-
-// API credentials configuration (stored encrypted)
-export const apiCredentialsSchema = z.object({
-  apiKey: z.string().optional(),
-  apiSecret: z.string().optional(),
-  passphrase: z.string().optional(),
-});
-
-export type ApiCredentials = z.infer<typeof apiCredentialsSchema>;
-
-// Fee wallet recipient
-export const feeWalletSchema = z.object({
-  address: z.string(),
-  percentage: z.number().min(0).max(100), // Percentage of total fee (must sum to 100)
-  label: z.string().optional(), // e.g., "Platform", "Operator", "Referrer"
-});
-
-export type FeeWallet = z.infer<typeof feeWalletSchema>;
-
-// Fee configuration with multiple wallets
-export const feeConfigSchema = z.object({
-  feeBps: z.number().min(0).max(1000).default(0), // 0-10% in basis points
-  feeWalletAddress: z.string().optional(), // Legacy single wallet (backwards compatible)
-  wallets: z.array(feeWalletSchema).optional(), // Multi-wallet configuration
-});
-
-export type FeeConfig = z.infer<typeof feeConfigSchema>;
-
-// Points system configuration
-export const pointsConfigSchema = z.object({
-  enabled: z.boolean().default(false), // Points system disabled by default
-  name: z.string().default("$WILD"), // Customizable points name
-  resetSchedule: z.enum(["never", "weekly", "monthly"]).default("never"), // When to reset points
-  referralEnabled: z.boolean().default(false), // Enable referral system
-  referralPercentage: z.number().min(0).max(100).default(10), // % of referred user's points given to referrer
-});
-
-export type PointsConfig = z.infer<typeof pointsConfigSchema>;
-
-// White-label configuration table
-export const whiteLabelConfig = pgTable("white_label_config", {
+export const referralPeriods = pgTable("referral_periods", {
   id: serial("id").primaryKey(),
-  // Theme settings (colors, branding)
-  themeConfig: jsonb("theme_config").notNull().$type<ThemeConfig>(),
-  // API credentials (encrypted storage recommended)
-  apiCredentials: jsonb("api_credentials").$type<ApiCredentials>(),
-  // Fee settings
-  feeConfig: jsonb("fee_config").$type<FeeConfig>(),
-  // Points system settings
-  pointsConfig: jsonb("points_config").$type<PointsConfig>(),
-  // Metadata
+  name: text("name").notNull(),
+  strategy: text("strategy").notNull(), // "growth_multiplier" | "revenue_share" | "milestone_quest" | "team_volume"
+  strategyConfig: jsonb("strategy_config").notNull().$type<Record<string, unknown>>(),
+  resetMode: text("reset_mode").notNull().default("manual"), // "manual" | "scheduled" | "rolling_expiry"
+  resetConfig: jsonb("reset_config").$type<Record<string, unknown>>().default({}),
+  refereeBenefits: jsonb("referee_benefits").$type<{ signupBonus: number; firstBetMultiplier: number; maxStake: number }>().default({ signupBonus: 100, firstBetMultiplier: 2.0, maxStake: 10 }),
+  status: text("status").notNull().default("draft"), // "draft" | "active" | "completed" | "cancelled"
+  startsAt: text("starts_at").notNull(),
+  endsAt: text("ends_at"),
+  completedAt: text("completed_at"),
+  createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
+});
+
+export const referralLinks = pgTable("referral_links", {
+  id: serial("id").primaryKey(),
+  periodId: integer("period_id").notNull(),
+  referrerAddress: varchar("referrer_address", { length: 42 }).notNull(),
+  referredAddress: varchar("referred_address", { length: 42 }).notNull(),
+  referralCode: varchar("referral_code", { length: 20 }).notNull(),
+  status: text("status").notNull().default("pending"), // "pending" | "active" | "inactive"
+  linkedAt: text("linked_at").notNull(),
+  firstBetAt: text("first_bet_at"),
+  lastBetAt: text("last_bet_at"),
+  lifetimeVolume: real("lifetime_volume").notNull().default(0),
+});
+
+export const referralBonuses = pgTable("referral_bonuses", {
+  id: serial("id").primaryKey(),
+  periodId: integer("period_id").notNull(),
+  recipientAddress: varchar("recipient_address", { length: 42 }).notNull(),
+  sourceAddress: varchar("source_address", { length: 42 }),
+  bonusType: text("bonus_type").notNull(), // "growth_multiplier" | "revenue_share" | "milestone" | "team_volume" | "signup" | "first_bet"
+  points: real("points").notNull(),
+  reason: text("reason"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  awardedAt: text("awarded_at").notNull(),
+});
+
+export const leaderboardArchives = pgTable("leaderboard_archives", {
+  id: serial("id").primaryKey(),
+  periodId: integer("period_id").notNull(),
+  periodStart: text("period_start").notNull(),
+  periodEnd: text("period_end").notNull(),
+  resetMode: text("reset_mode").notNull(),
+  rankings: jsonb("rankings").notNull().$type<Array<{ rank: number; address: string; points: number; referrals: number; bonusPoints: number }>>(),
+  stats: jsonb("stats").notNull().$type<{ totalUsers: number; totalReferrals: number; totalBonusAwarded: number; topReferrer?: string }>(),
   createdAt: text("created_at").notNull(),
 });
 
-export const insertWhiteLabelConfigSchema = createInsertSchema(whiteLabelConfig).omit({ id: true });
-export type InsertWhiteLabelConfig = z.infer<typeof insertWhiteLabelConfigSchema>;
-export type WhiteLabelConfig = typeof whiteLabelConfig.$inferSelect;
+// Referral system Zod schemas and types
+export const insertReferralPeriodSchema = createInsertSchema(referralPeriods).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertReferralPeriod = z.infer<typeof insertReferralPeriodSchema>;
+export type ReferralPeriod = typeof referralPeriods.$inferSelect;
+
+export const insertReferralLinkSchema = createInsertSchema(referralLinks).omit({ id: true });
+export type InsertReferralLink = z.infer<typeof insertReferralLinkSchema>;
+export type ReferralLink = typeof referralLinks.$inferSelect;
+
+export const insertReferralBonusSchema = createInsertSchema(referralBonuses).omit({ id: true });
+export type InsertReferralBonus = z.infer<typeof insertReferralBonusSchema>;
+export type ReferralBonus = typeof referralBonuses.$inferSelect;
+
+export const insertLeaderboardArchiveSchema = createInsertSchema(leaderboardArchives).omit({ id: true, createdAt: true });
+export type InsertLeaderboardArchive = z.infer<typeof insertLeaderboardArchiveSchema>;
+export type LeaderboardArchive = typeof leaderboardArchives.$inferSelect;
 
 // ============ LEGACY USER SCHEMA (keep for compatibility) ============
 

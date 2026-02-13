@@ -20,20 +20,13 @@ export type FeeCollectionResult = {
   feeAmount: bigint;
   txHash?: string;
   skipped?: boolean; // Fee was skipped (disabled or zero amount)
-  walletTransfers?: { address: string; amount: bigint; label?: string }[];
 };
-
-interface FeeWallet {
-  address: string;
-  percentage: number;
-  label?: string;
-}
 
 interface FeeConfig {
   feeAddress: string;
   feeBps: number;
   enabled: boolean;
-  wallets?: FeeWallet[];
+  wallets: Array<{ address: string; percentage: number }>;
 }
 
 export default function useFeeCollection() {
@@ -45,6 +38,7 @@ export default function useFeeCollection() {
     enabled: false,
     wallets: [],
   });
+  const [showFeeInUI, setShowFeeInUI] = useState(true);
   const [configLoaded, setConfigLoaded] = useState(false);
 
   useEffect(() => {
@@ -60,6 +54,7 @@ export default function useFeeCollection() {
             enabled: config.enabled || false,
             wallets: config.wallets || [],
           });
+          setShowFeeInUI(config.showFeeInUI ?? true);
         } else {
           console.warn("[FeeCollection] Failed to load fee config from API, using defaults");
         }
@@ -92,14 +87,11 @@ export default function useFeeCollection() {
       relayClient: RelayClient,
       orderValueUsdc: number
     ): Promise<FeeCollectionResult> => {
-      const hasMultiWallet = feeConfig.wallets && feeConfig.wallets.length > 0;
-      
       console.log("[FeeCollection] collectFee called with:", {
         orderValueUsdc,
         feeEnabled: feeConfig.enabled,
         feeAddress: feeConfig.feeAddress,
         feeBps: feeConfig.feeBps,
-        walletsCount: feeConfig.wallets?.length || 0,
         configLoaded,
       });
       
@@ -108,10 +100,8 @@ export default function useFeeCollection() {
         return { success: true, feeAmount: BigInt(0), skipped: true };
       }
 
-      // Check if we have valid recipients configured
-      const hasLegacyAddress = !!feeConfig.feeAddress;
-      if (!hasMultiWallet && !hasLegacyAddress) {
-        console.log("[FeeCollection] Skipped - no fee recipients configured");
+      if (!feeConfig.feeAddress) {
+        console.log("[FeeCollection] Skipped - no fee address configured");
         return { success: true, feeAmount: BigInt(0), skipped: true };
       }
 
@@ -127,86 +117,38 @@ export default function useFeeCollection() {
       setFeeError(null);
 
       try {
-        const transactions: { to: string; value: string; data: string }[] = [];
-        const walletTransfers: { address: string; amount: bigint; label?: string }[] = [];
+        const transactions: Array<{ to: string; value: string; data: string }> = [];
 
-        if (hasMultiWallet && feeConfig.wallets) {
-          // Multi-wallet batched transfers
-          console.log("[FeeCollection] Building batched transfers for", feeConfig.wallets.length, "wallets");
-          
-          // First pass: calculate amounts for all wallets
-          const validWallets = feeConfig.wallets.filter(w => w.address && w.percentage > 0);
-          const walletAmounts: { wallet: FeeWallet; amount: bigint }[] = [];
-          let totalDistributed = BigInt(0);
-          
-          for (const wallet of validWallets) {
-            // Calculate this wallet's share of the total fee
-            const walletAmount = (feeAmount * BigInt(Math.floor(wallet.percentage * 100))) / BigInt(10000);
-            totalDistributed += walletAmount;
-            walletAmounts.push({ wallet, amount: walletAmount });
-          }
-          
-          // Allocate any rounding remainder to the last wallet
-          const remainder = feeAmount - totalDistributed;
-          if (remainder > BigInt(0) && walletAmounts.length > 0) {
-            walletAmounts[walletAmounts.length - 1].amount += remainder;
-            console.log(`[FeeCollection] Allocated rounding remainder of ${Number(remainder)} wei to last wallet`);
-          }
-          
-          // Second pass: build transactions
-          for (const { wallet, amount } of walletAmounts) {
-            if (amount <= BigInt(0)) continue;
-            
-            console.log(`[FeeCollection] ${wallet.label || wallet.address}: ${(Number(amount) / Math.pow(10, USDC_E_DECIMALS)).toFixed(6)} USDC (${wallet.percentage}%)`);
-            
-            const transferData = encodeFunctionData({
-              abi: ERC20_TRANSFER_ABI,
-              functionName: "transfer",
-              args: [wallet.address as `0x${string}`, amount],
-            });
-
-            transactions.push({
-              to: USDC_E_CONTRACT_ADDRESS,
-              value: "0",
-              data: transferData,
-            });
-            
-            walletTransfers.push({
-              address: wallet.address,
-              amount,
-              label: wallet.label,
-            });
+        if (feeConfig.wallets && feeConfig.wallets.length > 0) {
+          // Multi-wallet distribution
+          console.log("[FeeCollection] Building multi-wallet transfers for", feeConfig.wallets.length, "wallets");
+          for (const wallet of feeConfig.wallets) {
+            const walletFee = BigInt(Math.floor(Number(feeAmount) * (wallet.percentage / 100)));
+            if (walletFee > BigInt(0)) {
+              const transferData = encodeFunctionData({
+                abi: ERC20_TRANSFER_ABI,
+                functionName: "transfer",
+                args: [wallet.address as `0x${string}`, walletFee],
+              });
+              transactions.push({ to: USDC_E_CONTRACT_ADDRESS, value: "0", data: transferData });
+              console.log(`[FeeCollection] Wallet ${wallet.address}: ${wallet.percentage}% = ${walletFee.toString()} wei`);
+            }
           }
         } else {
-          // Legacy single wallet transfer
+          // Single wallet fallback
           console.log("[FeeCollection] Building single transfer to:", feeConfig.feeAddress);
           const transferData = encodeFunctionData({
             abi: ERC20_TRANSFER_ABI,
             functionName: "transfer",
             args: [feeConfig.feeAddress as `0x${string}`, feeAmount],
           });
-
-          transactions.push({
-            to: USDC_E_CONTRACT_ADDRESS,
-            value: "0",
-            data: transferData,
-          });
-          
-          walletTransfers.push({
-            address: feeConfig.feeAddress,
-            amount: feeAmount,
-          });
+          transactions.push({ to: USDC_E_CONTRACT_ADDRESS, value: "0", data: transferData });
         }
 
-        if (transactions.length === 0) {
-          console.log("[FeeCollection] Skipped - no valid transfers to execute");
-          return { success: true, feeAmount: BigInt(0), skipped: true };
-        }
-
-        console.log("[FeeCollection] Executing batched relay transaction with", transactions.length, "transfers...");
+        console.log("[FeeCollection] Executing", transactions.length, "relay transaction(s)...");
         const response = await relayClient.execute(
           transactions,
-          `Collect integrator fees: ${(Number(feeAmount) / Math.pow(10, USDC_E_DECIMALS)).toFixed(2)} USDC to ${transactions.length} wallet(s)`
+          `Collect integrator fee: ${(Number(feeAmount) / Math.pow(10, USDC_E_DECIMALS)).toFixed(2)} USDC`
         );
         console.log("[FeeCollection] Relay response received, waiting for confirmation...");
         const result = await response.wait();
@@ -216,7 +158,6 @@ export default function useFeeCollection() {
           success: true,
           feeAmount,
           txHash: result?.transactionHash,
-          walletTransfers,
         };
       } catch (err) {
         const error =
@@ -229,7 +170,7 @@ export default function useFeeCollection() {
         setIsCollectingFee(false);
       }
     },
-    [feeConfig.enabled, feeConfig.feeAddress, feeConfig.feeBps, feeConfig.wallets, configLoaded, calculateFeeAmount]
+    [feeConfig, configLoaded, calculateFeeAmount]
   );
 
   return {
@@ -237,6 +178,7 @@ export default function useFeeCollection() {
     calculateFeeAmount,
     isCollectingFee,
     feeError,
+    showFeeInUI,
     isFeeCollectionEnabled: feeConfig.enabled,
     feeAddressConfigured: !!feeConfig.feeAddress,
     feeBps: feeConfig.feeBps,

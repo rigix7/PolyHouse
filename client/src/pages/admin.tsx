@@ -1,7 +1,7 @@
 /**
  * Admin Panel – Full version with all features and password protection
  *
- * Forked from Wildcards admin panel with Scout/Trade/Players features removed.
+ * Forked from Wildcards with Scout/Trade/Players removed.
  *
  * Tabs:
  *   - Tags          – Sync & toggle Polymarket sport tags
@@ -108,6 +108,8 @@ interface WhiteLabelConfig {
   updatedAt: string;
 }
 
+// ---------------------------------------------------------------------------
+// Player form schema
 // ---------------------------------------------------------------------------
 // Auth-aware fetch helper
 // ---------------------------------------------------------------------------

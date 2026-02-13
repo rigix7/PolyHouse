@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "./db";
 import {
   markets,
@@ -8,14 +8,10 @@ import {
   adminSettings,
   futures,
   futuresCategories,
-  sportFieldConfigs,
-  sportMarketConfigs,
   polymarketPositions,
   polymarketOrders,
   polymarketTags,
   bridgeTransactions,
-  whiteLabelConfig,
-  themeConfigSchema,
   type Market,
   type InsertMarket,
   type Bet,
@@ -27,10 +23,6 @@ import {
   type InsertFutures,
   type FuturesCategory,
   type InsertFuturesCategory,
-  type SportFieldConfig,
-  type InsertSportFieldConfig,
-  type SportMarketConfig,
-  type InsertSportMarketConfig,
   type PolymarketPosition,
   type InsertPolymarketPosition,
   type PolymarketOrder,
@@ -40,10 +32,8 @@ import {
   type BridgeTransaction,
   type InsertBridgeTransaction,
   type WhiteLabelConfig,
-  type ThemeConfig,
-  type ApiCredentials,
-  type FeeConfig,
-  type PointsConfig,
+  type InsertWhiteLabelConfig,
+  whiteLabelConfig,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -79,17 +69,6 @@ export interface IStorage {
   updateFuturesCategory2(id: number, updates: Partial<InsertFuturesCategory>): Promise<FuturesCategory | undefined>;
   deleteFuturesCategory(id: number): Promise<boolean>;
 
-  getSportFieldConfigs(): Promise<SportFieldConfig[]>;
-  getSportFieldConfig(sportSlug: string): Promise<SportFieldConfig | undefined>;
-  createOrUpdateSportFieldConfig(config: InsertSportFieldConfig): Promise<SportFieldConfig>;
-  deleteSportFieldConfig(sportSlug: string): Promise<boolean>;
-
-  getSportMarketConfigs(): Promise<SportMarketConfig[]>;
-  getSportMarketConfig(sportSlug: string, marketType: string): Promise<SportMarketConfig | undefined>;
-  getSportMarketConfigsBySport(sportSlug: string): Promise<SportMarketConfig[]>;
-  createOrUpdateSportMarketConfig(config: InsertSportMarketConfig): Promise<SportMarketConfig>;
-  deleteSportMarketConfig(sportSlug: string, marketType: string): Promise<boolean>;
-
   getPolymarketOrders(walletAddress: string): Promise<PolymarketOrder[]>;
   createPolymarketOrder(order: InsertPolymarketOrder): Promise<PolymarketOrder>;
   updatePolymarketOrder(id: number, updates: Partial<PolymarketOrder>): Promise<PolymarketOrder | undefined>;
@@ -117,21 +96,8 @@ export interface IStorage {
   getBridgeTransactions(userAddress: string): Promise<BridgeTransaction[]>;
   createBridgeTransaction(tx: InsertBridgeTransaction): Promise<BridgeTransaction>;
 
-  // White-label configuration
-  getWhiteLabelConfig(): Promise<WhiteLabelConfig | null>;
-  updateWhiteLabelTheme(themeConfig: ThemeConfig): Promise<WhiteLabelConfig>;
-  updateWhiteLabelApiCredentials(credentials: ApiCredentials): Promise<WhiteLabelConfig>;
-  updateWhiteLabelFeeConfig(feeConfig: FeeConfig): Promise<WhiteLabelConfig>;
-  updateWhiteLabelPointsConfig(pointsConfig: PointsConfig): Promise<WhiteLabelConfig>;
-  
-  // Referral methods
-  setReferralCode(address: string, referralCode: string): Promise<WalletRecord | undefined>;
-  applyReferralCode(address: string, referrerCode: string): Promise<{ success: boolean; error?: string }>;
-  getReferralStats(address: string): Promise<{ referralsCount: number; pointsEarned: number }>;
-  getReferrals(address: string): Promise<WalletRecord[]>;
-  
-  // Store Polymarket-derived points for referral calculations
-  updateStoredWildPoints(address: string, wildPoints: number): Promise<void>;
+  getWhiteLabelConfig(): Promise<WhiteLabelConfig | undefined>;
+  upsertWhiteLabelConfig(config: Partial<WhiteLabelConfig>): Promise<WhiteLabelConfig>;
 
   seedInitialData(): Promise<void>;
 }
@@ -248,17 +214,6 @@ export class DatabaseStorage implements IStorage {
       .where(eq(walletRecords.address, record.address))
       .returning();
     return updated;
-  }
-
-  async updateStoredWildPoints(address: string, wildPoints: number): Promise<void> {
-    const normalizedAddress = address.toLowerCase();
-    const updatedAt = new Date().toISOString();
-    await db.update(walletRecords)
-      .set({
-        wildPoints,
-        updatedAt,
-      })
-      .where(eq(walletRecords.address, normalizedAddress));
   }
 
   async updateWalletSafeStatus(address: string, safeAddress: string, isSafeDeployed: boolean): Promise<WalletRecord> {
@@ -389,136 +344,8 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
 
-  async getSportFieldConfigs(): Promise<SportFieldConfig[]> {
-    return await db.select().from(sportFieldConfigs);
-  }
-
-  async getSportFieldConfig(sportSlug: string): Promise<SportFieldConfig | undefined> {
-    const [config] = await db.select().from(sportFieldConfigs).where(eq(sportFieldConfigs.sportSlug, sportSlug));
-    return config || undefined;
-  }
-
-  async createOrUpdateSportFieldConfig(config: InsertSportFieldConfig): Promise<SportFieldConfig> {
-    const now = new Date().toISOString();
-    const existing = await this.getSportFieldConfig(config.sportSlug);
-    
-    if (existing) {
-      const [updated] = await db
-        .update(sportFieldConfigs)
-        .set({
-          sportLabel: config.sportLabel,
-          titleField: config.titleField,
-          buttonLabelField: config.buttonLabelField,
-          betSlipTitleField: config.betSlipTitleField,
-          useQuestionForTitle: config.useQuestionForTitle,
-          sampleData: config.sampleData as Record<string, unknown> | undefined,
-          updatedAt: now,
-        })
-        .where(eq(sportFieldConfigs.sportSlug, config.sportSlug))
-        .returning();
-      return updated;
-    }
-    
-    const [newConfig] = await db.insert(sportFieldConfigs).values({
-      sportSlug: config.sportSlug,
-      sportLabel: config.sportLabel,
-      titleField: config.titleField || "groupItemTitle",
-      buttonLabelField: config.buttonLabelField || "outcomes",
-      betSlipTitleField: config.betSlipTitleField || "question",
-      useQuestionForTitle: config.useQuestionForTitle || false,
-      sampleData: config.sampleData as Record<string, unknown> | undefined,
-      createdAt: now,
-      updatedAt: now,
-    }).returning();
-    return newConfig;
-  }
-
-  async deleteSportFieldConfig(sportSlug: string): Promise<boolean> {
-    const result = await db.delete(sportFieldConfigs).where(eq(sportFieldConfigs.sportSlug, sportSlug)).returning();
-    return result.length > 0;
-  }
-
-  async getSportMarketConfigs(): Promise<SportMarketConfig[]> {
-    return await db.select().from(sportMarketConfigs);
-  }
-
-  async getSportMarketConfig(sportSlug: string, marketType: string): Promise<SportMarketConfig | undefined> {
-    const [config] = await db.select().from(sportMarketConfigs)
-      .where(and(
-        eq(sportMarketConfigs.sportSlug, sportSlug),
-        eq(sportMarketConfigs.marketType, marketType)
-      ));
-    return config || undefined;
-  }
-
-  async getSportMarketConfigsBySport(sportSlug: string): Promise<SportMarketConfig[]> {
-    return await db.select().from(sportMarketConfigs)
-      .where(eq(sportMarketConfigs.sportSlug, sportSlug));
-  }
-
-  async createOrUpdateSportMarketConfig(config: InsertSportMarketConfig): Promise<SportMarketConfig> {
-    const now = new Date().toISOString();
-    const existing = await this.getSportMarketConfig(config.sportSlug, config.marketType);
-    
-    if (existing) {
-      const [updated] = await db
-        .update(sportMarketConfigs)
-        .set({
-          sportLabel: config.sportLabel,
-          marketTypeLabel: config.marketTypeLabel,
-          titleField: config.titleField,
-          buttonLabelField: config.buttonLabelField,
-          betSlipTitleField: config.betSlipTitleField,
-          useQuestionForTitle: config.useQuestionForTitle,
-          showLine: config.showLine,
-          lineFieldPath: config.lineFieldPath,
-          lineFormatter: config.lineFormatter,
-          outcomeStrategy: config.outcomeStrategy as { type: string; fallback?: string; regex?: string; template?: string } | undefined,
-          sampleData: config.sampleData as Record<string, unknown> | undefined,
-          notes: config.notes,
-          updatedAt: now,
-        })
-        .where(and(
-          eq(sportMarketConfigs.sportSlug, config.sportSlug),
-          eq(sportMarketConfigs.marketType, config.marketType)
-        ))
-        .returning();
-      return updated;
-    }
-    
-    const [newConfig] = await db.insert(sportMarketConfigs).values({
-      sportSlug: config.sportSlug,
-      sportLabel: config.sportLabel,
-      marketType: config.marketType,
-      marketTypeLabel: config.marketTypeLabel,
-      titleField: config.titleField || "groupItemTitle",
-      buttonLabelField: config.buttonLabelField || "outcomes",
-      betSlipTitleField: config.betSlipTitleField || "question",
-      useQuestionForTitle: config.useQuestionForTitle || false,
-      showLine: config.showLine || false,
-      lineFieldPath: config.lineFieldPath || "line",
-      lineFormatter: config.lineFormatter || "default",
-      outcomeStrategy: config.outcomeStrategy as { type: string; fallback?: string; regex?: string; template?: string } | undefined,
-      sampleData: config.sampleData as Record<string, unknown> | undefined,
-      notes: config.notes,
-      createdAt: now,
-      updatedAt: now,
-    }).returning();
-    return newConfig;
-  }
-
-  async deleteSportMarketConfig(sportSlug: string, marketType: string): Promise<boolean> {
-    const result = await db.delete(sportMarketConfigs)
-      .where(and(
-        eq(sportMarketConfigs.sportSlug, sportSlug),
-        eq(sportMarketConfigs.marketType, marketType)
-      ))
-      .returning();
-    return result.length > 0;
-  }
-
   async seedInitialData(): Promise<void> {
-    // No demo data needed for PolyHouse
+    // No-op: Scout/Trade demo data removed
   }
 
   async getPolymarketOrders(walletAddress: string): Promise<PolymarketOrder[]> {
@@ -704,182 +531,42 @@ export class DatabaseStorage implements IStorage {
     return newTx;
   }
 
-  // White-label configuration methods
-  async getWhiteLabelConfig(): Promise<WhiteLabelConfig | null> {
-    const configs = await db.select().from(whiteLabelConfig).limit(1);
-    return configs[0] || null;
-  }
-
-  private async getOrCreateWhiteLabelConfig(): Promise<WhiteLabelConfig> {
-    let config = await this.getWhiteLabelConfig();
-    if (!config) {
-      const now = new Date().toISOString();
-      const defaultTheme = themeConfigSchema.parse({});
-      const [newConfig] = await db.insert(whiteLabelConfig).values({
-        themeConfig: defaultTheme,
-        apiCredentials: {},
-        feeConfig: { feeBps: 0 },
-        createdAt: now,
-        updatedAt: now,
-      }).returning();
-      config = newConfig;
-    }
+  async getWhiteLabelConfig(): Promise<WhiteLabelConfig | undefined> {
+    const [config] = await db.select().from(whiteLabelConfig).limit(1);
     return config;
   }
 
-  async updateWhiteLabelTheme(theme: ThemeConfig): Promise<WhiteLabelConfig> {
-    const existing = await this.getOrCreateWhiteLabelConfig();
-    const [updated] = await db.update(whiteLabelConfig)
-      .set({
-        themeConfig: theme,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(whiteLabelConfig.id, existing.id))
-      .returning();
-    return updated;
-  }
+  async upsertWhiteLabelConfig(config: Partial<WhiteLabelConfig>): Promise<WhiteLabelConfig> {
+    const now = new Date().toISOString();
+    const existing = await this.getWhiteLabelConfig();
 
-  async updateWhiteLabelApiCredentials(credentials: ApiCredentials): Promise<WhiteLabelConfig> {
-    const existing = await this.getOrCreateWhiteLabelConfig();
-    const [updated] = await db.update(whiteLabelConfig)
-      .set({
-        apiCredentials: credentials,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(whiteLabelConfig.id, existing.id))
-      .returning();
-    return updated;
-  }
-
-  async updateWhiteLabelFeeConfig(feeConfig: FeeConfig): Promise<WhiteLabelConfig> {
-    const existing = await this.getOrCreateWhiteLabelConfig();
-    const [updated] = await db.update(whiteLabelConfig)
-      .set({
-        feeConfig: feeConfig,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(whiteLabelConfig.id, existing.id))
-      .returning();
-    return updated;
-  }
-
-  async updateWhiteLabelPointsConfig(pointsConfig: PointsConfig): Promise<WhiteLabelConfig> {
-    const existing = await this.getOrCreateWhiteLabelConfig();
-    const [updated] = await db.update(whiteLabelConfig)
-      .set({
-        pointsConfig: pointsConfig,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(whiteLabelConfig.id, existing.id))
-      .returning();
-    return updated;
-  }
-
-  async setReferralCode(address: string, referralCode: string): Promise<WalletRecord | undefined> {
-    const normalizedAddress = address.toLowerCase();
-    const code = referralCode.toUpperCase();
-    
-    // Check if code is already taken
-    const existing = await db.select()
-      .from(walletRecords)
-      .where(eq(walletRecords.referralCode, code))
-      .limit(1);
-    
-    if (existing.length > 0 && existing[0].address !== normalizedAddress) {
-      return undefined; // Code already taken
+    if (existing) {
+      const [updated] = await db
+        .update(whiteLabelConfig)
+        .set({
+          themeConfig: config.themeConfig ?? existing.themeConfig,
+          apiCredentials: config.apiCredentials ?? existing.apiCredentials,
+          feeConfig: config.feeConfig ?? existing.feeConfig,
+          pointsConfig: config.pointsConfig ?? existing.pointsConfig,
+          updatedAt: now,
+        })
+        .where(eq(whiteLabelConfig.id, existing.id))
+        .returning();
+      return updated;
     }
-    
-    const [updated] = await db.update(walletRecords)
-      .set({
-        referralCode: code,
-        updatedAt: new Date().toISOString(),
+
+    const [created] = await db
+      .insert(whiteLabelConfig)
+      .values({
+        themeConfig: config.themeConfig ?? {},
+        apiCredentials: config.apiCredentials ?? {},
+        feeConfig: config.feeConfig ?? { feeBps: 0 },
+        pointsConfig: config.pointsConfig ?? null,
+        createdAt: now,
+        updatedAt: now,
       })
-      .where(eq(walletRecords.address, normalizedAddress))
       .returning();
-    
-    return updated;
-  }
-
-  async applyReferralCode(address: string, referrerCode: string): Promise<{ success: boolean; error?: string }> {
-    const normalizedAddress = address.toLowerCase();
-    const code = referrerCode.toUpperCase();
-    
-    // Get the user's wallet record
-    const userRecords = await db.select()
-      .from(walletRecords)
-      .where(eq(walletRecords.address, normalizedAddress))
-      .limit(1);
-    
-    if (!userRecords.length) {
-      return { success: false, error: "Wallet not found" };
-    }
-    
-    const user = userRecords[0];
-    
-    // Check if user already has a referrer
-    if (user.referredBy) {
-      return { success: false, error: "You already have a referrer" };
-    }
-    
-    // Find the referrer by their code
-    const referrerRecords = await db.select()
-      .from(walletRecords)
-      .where(eq(walletRecords.referralCode, code))
-      .limit(1);
-    
-    if (!referrerRecords.length) {
-      return { success: false, error: "Invalid referral code" };
-    }
-    
-    const referrer = referrerRecords[0];
-    
-    // Can't refer yourself
-    if (referrer.address === normalizedAddress) {
-      return { success: false, error: "Cannot use your own referral code" };
-    }
-    
-    // Apply the referral
-    await db.update(walletRecords)
-      .set({
-        referredBy: referrer.address,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(walletRecords.address, normalizedAddress));
-    
-    return { success: true };
-  }
-
-  async getReferralStats(address: string): Promise<{ referralsCount: number; pointsEarned: number }> {
-    const normalizedAddress = address.toLowerCase();
-    
-    // Get all users referred by this address
-    const referrals = await db.select()
-      .from(walletRecords)
-      .where(eq(walletRecords.referredBy, normalizedAddress));
-    
-    // Get points config to get referral percentage
-    const whiteLabelConfig = await this.getWhiteLabelConfig();
-    const referralPercentage = whiteLabelConfig?.pointsConfig?.referralPercentage || 10;
-    
-    // Calculate referral points as percentage of referred users' stored points
-    const totalReferredPoints = referrals.reduce((sum, r) => sum + (r.wildPoints || 0), 0);
-    const pointsEarned = Math.floor(totalReferredPoints * (referralPercentage / 100));
-    
-    return {
-      referralsCount: referrals.length,
-      pointsEarned,
-    };
-  }
-
-  async getReferrals(address: string): Promise<WalletRecord[]> {
-    const normalizedAddress = address.toLowerCase();
-    
-    // Get all users referred by this address
-    const referrals = await db.select()
-      .from(walletRecords)
-      .where(eq(walletRecords.referredBy, normalizedAddress));
-    
-    return referrals;
+    return created;
   }
 }
 

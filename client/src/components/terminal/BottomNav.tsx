@@ -15,9 +15,9 @@ const tabs: { id: TabType; label: string; icon: typeof TrendingUp; color: string
 
 export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   return (
-    <nav 
-      className="shrink-0 bg-zinc-900 border-t border-zinc-800 z-30 bottom-nav-safe"
-      style={{ backgroundColor: "var(--wl-nav-bg)" }}
+    <nav
+      className="shrink-0 border-t border-[var(--border-primary)] z-30 bottom-nav-safe"
+      style={{ backgroundColor: 'var(--nav-bg, #09090b)' }}
     >
       <div className="grid grid-cols-2 h-16">
         {tabs.map((tab) => {
@@ -27,11 +27,8 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
-              className={cn(
-                "flex flex-col items-center justify-center gap-1 transition-colors",
-                isActive ? tab.color : "text-zinc-600"
-              )}
-              style={isActive ? { color: "var(--wl-nav-active)" } : { color: "var(--wl-nav-inactive)" }}
+              className="flex flex-col items-center justify-center gap-1 transition-colors"
+              style={{ color: isActive ? 'var(--nav-active, #fbbf24)' : 'var(--nav-inactive, #71717a)' }}
               data-testid={`nav-${tab.id}`}
             >
               <Icon className="w-5 h-5" />

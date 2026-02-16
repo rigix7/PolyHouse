@@ -1,0 +1,86 @@
+name: Sync Main to Franchise Branches
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync-branches:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Get franchise branches
+        id: get-branches
+        run: |
+          git fetch --all
+          BRANCHES=$(git branch -r --list 'origin/franchise/*' | sed 's|origin/||' | xargs)
+          echo "branches=$BRANCHES" >> "$GITHUB_OUTPUT"
+          echo "Found franchise branches: $BRANCHES"
+
+      - name: Sync main into franchise branches
+        if: steps.get-branches.outputs.branches != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCHES="${{ steps.get-branches.outputs.branches }}"
+          FAILED_BRANCHES=""
+
+          for BRANCH in $BRANCHES; do
+            echo "========================================"
+            echo "Syncing main into $BRANCH"
+            echo "========================================"
+
+            git checkout "$BRANCH"
+            git pull origin "$BRANCH"
+
+            if git merge origin/main --no-edit; then
+              git push origin "$BRANCH"
+              echo "Successfully synced main into $BRANCH"
+            else
+              echo "Merge conflict detected for $BRANCH"
+              git merge --abort
+              FAILED_BRANCHES="$FAILED_BRANCHES $BRANCH"
+
+              # Create a PR instead so conflicts can be resolved manually
+              EXISTING_PR=$(gh pr list --base "$BRANCH" --head "main" --state open --json number --jq '.[0].number')
+              if [ -z "$EXISTING_PR" ]; then
+                gh pr create \
+                  --title "Sync main into $BRANCH" \
+                  --body "Automatic sync from main into \`$BRANCH\` failed due to merge conflicts. Please resolve manually." \
+                  --base "$BRANCH" \
+                  --head "main" || echo "Could not create PR for $BRANCH"
+              else
+                echo "PR #$EXISTING_PR already exists for syncing main into $BRANCH"
+              fi
+            fi
+
+            git checkout main
+          done
+
+          if [ -n "$FAILED_BRANCHES" ]; then
+            echo ""
+            echo "========================================"
+            echo "The following branches had conflicts and need manual resolution:"
+            echo "$FAILED_BRANCHES"
+            echo "PRs have been created for these branches."
+            echo "========================================"
+          fi
+
+      - name: No branches to sync
+        if: steps.get-branches.outputs.branches == ''
+        run: echo "No franchise/* branches found to sync."

@@ -13,9 +13,9 @@ import {
   keccak256,
   encodeAbiParameters,
   createPublicClient,
-  http,
   type Address,
 } from "viem";
+import { polygonTransport } from "@/constants/polymarket";
 
 // Safe wallet init code hash for CREATE2 address derivation (from Polymarket SDK)
 const SAFE_INIT_CODE_HASH = "0x2bce2127ff07fb632d16c8347c4ebf501f4841168bed00d9e6ef715ddb6fcecf" as `0x${string}`;
@@ -201,7 +201,7 @@ const NEG_RISK_ADAPTER_ADDRESS = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296" as
 // Public client for read operations (balance queries)
 const publicClient = createPublicClient({
   chain: polygon,
-  transport: http("https://polygon-rpc.com"),
+  transport: polygonTransport,
 });
 
 // Query CTF token balances for a specific position

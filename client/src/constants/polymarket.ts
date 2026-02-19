@@ -10,6 +10,20 @@ export const POLYMARKET_PROFILE_URL = (address: string) =>
 export const POLYGON_RPC_URL =
   import.meta.env.VITE_POLYGON_RPC_URL || "https://polygon-rpc.com";
 
+// Backup RPC URLs for automatic failover when primary is down
+const POLYGON_BACKUP_RPCS = [
+  "https://rpc.ankr.com/polygon",
+  "https://polygon.llamarpc.com",
+  "https://polygon-bor-rpc.publicnode.com",
+];
+
+// Shared transport with automatic fallback - tries each RPC in order until one succeeds
+import { fallback, http } from "viem";
+export const polygonTransport = fallback([
+  http(POLYGON_RPC_URL),
+  ...POLYGON_BACKUP_RPCS.map((url) => http(url)),
+]);
+
 // Remote signing endpoint
 export const REMOTE_SIGNING_URL = () =>
   typeof window !== "undefined"

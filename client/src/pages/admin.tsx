@@ -832,6 +832,36 @@ const PRESET_THEMES: Record<string, { name: string; description: string; icon: t
       dashboard: { accentColor: '#c084fc', actionColor: '#a855f7', positiveColor: '#10b981', negativeColor: '#ef4444' },
     },
   },
+  predicted: {
+    name: "Predicted",
+    description: "predicted.one – pitch-black with bold warm orange",
+    icon: Target,
+    theme: {
+      brand: { name: "PREDICTED", primaryColor: "#ff893c", accentColor: "#e5701f" },
+      header: { backgroundColor: '#0a0a0a', textColor: '#f5f5f5', accentColor: '#ff893c' },
+      betSlip: { backgroundColor: '#111111', cardColor: '#1a1a1a', primaryButtonColor: '#ff893c', successColor: '#22c55e', textColor: '#f5f5f5' },
+      marketCards: { backgroundColor: '#111111', hoverColor: '#1a1a1a', borderColor: '#1f1f1f', oddsBadgeColor: '#ff893c', textColor: '#f5f5f5', moneylineAccent: '#ff893c', moneylineAwayAccent: '#e5701f', moneylineDrawAccent: '#525252', totalsAccent: '#e5701f', moreMarketsAccent: '#fb923c' },
+      sortingBar: { backgroundColor: '#0a0a0a', activeTabColor: '#ff893c', inactiveTabColor: '#525252' },
+      bottomNav: { backgroundColor: '#0a0a0a', activeColor: '#ff893c', inactiveColor: '#525252' },
+      global: { successColor: '#22c55e', errorColor: '#ef4444', warningColor: '#f59e0b' },
+      dashboard: { accentColor: '#ff893c', actionColor: '#e5701f', positiveColor: '#22c55e', negativeColor: '#ef4444' },
+    },
+  },
+  telos: {
+    name: "Telos",
+    description: "telos.net – deep navy with cyan-to-violet gradient identity",
+    icon: Gem,
+    theme: {
+      brand: { name: "TELOS", primaryColor: "#4facfe", accentColor: "#00f2fe" },
+      header: { backgroundColor: '#060618', textColor: '#e0f0ff', accentColor: '#00f2fe' },
+      betSlip: { backgroundColor: '#0d0d2b', cardColor: '#13133d', primaryButtonColor: '#4facfe', successColor: '#00f2fe', textColor: '#e0f0ff' },
+      marketCards: { backgroundColor: '#0d0d2b', hoverColor: '#13133d', borderColor: '#1a1a4a', oddsBadgeColor: '#00f2fe', textColor: '#e0f0ff', moneylineAccent: '#4facfe', moneylineAwayAccent: '#c471f5', moneylineDrawAccent: '#3d3d6b', totalsAccent: '#c471f5', moreMarketsAccent: '#00f2fe' },
+      sortingBar: { backgroundColor: '#060618', activeTabColor: '#4facfe', inactiveTabColor: '#3d3d6b' },
+      bottomNav: { backgroundColor: '#060618', activeColor: '#00f2fe', inactiveColor: '#3d3d6b' },
+      global: { successColor: '#00f2fe', errorColor: '#f87171', warningColor: '#fbbf24' },
+      dashboard: { accentColor: '#4facfe', actionColor: '#c471f5', positiveColor: '#00f2fe', negativeColor: '#f87171' },
+    },
+  },
 };
 
 function WhiteLabelSection({
